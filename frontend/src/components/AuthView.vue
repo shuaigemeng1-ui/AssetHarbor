@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue'
-import { login, register } from '../api'
+import { login, register, setToken } from '../api'
 
 const emit = defineEmits(['authed'])
 
@@ -16,10 +16,12 @@ async function submit() {
   try {
     if (mode.value === 'login') {
       const res = await login(username.value, password.value)
+      setToken(res.access_token)
       emit('authed', res.user)
     } else {
       await register(username.value, password.value)
       const res = await login(username.value, password.value)
+      setToken(res.access_token)
       emit('authed', res.user)
     }
   } catch (err) {
