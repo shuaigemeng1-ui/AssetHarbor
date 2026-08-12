@@ -13,8 +13,9 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import init_db
-from .routers import gallery, images, upload
+from .routers import auth, gallery, images, upload, users
 from .schemas import HealthResponse
+from .security import ensure_admin
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -22,20 +23,24 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    ensure_admin()
     yield
 
 
 app = FastAPI(
     title="oss",
     version=settings.version,
-    description="Self-hosted image hosting with short-code URLs. "
-    "Upload via POST /api/upload, fetch via GET /i/{code}.",
+    description="Self-hosted image hosting with short-code URLs, per-user "
+    "isolation and role-based access control. Upload via POST /api/upload, "
+    "fetch via GET /i/{code}.",
     lifespan=lifespan,
 )
 
+app.include_router(auth.router)
 app.include_router(upload.router)
 app.include_router(gallery.router)
 app.include_router(images.router)
+app.include_router(users.router)
 
 if STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

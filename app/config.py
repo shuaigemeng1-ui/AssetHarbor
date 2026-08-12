@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="OSS_", env_file=".env", extra="ignore")
 
     app_name: str = "oss"
-    version: str = "0.1.0"
+    version: str = "0.2.0"
 
     # --- storage -----------------------------------------------------------
     # Base directory for the SQLite database and uploaded files.
@@ -23,9 +23,20 @@ class Settings(BaseSettings):
     short_code_length: int = 10
 
     # --- public URL --------------------------------------------------------
-    # Base URL used to build the links returned by the upload API, e.g.
+    # Base URL used to build the links returned by the API, e.g.
     # "https://img.example.com". Leave empty to derive it from each request.
     public_url: str = ""
+
+    # --- auth --------------------------------------------------------------
+    # Bootstrap password for the built-in "admin" account (empty = skip).
+    admin_password: str = ""
+    # Registration policy: open | invite | closed
+    allow_registration: str = "open"
+    invite_code: str = ""
+    # JWT signing secret. Leave empty for an ephemeral secret (tokens reset on
+    # every restart) — set it in .env for stable tokens across restarts.
+    jwt_secret: str = ""
+    token_expire_minutes: int = 60 * 24 * 7  # 7 days
 
     @property
     def db_path(self) -> Path:

@@ -39,9 +39,116 @@ h1 span {
   color: var(--accent);
 }
 
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.userbox {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding-top: 6px;
+}
+
+.username {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.role-badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.role-badge.admin {
+  background: #2a3a1a;
+  color: #a3d977;
+}
+
+button.ghost {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+button.ghost:hover {
+  color: var(--danger-text);
+  border-color: var(--danger-border);
+}
+
 .subtitle {
   color: var(--muted);
   margin: 6px 0 28px;
+}
+
+.options {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.name-input,
+.search,
+.vis-select {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  outline: none;
+}
+
+.name-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.name-input:focus,
+.search:focus,
+.vis-select:focus {
+  border-color: var(--accent);
+}
+
+.vis-select {
+  padding: 10px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.search-row {
+  position: relative;
+  margin-top: 18px;
+}
+
+.search {
+  width: 100%;
+  padding-right: 36px;
+}
+
+.clear {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.clear:hover {
+  color: var(--text);
 }
 
 .section-title {
@@ -70,6 +177,90 @@ h1 span {
 
 .status.error {
   color: var(--danger-text);
+}
+
+/* --- auth card --- */
+
+.auth-card {
+  max-width: 380px;
+  margin: 40px auto 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 32px;
+}
+
+.auth-card h1 {
+  font-size: 26px;
+  text-align: center;
+}
+
+.auth-card .subtitle {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.tabs {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+
+.tabs button {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  padding: 9px 0;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.tabs button.active {
+  background: #1a2233;
+  color: var(--accent);
+}
+
+.auth-card form {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-card input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 11px 14px;
+  font-size: 14px;
+  outline: none;
+}
+
+.auth-card input:focus {
+  border-color: var(--accent);
+}
+
+button.primary {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 11px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+button.primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.form-error {
+  color: var(--danger-text);
+  font-size: 13px;
+  margin: 0;
 }
 
 .drop {

@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..models import Image
+from ..models import Image, User
 from .shortcode import generate_short_code
 
 # ---------------------------------------------------------------------------
@@ -109,7 +109,13 @@ def _stored_path(code: str, ext: str) -> Path:
     return Path("files") / code[:2] / code[2:4] / f"{code}.{ext}"
 
 
-async def store_upload(file: UploadFile, db: Session) -> Image:
+async def store_upload(
+    file: UploadFile,
+    db: Session,
+    owner: User | None = None,
+    name: str | None = None,
+    visibility: str = "public",
+) -> Image:
     """Validate, persist and index one uploaded image."""
     data = await _read_with_limit(file, settings.max_upload_size_mb * 1024 * 1024)
     if not data:
@@ -136,13 +142,17 @@ async def store_upload(file: UploadFile, db: Session) -> Image:
     tmp_path.write_bytes(data)
     os.replace(tmp_path, abs_path)
 
+    original_filename = file.filename or abs_path.name
     image = Image(
         code=code,
-        original_filename=file.filename or abs_path.name,
+        original_filename=original_filename,
+        name=name or original_filename,
         stored_path=str(rel_path),
         content_type=mime,
         size=len(data),
         sha256=digest,
+        owner_id=owner.id if owner else None,
+        visibility=visibility,
     )
     db.add(image)
     db.commit()

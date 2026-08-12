@@ -15,7 +15,13 @@ const infoText = computed(() => {
   if (props.item.status === 'uploading') return '上传中…'
   const r = props.item.result
   if (!r) return ''
-  return `${(r.size / 1024).toFixed(1)} KB · ${r.content_type} · ${r.code}`
+  const parts = []
+  if (r.name) parts.push(r.name)
+  parts.push(`${(r.size / 1024).toFixed(1)} KB`)
+  parts.push(r.content_type)
+  parts.push(r.code)
+  if (r.owner_username) parts.push(`@${r.owner_username}`)
+  return parts.join(' · ')
 })
 
 async function copyUrl() {

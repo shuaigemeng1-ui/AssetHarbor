@@ -12,6 +12,10 @@ services:
       OSS_MAX_UPLOAD_SIZE_MB: "${MAX_UPLOAD_SIZE_MB:-10}"
       OSS_SHORT_CODE_LENGTH: "${SHORT_CODE_LENGTH:-10}"
       OSS_PUBLIC_URL: "${PUBLIC_URL:-}"
+      OSS_ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"
+      OSS_ALLOW_REGISTRATION: "${ALLOW_REGISTRATION:-open}"
+      OSS_INVITE_CODE: "${INVITE_CODE:-}"
+      OSS_JWT_SECRET: "${JWT_SECRET:-}"
     volumes:
       # 图片文件和 SQLite 数据库都持久化在这个目录
       - ./data:/data
