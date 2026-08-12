@@ -7,6 +7,7 @@ import {
   listApiKeys,
   rotateApiKey,
 } from '../api'
+import { copyText } from '../utils/clipboard'
 
 const oldPassword = ref('')
 const newPassword = ref('')
@@ -86,11 +87,11 @@ async function doDeleteKey(k) {
 }
 
 async function copyKey() {
-  try {
-    await navigator.clipboard.writeText(newKey.value.key)
+  const ok = await copyText(newKey.value.key)
+  if (ok) {
     newKey.value.copied = true
     setTimeout(() => (newKey.value.copied = false), 1500)
-  } catch {
+  } else {
     window.alert('复制失败，请手动选中复制')
   }
 }

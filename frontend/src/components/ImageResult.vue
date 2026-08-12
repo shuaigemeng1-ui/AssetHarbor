@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { getSignedLink } from '../api'
+import { copyText } from '../utils/clipboard'
 
 const props = defineProps({
   item: { type: Object, required: true },
@@ -52,17 +53,7 @@ const infoText = computed(() => {
 })
 
 async function copyUrl() {
-  const text = copyTarget.value
-  try {
-    await navigator.clipboard.writeText(text)
-  } catch {
-    const ta = document.createElement('textarea')
-    ta.value = text
-    document.body.appendChild(ta)
-    ta.select()
-    document.execCommand('copy')
-    ta.remove()
-  }
+  await copyText(copyTarget.value)
   copied.value = true
   setTimeout(() => (copied.value = false), 1200)
 }
