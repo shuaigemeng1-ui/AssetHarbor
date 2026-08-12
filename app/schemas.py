@@ -34,6 +34,7 @@ class UploadResponse(BaseModel):
     name: str
     visibility: str
     owner_id: int | None
+    team_id: int | None = None
 
 
 class ImageInfo(UploadResponse):
@@ -51,6 +52,59 @@ class ImageListResponse(BaseModel):
 class SignedLinkResponse(BaseModel):
     url: str
     expires_at: datetime
+
+
+# --- teams -----------------------------------------------------------------
+
+
+class TeamCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=64)
+    description: str = Field(default="", max_length=255)
+
+
+class AddMember(BaseModel):
+    username: str = Field(min_length=3, max_length=64)
+
+
+class RoleUpdate(BaseModel):
+    role: str
+
+
+class TeamMemberOut(BaseModel):
+    id: int
+    username: str
+    role: str
+    created_at: datetime
+
+
+class TeamOut(BaseModel):
+    id: int
+    name: str
+    description: str
+    role: str  # caller's role in the team: owner | admin | member
+    member_count: int
+    owner_username: str | None
+    created_at: datetime
+
+
+class TeamDetail(TeamOut):
+    members: list[TeamMemberOut]
+
+
+class TeamAdminOut(BaseModel):
+    id: int
+    name: str
+    description: str
+    owner_username: str | None
+    member_count: int
+    created_at: datetime
+
+
+class AdminStats(BaseModel):
+    users: int
+    images: int
+    teams: int
+    storage_bytes: int
 
 
 class HealthResponse(BaseModel):

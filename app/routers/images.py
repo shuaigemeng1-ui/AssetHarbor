@@ -10,6 +10,7 @@ from ..database import get_db
 from ..models import Image, User
 from ..security import get_optional_user
 from ..services.ratelimit import check_rate_limit, client_ip
+from ..services.teams import is_team_member
 from ..urls import verify_image_signature
 
 router = APIRouter(tags=["images"])
@@ -41,10 +42,15 @@ def get_image(
     if image.visibility == "private":
         is_owner = current_user is not None and image.owner_id == current_user.id
         is_admin = current_user is not None and current_user.role == "admin"
+        in_team = bool(
+            image.team_id is not None
+            and current_user is not None
+            and is_team_member(db, image.team_id, current_user.id)
+        )
         has_valid_link = bool(
             expires and sig and verify_image_signature(image.code, expires, sig)
         )
-        if not (is_owner or is_admin or has_valid_link):
+        if not (is_owner or is_admin or in_team or has_valid_link):
             # 404 (not 403) so private images are not discoverable.
             raise HTTPException(status_code=404, detail="image not found")
 

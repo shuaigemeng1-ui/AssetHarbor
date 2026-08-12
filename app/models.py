@@ -1,8 +1,8 @@
-"""Database models: User (auth/RBAC) and Image (multi-tenant, named)."""
+"""Database models: User, Image, Team, TeamMember."""
 
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -22,6 +22,37 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     images: Mapped[list["Image"]] = relationship(back_populates="owner")
+    team_memberships: Mapped[list["TeamMember"]] = relationship(back_populates="user")
+
+
+class Team(Base):
+    __tablename__ = "teams"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    description: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+    owner: Mapped[User] = relationship(foreign_keys=[owner_id])
+    members: Mapped[list["TeamMember"]] = relationship(
+        back_populates="team", cascade="all, delete-orphan"
+    )
+
+
+class TeamMember(Base):
+    __tablename__ = "team_members"
+    __table_args__ = (UniqueConstraint("team_id", "user_id", name="uq_team_member"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    # owner | admin | member
+    role: Mapped[str] = mapped_column(String(16), default="member", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+    team: Mapped[Team] = relationship(back_populates="members")
+    user: Mapped[User] = relationship(back_populates="team_memberships")
 
 
 class Image(Base):
@@ -33,7 +64,7 @@ class Image(Base):
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     # Display name chosen by the owner at upload time (falls back to filename).
     name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
-    # public: anyone with the code can view; private: owner and admins only.
+    # public: anyone with the code can view; private: owner/admins/team/signed links.
     visibility: Mapped[str] = mapped_column(String(16), default="public", nullable=False)
     # Path relative to settings.data_dir, sharded two levels deep, e.g. files/ab/cd/abcdef1234.png
     stored_path: Mapped[str] = mapped_column(String(512), nullable=False)
@@ -42,9 +73,8 @@ class Image(Base):
     sha256: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
-    # Multi-tenancy: images belong to a user (null only for pre-auth legacy rows).
+    # Ownership & team space: an image belongs to a user, optionally in a team.
     owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
-    owner: Mapped[User | None] = relationship(back_populates="images")
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True, index=True)
 
-    # Reserved for the groups milestone:
-    # group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id"), nullable=True)
+    owner: Mapped[User | None] = relationship(back_populates="images")

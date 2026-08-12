@@ -11,6 +11,7 @@ from ..database import get_db
 from ..models import Image, User
 from ..schemas import ImageInfo, ImageListResponse, SignedLinkResponse
 from ..security import get_current_user
+from ..services.images import can_manage_image, delete_image
 from ..urls import build_image_url, build_signed_image_url
 
 router = APIRouter(prefix="/api", tags=["gallery"])
@@ -34,6 +35,7 @@ def list_images(
     filters = []
     if current_user.role != "admin":
         filters.append(Image.owner_id == current_user.id)
+        filters.append(Image.team_id.is_(None))  # team images live in the team space
     if q:
         like = f"%{q}%"
         filters.append(
@@ -67,12 +69,29 @@ def list_images(
             name=img.name,
             visibility=img.visibility,
             owner_id=img.owner_id,
+            team_id=img.team_id,
             original_filename=img.original_filename,
             owner_username=usernames.get(img.owner_id) if img.owner_id else None,
         )
         for img in rows
     ]
     return ImageListResponse(items=items, total=total)
+
+
+@router.delete(
+    "/images/{code}", status_code=204, summary="Delete an image (owner/admin/team-manager)"
+)
+def delete_image_endpoint(
+    code: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    image = db.execute(select(Image).where(Image.code == code)).scalar_one_or_none()
+    if image is None:
+        raise HTTPException(status_code=404, detail="image not found")
+    if not can_manage_image(db, current_user, image):
+        raise HTTPException(status_code=403, detail="you can only delete images you manage")
+    delete_image(db, image)
 
 
 @router.get(

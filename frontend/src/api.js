@@ -25,6 +25,8 @@ async function request(path, options = {}) {
   return body
 }
 
+// --- auth -----------------------------------------------------------------
+
 export function login(username, password) {
   return request('/api/auth/login', {
     method: 'POST',
@@ -45,11 +47,14 @@ export function fetchMe() {
   return request('/api/auth/me')
 }
 
-export function uploadFile(file, { name = '', visibility = 'public' } = {}) {
+// --- images ---------------------------------------------------------------
+
+export function uploadFile(file, { name = '', visibility = 'public', teamId = null } = {}) {
   const fd = new FormData()
   fd.append('file', file, file.name)
   fd.append('visibility', visibility)
   if (name) fd.append('name', name)
+  if (teamId) fd.append('team_id', String(teamId))
   return request('/api/upload', { method: 'POST', body: fd })
 }
 
@@ -64,4 +69,78 @@ export function getSignedLink(code, ttl) {
   if (ttl) params.set('ttl', String(ttl))
   const qs = params.toString()
   return request(`/api/images/${code}/link${qs ? `?${qs}` : ''}`)
+}
+
+export function deleteImage(code) {
+  return request(`/api/images/${code}`, { method: 'DELETE' })
+}
+
+// --- teams -----------------------------------------------------------------
+
+export function createTeam(name, description) {
+  return request('/api/teams', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, description }),
+  })
+}
+
+export function listTeams() {
+  return request('/api/teams')
+}
+
+export function getTeam(id) {
+  return request(`/api/teams/${id}`)
+}
+
+export function addTeamMember(teamId, username) {
+  return request(`/api/teams/${teamId}/members`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username }),
+  })
+}
+
+export function removeTeamMember(teamId, memberId) {
+  return request(`/api/teams/${teamId}/members/${memberId}`, { method: 'DELETE' })
+}
+
+export function changeTeamMemberRole(teamId, memberId, role) {
+  return request(`/api/teams/${teamId}/members/${memberId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role }),
+  })
+}
+
+export function deleteTeam(id) {
+  return request(`/api/teams/${id}`, { method: 'DELETE' })
+}
+
+export function listTeamImages(teamId, { limit = 100, q = '' } = {}) {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (q) params.set('q', q)
+  return request(`/api/teams/${teamId}/images?${params}`)
+}
+
+// --- admin -----------------------------------------------------------------
+
+export function getAdminStats() {
+  return request('/api/admin/stats')
+}
+
+export function listAdminTeams() {
+  return request('/api/admin/teams')
+}
+
+export function listUsers() {
+  return request('/api/users')
+}
+
+export function setUserRole(userId, role) {
+  return request(`/api/admin/users/${userId}/role`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role }),
+  })
 }

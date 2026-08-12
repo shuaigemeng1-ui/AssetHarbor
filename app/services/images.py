@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..models import Image, User
 from .shortcode import generate_short_code
+from .teams import get_membership
 
 # ---------------------------------------------------------------------------
 # Content sniffing — never trust user filenames or claimed MIME types.
@@ -115,6 +116,7 @@ async def store_upload(
     owner: User | None = None,
     name: str | None = None,
     visibility: str = "public",
+    team_id: int | None = None,
 ) -> Image:
     """Validate, persist and index one uploaded image."""
     data = await _read_with_limit(file, settings.max_upload_size_mb * 1024 * 1024)
@@ -153,8 +155,31 @@ async def store_upload(
         sha256=digest,
         owner_id=owner.id if owner else None,
         visibility=visibility,
+        team_id=team_id,
     )
     db.add(image)
     db.commit()
     db.refresh(image)
     return image
+
+
+def delete_image(db: Session, image: Image) -> None:
+    """Remove an image row and its file from disk."""
+    path = settings.data_dir / image.stored_path
+    db.delete(image)
+    db.commit()
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass  # the DB row is the source of truth; orphan files can be swept later
+
+
+def can_manage_image(db: Session, user: User, image: Image) -> bool:
+    """Owner, global admin, or a team owner/admin when the image lives in a team."""
+    if user.role == "admin" or image.owner_id == user.id:
+        return True
+    if image.team_id is not None:
+        member = get_membership(db, image.team_id, user.id)
+        if member is not None and member.role in ("owner", "admin"):
+            return True
+    return False

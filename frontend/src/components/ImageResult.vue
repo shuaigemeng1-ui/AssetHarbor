@@ -4,7 +4,10 @@ import { getSignedLink } from '../api'
 
 const props = defineProps({
   item: { type: Object, required: true },
+  deletable: { type: Boolean, default: false },
 })
+
+const emit = defineEmits(['delete'])
 
 const copied = ref(false)
 const signedUrl = ref(null)
@@ -85,6 +88,9 @@ async function copyUrl() {
 
       <button v-if="item.result" class="copy" :disabled="copied" :title="copyTarget" @click="copyUrl">
         {{ copied ? '已复制 ✓' : '复制链接' }}
+      </button>
+      <button v-if="deletable && item.result" class="copy danger" title="删除图片" @click="emit('delete')">
+        删除
       </button>
     </template>
   </div>
