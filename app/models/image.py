@@ -26,6 +26,10 @@ class Image(Base):
     content_type: Mapped[str] = mapped_column(String(128), nullable=False)
     size: Mapped[int] = mapped_column(BigInteger, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    media_kind: Mapped[str] = mapped_column(
+        String(16), default="image", server_default="image", nullable=False,
+        comment="媒体类型：image 图片、video 视频",
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     # Ownership & team space: an image belongs to a user, optionally in a team.

@@ -1,20 +1,23 @@
 services:
   oss:
     build: .
-    # 发布到仓库时改成你自己的镜像名，例如 ghcr.io/你的用户名/oss:latest
+    # 发布到仓库时替换为自己的镜像名，例如 ghcr.io/your-name/oss:latest。
     image: oss:latest
     container_name: oss
     restart: unless-stopped
-    # 网络模式：NETWORK_MODE=bridge（默认，端口映射）或 host（直接使用宿主机网络）。
-    # host 模式下 compose 会丢弃 ports 映射（启动时有提示），容器直接监听宿主机的 PORT。
+    # bridge（默认）使用端口映射；host 直接监听宿主机网络（仅 Linux）。
     network_mode: "${NETWORK_MODE:-bridge}"
     ports:
       - "${PORT:-8080}:${PORT:-8080}"
     environment:
       OSS_DATA_DIR: /data
-      # 容器内监听端口（跟随 PORT，host 网络模式下即宿主机端口）
       OSS_APP_PORT: "${PORT:-8080}"
       OSS_MAX_UPLOAD_SIZE_MB: "${MAX_UPLOAD_SIZE_MB:-10}"
+      OSS_MAX_VIDEO_SIZE_MB: "${MAX_VIDEO_SIZE_MB:-2048}"
+      OSS_VIDEO_CHUNK_SIZE_MB: "${VIDEO_CHUNK_SIZE_MB:-8}"
+      OSS_VIDEO_UPLOAD_TTL_HOURS: "${VIDEO_UPLOAD_TTL_HOURS:-168}"
+      OSS_MAX_ACTIVE_VIDEO_UPLOADS: "${MAX_ACTIVE_VIDEO_UPLOADS:-3}"
+      OSS_MIN_FREE_SPACE_MB: "${MIN_FREE_SPACE_MB:-1024}"
       OSS_SHORT_CODE_LENGTH: "${SHORT_CODE_LENGTH:-10}"
       OSS_PUBLIC_URL: "${PUBLIC_URL:-}"
       OSS_ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"
@@ -24,5 +27,5 @@ services:
       OSS_DEFAULT_VISIBILITY: "${DEFAULT_VISIBILITY:-private}"
       OSS_SIGNED_URL_TTL_SECONDS: "${SIGNED_URL_TTL_SECONDS:-86400}"
     volumes:
-      # 图片文件和 SQLite 数据库都持久化在这个目录
+      # SQLite、正式媒体文件和 /data/uploads 断点续传临时文件统一持久化。
       - ./data:/data

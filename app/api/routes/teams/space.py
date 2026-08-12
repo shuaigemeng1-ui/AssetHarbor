@@ -32,7 +32,7 @@ def team_images(
     if get_membership(db, team.id, current_user.id) is None and current_user.role != "admin":
         raise HTTPException(status_code=404, detail="team not found")
 
-    filters = [Image.team_id == team.id]
+    filters = [Image.team_id == team.id, Image.media_kind == "image"]
     if q:
         like = f"%{q}%"
         filters.append(

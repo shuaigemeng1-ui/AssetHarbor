@@ -18,6 +18,19 @@ class Settings(BaseSettings):
     # --- upload limits -----------------------------------------------------
     max_upload_size_mb: int = 10
 
+    # Video uploads use a resumable, fixed-size chunk protocol.  The defaults
+    # deliberately keep individual reverse-proxy requests small while still
+    # allowing large source files to be stored without buffering them in RAM.
+    max_video_size_mb: int = 2048
+    video_chunk_size_mb: int = 8
+    video_upload_ttl_hours: int = 24 * 7
+    max_active_video_uploads: int = 3
+    min_free_space_mb: int = 1024
+    video_cleanup_interval_seconds: int = 60 * 60
+
+    # SQLite lock wait used by both SQLAlchemy and the connection PRAGMA.
+    sqlite_busy_timeout_ms: int = 5000
+
     # --- short codes -------------------------------------------------------
     # Length (in base62 characters) of the random code used in image URLs.
     short_code_length: int = 10
@@ -58,6 +71,22 @@ class Settings(BaseSettings):
     @property
     def files_dir(self) -> Path:
         return self.data_dir / "files"
+
+    @property
+    def uploads_dir(self) -> Path:
+        return self.data_dir / "uploads"
+
+    @property
+    def max_video_size_bytes(self) -> int:
+        return self.max_video_size_mb * 1024 * 1024
+
+    @property
+    def video_chunk_size_bytes(self) -> int:
+        return self.video_chunk_size_mb * 1024 * 1024
+
+    @property
+    def min_free_space_bytes(self) -> int:
+        return self.min_free_space_mb * 1024 * 1024
 
 
 settings = Settings()

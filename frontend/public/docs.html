@@ -7,10 +7,10 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🖼️</text></svg>">
 <style>
   :root {
-    --bg: #0f1115; --panel: #171a21; --border: #262b36;
-    --text: #e6e9ef; --muted: #8b93a3; --accent: #4f8cff;
-    --code-bg: #0d1117; --green: #3fb950; --blue: #58a6ff;
-    --orange: #d29922; --red: #f85149;
+    --bg: #f5f7fb; --panel: #ffffff; --border: #dfe5ef;
+    --text: #172033; --muted: #657089; --accent: #2563eb;
+    --code-bg: #111827; --green: #16803d; --blue: #2563eb;
+    --orange: #a76100; --red: #c73535;
   }
   * { box-sizing: border-box; }
   body {
@@ -30,7 +30,7 @@
     background: transparent; border: none; color: var(--muted);
     padding: 7px 16px; cursor: pointer; font-size: 13px;
   }
-  .lang-switch button.active { background: #1a2233; color: var(--accent); }
+  .lang-switch button.active { background: #e8efff; color: var(--accent); }
 
   nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0; }
   nav a {
@@ -55,6 +55,7 @@
   }
   .m-get { color: var(--green); border: 1px solid var(--green); }
   .m-post { color: var(--blue); border: 1px solid var(--blue); }
+  .m-put { color: #7c3aed; border: 1px solid #7c3aed; }
   .m-patch { color: var(--orange); border: 1px solid var(--orange); }
   .m-delete { color: var(--red); border: 1px solid var(--red); }
 
@@ -65,7 +66,7 @@
     background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px;
     padding: 14px; overflow-x: auto; margin: 0;
   }
-  .code-block code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.6; }
+  .code-block code { color: #e6edf7; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.6; }
   .copy-btn {
     position: absolute; top: 8px; right: 8px;
     border: 1px solid var(--border); background: transparent; color: var(--muted);
@@ -74,7 +75,7 @@
   .copy-btn:hover { color: var(--accent); border-color: var(--accent); }
 
   .note {
-    background: #1a2233; border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    background: #edf3ff; border: 1px solid var(--border); border-left: 3px solid var(--accent);
     border-radius: 8px; padding: 10px 14px; font-size: 13px; color: var(--muted); margin: 12px 0;
   }
   footer { margin-top: 48px; color: var(--muted); font-size: 13px; }
@@ -100,6 +101,7 @@
     <a href="#keys" data-zh="API Key" data-en="API Keys"></a>
     <a href="#upload" data-zh="上传" data-en="Upload"></a>
     <a href="#images" data-zh="图片" data-en="Images"></a>
+    <a href="#videos" data-zh="视频" data-en="Videos"></a>
     <a href="#teams" data-zh="团队" data-en="Teams"></a>
     <a href="#admin" data-zh="管理员" data-en="Admin"></a>
     <a href="#other" data-zh="其他" data-en="Other"></a>
@@ -189,6 +191,41 @@ curl "{{BASE}}/api/images/Ab3xYz9Kq1/link?ttl=86400" -H "Authorization: Bearer $
 # 搜索图片
 curl "{{BASE}}/api/images?q=%E5%B0%81%E9%9D%A2&amp;limit=20" -H "Authorization: Bearer $TOKEN"</code></pre></div>
 
+  <!-- ============ Videos ============ -->
+  <h2 id="videos">🎬 <span data-zh="视频与断点续传" data-en="Videos &amp; resumable uploads"></span></h2>
+  <p class="desc" data-zh="支持 MP4/M4V、MOV、WebM、MKV、AVI、MPEG/MPG/TS、OGV、3GP、FLV、WMV。服务端按容器头识别格式，不信任扩展名或客户端 MIME。视频保持原文件，不转码；浏览器不支持的编码可直接下载。" data-en="Supports MP4/M4V, MOV, WebM, MKV, AVI, MPEG/MPG/TS, OGV, 3GP, FLV and WMV. Container headers are inspected instead of trusting the extension or client MIME. Videos are stored as-is with no transcoding; unsupported codecs remain downloadable."></p>
+  <table>
+    <thead><tr><th data-zh="方法" data-en="Method"></th><th data-zh="路径" data-en="Path"></th><th data-zh="说明" data-en="Description"></th></tr></thead>
+    <tbody>
+      <tr><td><span class="method m-post">POST</span></td><td class="path">/api/video-uploads</td><td data-zh="初始化 {filename,size,name?,visibility?,team_id?,fingerprint}" data-en="Initialize {filename,size,name?,visibility?,team_id?,fingerprint}"></td></tr>
+      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/video-uploads/{upload_id}</td><td data-zh="查询状态、已上传分片和过期时间" data-en="Status, uploaded parts and expiry"></td></tr>
+      <tr><td><span class="method m-put">PUT</span></td><td class="path">/api/video-uploads/{upload_id}/parts/{part_number}</td><td data-zh="写入原始分片，要求 Content-Range 与 X-Chunk-SHA256" data-en="Write raw part; requires Content-Range and X-Chunk-SHA256"></td></tr>
+      <tr><td><span class="method m-post">POST</span></td><td class="path">/api/video-uploads/{upload_id}/complete</td><td data-zh="校验完整性并原子发布；重复完成返回同一视频" data-en="Verify and atomically publish; repeated completion returns the same video"></td></tr>
+      <tr><td><span class="method m-delete">DELETE</span></td><td class="path">/api/video-uploads/{upload_id}</td><td data-zh="取消未完成会话" data-en="Cancel an unfinished session"></td></tr>
+      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/videos?limit&amp;offset&amp;q</td><td data-zh="个人视频列表" data-en="Personal video list"></td></tr>
+      <tr><td><span class="method m-patch">PATCH</span></td><td class="path">/api/videos/{code}</td><td data-zh="修改名称/可见性" data-en="Update name/visibility"></td></tr>
+      <tr><td><span class="method m-delete">DELETE</span></td><td class="path">/api/videos/{code}</td><td data-zh="删除正式视频" data-en="Delete stored video"></td></tr>
+      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/videos/{code}/link?ttl=86400</td><td data-zh="生成私密视频签名链接" data-en="Create a signed private-video link"></td></tr>
+      <tr><td><span class="method m-get">GET</span></td><td class="path">/v/{code}</td><td data-zh="播放/下载；支持 Range、206、416；?download=1 附件下载" data-en="Stream/download; supports Range, 206, 416; ?download=1 for attachment"></td></tr>
+    </tbody>
+  </table>
+  <p class="note" data-zh="快速指纹：对文件首/中/尾最多 1 MiB 分别计算 SHA-256，再计算 SHA-256(UTF-8(size:head:middle:tail))。分片从 0 编号，可乱序上传；相同内容重传幂等，内容冲突返回 409。默认单视频 2 GiB、分片 8 MiB、会话滑动保留 7 天、每用户 3 个未完成会话、磁盘保留 1 GiB。" data-en="Fingerprint: SHA-256 each of up to 1 MiB at the start/middle/end, then SHA-256(UTF-8(size:head:middle:tail)). Parts are zero-based and may arrive out of order; identical replay is idempotent and conflicting bytes return 409. Defaults: 2 GiB/video, 8 MiB parts, sliding 7-day session, 3 unfinished sessions/user, 1 GiB free-space reserve."></p>
+  <div class="code-block"><pre><code># 1. 初始化 / initialize
+curl -X POST {{BASE}}/api/video-uploads \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"filename":"clip.mp4","size":8388608,"name":"clip","visibility":"private","fingerprint":"&lt;64 lowercase hex&gt;"}'
+
+# 2. 上传第 0 片 / upload part 0
+curl -X PUT {{BASE}}/api/video-uploads/$UPLOAD_ID/parts/0 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Range: bytes 0-8388607/8388608" \
+  -H "X-Chunk-SHA256: &lt;part sha256&gt;" \
+  -H "Content-Type: application/octet-stream" --data-binary @part-0
+
+# 3. 以服务端状态为准续传，再完成 / reconcile status, then complete
+curl {{BASE}}/api/video-uploads/$UPLOAD_ID -H "Authorization: Bearer $TOKEN"
+curl -X POST {{BASE}}/api/video-uploads/$UPLOAD_ID/complete -H "Authorization: Bearer $TOKEN"</code></pre></div>
+
   <!-- ============ Teams ============ -->
   <h2 id="teams">🏢 <span data-zh="团队" data-en="Teams"></span></h2>
   <table>
@@ -200,8 +237,9 @@ curl "{{BASE}}/api/images?q=%E5%B0%81%E9%9D%A2&amp;limit=20" -H "Authorization: 
       <tr><td><span class="method m-post">POST</span></td><td class="path">/api/teams/{id}/members</td><td data-zh="按用户名邀请成员 {username}" data-en="Invite member {username}"></td></tr>
       <tr><td><span class="method m-patch">PATCH</span></td><td class="path">/api/teams/{id}/members/{member_id}</td><td data-zh="改角色 {role: admin|member}（仅 owner）" data-en="Change role {role: admin|member} (owner only)"></td></tr>
       <tr><td><span class="method m-delete">DELETE</span></td><td class="path">/api/teams/{id}/members/{member_id}</td><td data-zh="移除成员" data-en="Remove member"></td></tr>
-      <tr><td><span class="method m-delete">DELETE</span></td><td class="path">/api/teams/{id}</td><td data-zh="解散团队（图片回到上传者个人空间）" data-en="Disband team (images return to uploaders)"></td></tr>
+      <tr><td><span class="method m-delete">DELETE</span></td><td class="path">/api/teams/{id}</td><td data-zh="解散团队（媒体和未完成会话回到上传者个人空间）" data-en="Disband team (media and pending sessions return to uploaders)"></td></tr>
       <tr><td><span class="method m-get">GET</span></td><td class="path">/api/teams/{id}/images?q</td><td data-zh="团队空间图片（成员/管理员）" data-en="Team space images (members/admins)"></td></tr>
+      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/teams/{id}/videos?q</td><td data-zh="团队空间视频（成员/管理员）" data-en="Team space videos (members/admins)"></td></tr>
     </tbody>
   </table>
   <p class="note" data-zh="团队角色：owner（管理一切）&gt; admin（可管理成员）&gt; member（可查看/上传）。团队私密图对团队成员可见，团队外一律 404。" data-en="Team roles: owner (everything) &gt; admin (manage members) &gt; member (view/upload). Team private images are visible to members only; outsiders get 404."></p>
@@ -211,7 +249,7 @@ curl "{{BASE}}/api/images?q=%E5%B0%81%E9%9D%A2&amp;limit=20" -H "Authorization: 
   <table>
     <thead><tr><th data-zh="方法" data-en="Method"></th><th data-zh="路径" data-en="Path"></th><th data-zh="说明" data-en="Description"></th></tr></thead>
     <tbody>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/admin/stats</td><td data-zh="系统统计 {users, images, teams, storage_bytes}" data-en="System stats {users, images, teams, storage_bytes}"></td></tr>
+      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/admin/stats</td><td data-zh="统计 {users,images,videos,media_total,pending_upload_bytes,teams,storage_bytes}" data-en="Stats {users,images,videos,media_total,pending_upload_bytes,teams,storage_bytes}"></td></tr>
       <tr><td><span class="method m-get">GET</span></td><td class="path">/api/admin/teams</td><td data-zh="全部团队（含拥有者、成员数）" data-en="All teams with member counts"></td></tr>
       <tr><td><span class="method m-get">GET</span></td><td class="path">/api/users</td><td data-zh="全部用户" data-en="All users"></td></tr>
       <tr><td><span class="method m-patch">PATCH</span></td><td class="path">/api/admin/users/{id}/role</td><td data-zh="设置角色 {role: admin|user}（不能改自己）" data-en="Set role {role: admin|user} (not self)"></td></tr>
@@ -219,6 +257,7 @@ curl "{{BASE}}/api/images?q=%E5%B0%81%E9%9D%A2&amp;limit=20" -H "Authorization: 
       <tr><td><span class="method m-delete">DELETE</span></td><td class="path">/api/admin/users/{id}</td><td data-zh="删除用户及其全部数据（图片/Key/团队）" data-en="Delete user + all data (images/keys/teams)"></td></tr>
     </tbody>
   </table>
+  <p class="note" data-zh="部署要求：持久化整个 /data（含 /data/uploads）；只运行一个 Uvicorn worker。Nginx/Caddy 请求体上限必须大于分片大小，且不得移除 Range 相关请求/响应头。" data-en="Deployment: persist all of /data (including /data/uploads) and run one Uvicorn worker. The Nginx/Caddy body limit must exceed the part size, and Range-related headers must be preserved."></p>
 
   <!-- ============ Other ============ -->
   <h2 id="other">🧭 <span data-zh="其他" data-en="Other"></span></h2>

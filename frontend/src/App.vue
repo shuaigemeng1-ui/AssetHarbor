@@ -5,14 +5,23 @@ import AdminView from './components/AdminView.vue'
 import AuthView from './components/AuthView.vue'
 import GalleryView from './components/GalleryView.vue'
 import TeamsView from './components/TeamsView.vue'
+import UiFeedback from './components/UiFeedback.vue'
+import VideoView from './components/VideoView.vue'
 import { fetchMe, getToken, setToken } from './api'
+import { activeVideoUploadCount, initializeVideoUploads, resetVideoUploads } from './stores/videoUploads'
 
 const user = ref(null)
-const view = ref('gallery')
-
+const view = ref('images')
+const authLoading = ref(Boolean(getToken()))
 const isAdmin = computed(() => user.value?.role === 'admin')
 
+function startUserSession(value) {
+  user.value = value
+  if (value?.id != null) initializeVideoUploads(value.id)
+}
+
 function onUnauthorized() {
+  resetVideoUploads()
   user.value = null
 }
 
@@ -20,61 +29,71 @@ onMounted(async () => {
   window.addEventListener('oss:unauthorized', onUnauthorized)
   if (getToken()) {
     try {
-      user.value = await fetchMe()
+      startUserSession(await fetchMe())
     } catch {
-      // invalid token — api.js already cleared it
+      // api.js clears expired credentials.
     }
   }
+  authLoading.value = false
 })
 
 onBeforeUnmount(() => window.removeEventListener('oss:unauthorized', onUnauthorized))
 
-function handleAuthed(u) {
-  user.value = u
+function handleAuthed(value) {
+  startUserSession(value)
 }
 
 function logout() {
   setToken(null)
+  resetVideoUploads()
   user.value = null
+  view.value = 'images'
 }
 </script>
 
 <template>
-  <main>
-    <template v-if="!user">
-      <AuthView @authed="handleAuthed" />
-    </template>
+  <div class="app-shell">
+    <UiFeedback />
+
+    <div v-if="authLoading" class="boot-state" aria-live="polite">正在恢复登录状态…</div>
+    <AuthView v-else-if="!user" @authed="handleAuthed" />
 
     <template v-else>
-      <header>
-        <div>
-          <h1>oss<span>.</span></h1>
-          <p class="subtitle">自托管图床 · 上传即得短码链接</p>
-        </div>
+      <header class="site-header">
+        <button class="brand" aria-label="回到图片页" @click="view = 'images'">
+          <span class="brand-mark">O</span>
+          <span class="brand-copy"><strong>OSS</strong><small>自托管媒体库</small></span>
+        </button>
+
+        <nav class="tabs-nav" aria-label="主导航">
+          <button :class="{ active: view === 'images' }" @click="view = 'images'">图片</button>
+          <button :class="{ active: view === 'videos' }" @click="view = 'videos'">
+            视频 <span v-if="activeVideoUploadCount" class="nav-count">{{ activeVideoUploadCount }}</span>
+          </button>
+          <button :class="{ active: view === 'teams' }" @click="view = 'teams'">团队</button>
+          <button v-if="isAdmin" :class="{ active: view === 'admin' }" @click="view = 'admin'">管理</button>
+          <button :class="{ active: view === 'account' }" @click="view = 'account'">账户</button>
+        </nav>
+
         <div class="userbox">
-          <span class="username">{{ user.username }}</span>
-          <span class="role-badge" :class="{ admin: isAdmin }">
-            {{ isAdmin ? '管理员' : '用户' }}
-          </span>
+          <span class="user-avatar">{{ user.username.slice(0, 1).toUpperCase() }}</span>
+          <span class="user-details"><strong>{{ user.username }}</strong><small>{{ isAdmin ? '管理员' : '用户' }}</small></span>
           <button class="ghost" @click="logout">退出</button>
         </div>
       </header>
 
-      <nav class="tabs-nav">
-        <button :class="{ active: view === 'gallery' }" @click="view = 'gallery'">我的图片</button>
-        <button :class="{ active: view === 'teams' }" @click="view = 'teams'">我的团队</button>
-        <button v-if="isAdmin" :class="{ active: view === 'admin' }" @click="view = 'admin'">管理</button>
-        <button :class="{ active: view === 'account' }" @click="view = 'account'">账户</button>
-      </nav>
+      <main class="page-content">
+        <GalleryView v-if="view === 'images'" :user="user" />
+        <VideoView v-show="view === 'videos'" :user="user" />
+        <TeamsView v-if="view === 'teams'" :user="user" />
+        <AdminView v-if="view === 'admin' && isAdmin" :user="user" />
+        <AccountView v-if="view === 'account'" />
+      </main>
 
-      <GalleryView v-if="view === 'gallery'" :user="user" />
-      <TeamsView v-else-if="view === 'teams'" :user="user" />
-      <AdminView v-else-if="view === 'admin'" :user="user" />
-      <AccountView v-else-if="view === 'account'" />
-
-      <footer>
-        API 文档见 <a href="/docs">/docs</a> · 健康检查 <a href="/healthz">/healthz</a>
+      <footer class="site-footer">
+        <span>OSS · 你的私有媒体空间</span>
+        <span><a href="/docs">API 文档</a><a href="/healthz">服务状态</a></span>
       </footer>
     </template>
-  </main>
+  </div>
 </template>

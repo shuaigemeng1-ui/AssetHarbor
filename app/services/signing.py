@@ -34,6 +34,15 @@ def build_image_url(request: Request, code: str) -> str:
     return f"{base}/i/{code}"
 
 
+def build_video_url(request: Request, code: str) -> str:
+    """Return the absolute public URL for a video short code."""
+    if settings.public_url:
+        base = settings.public_url.rstrip("/")
+    else:
+        base = str(request.base_url).rstrip("/")
+    return f"{base}/v/{code}"
+
+
 def _signature(code: str, expires: int, version: int) -> str:
     """16-byte HMAC-SHA256, base64url (128-bit security, short URLs).
 
@@ -67,6 +76,20 @@ def build_signed_image_url(
     else:
         base = str(request.base_url).rstrip("/")
     return f"{base}{signed_path}", expires
+
+
+def build_signed_video_url(
+    request: Request, code: str, ttl_seconds: int | None = None, version: int = 1
+) -> tuple[str, int]:
+    """Return ``(absolute_signed_url, expires_unix_ts)`` for a video."""
+    ttl = ttl_seconds or settings.signed_url_ttl_seconds
+    expires = int(time.time()) + ttl
+    path = f"/v/{code}?expires={expires}&sig={_signature(code, expires, version)}"
+    if settings.public_url:
+        base = settings.public_url.rstrip("/")
+    else:
+        base = str(request.base_url).rstrip("/")
+    return f"{base}{path}", expires
 
 
 def verify_image_signature(code: str, expires: str, sig: str, version: int = 1) -> bool:

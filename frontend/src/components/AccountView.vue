@@ -8,6 +8,7 @@ import {
   rotateApiKey,
 } from '../api'
 import { copyText } from '../utils/clipboard'
+import { confirmAction, toast } from '../stores/feedback'
 
 const oldPassword = ref('')
 const newPassword = ref('')
@@ -65,22 +66,36 @@ async function doCreateKey() {
 }
 
 async function doRotate(k) {
-  if (!window.confirm(`重新生成 Key「${k.name || k.key_prefix}」？旧 Key 将立即失效。`)) return
+  const ok = await confirmAction({
+    title: '重新生成 API Key',
+    message: `重新生成「${k.name || k.key_prefix}」？旧 Key 将立即失效。`,
+    confirmText: '重新生成',
+    danger: true,
+  })
+  if (!ok) return
   newKey.value = null
   keyError.value = ''
   try {
     newKey.value = await rotateApiKey(k.id)
     await loadKeys()
+    toast('API Key 已重新生成', 'success')
   } catch (err) {
     keyError.value = err.message
   }
 }
 
 async function doDeleteKey(k) {
-  if (!window.confirm(`撤销 Key「${k.name || k.key_prefix}」？使用它的脚本将立即失效。`)) return
+  const ok = await confirmAction({
+    title: '撤销 API Key',
+    message: `撤销「${k.name || k.key_prefix}」？使用它的脚本将立即失效。`,
+    confirmText: '撤销',
+    danger: true,
+  })
+  if (!ok) return
   try {
     await deleteApiKey(k.id)
     await loadKeys()
+    toast('API Key 已撤销', 'success')
   } catch (err) {
     keyError.value = err.message
   }
@@ -92,7 +107,7 @@ async function copyKey() {
     newKey.value.copied = true
     setTimeout(() => (newKey.value.copied = false), 1500)
   } else {
-    window.alert('复制失败，请手动选中复制')
+    toast('复制失败，请手动选中复制', 'error')
   }
 }
 </script>

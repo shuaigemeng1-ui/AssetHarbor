@@ -1,4 +1,4 @@
-# oss · Self-hosted Image Hosting
+# oss · Self-hosted Image & Video Hosting
 
 **English** | [简体中文](./README.zh-CN.md)
 
@@ -7,31 +7,33 @@
 [![Vue](https://img.shields.io/badge/Vue-3.x-42b883.svg)]()
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ed.svg)]()
 
-A self-hosted image hosting service that deploys with a single command. Upload an image, get a short-code URL instantly. Built with **FastAPI + Vue 3 + SQLite**, featuring user isolation, role-based access control (RBAC), teams & team spaces, an admin dashboard, API-key auth, and expiring signed links for private images.
+A self-hosted media service for images and original video files. Videos use resumable, out-of-order chunk uploads and HTTP Range playback; images keep their simple direct-upload flow. Built with **FastAPI + Vue 3 + SQLite** with user isolation, RBAC, teams, API-key auth, and expiring signed links.
 
-> **Status: v0.5** — upload + short URLs + auth/RBAC + user isolation + teams & team spaces + admin interface + API keys & password management + signed links/rate limiting. Docker deployment ready.
+> Videos are stored as-is: no FFmpeg, transcoding, persistent thumbnails, or HLS. Browser playback depends on the container/codec; every stored video remains downloadable.
 
 ---
 
 ## ✨ Features
 
 - 🚀 **One-command deploy**: `docker compose up -d`; port, admin password, upload limits and more are configurable via environment variables
-- 🔗 **Short-code URLs**: uploads return `https://your.domain/i/Ab3xYz9Kq1`, cryptographically random and unguessable
+- 🔗 **Short-code URLs**: images use `/i/{code}` and videos use `/v/{code}`; codes are cryptographically random and unguessable
 - 🖼️ **Multi-format**: jpg / png / gif / webp / svg / bmp / ico / avif / tiff, with **magic-byte sniffing** — filenames are never trusted
+- 🎬 **Original video storage**: MP4/M4V, MOV, WebM, MKV, AVI, MPEG/MPG/TS, OGV, 3GP, FLV and WMV, identified from container headers rather than filename/MIME
+- ⏯️ **Resumable upload & playback**: 8 MiB chunks, pause/retry/resume after refresh, integrity hashes, and RFC Range responses for seeking or partial downloads
 - 🔐 **Auth & RBAC**: JWT login, `admin`/`user` roles, admin bootstrapped from an env variable, configurable registration policy (open / invite / closed)
-- 🔑 **API keys**: for scripts & CLIs — upload / download / delete images; **plaintext shown exactly once** (DB stores only SHA-256 hashes), with **rotation** (old key dies instantly) and revocation
+- 🔑 **API keys**: scripts and CLIs can use both image and video APIs; **plaintext is shown exactly once** (DB stores only SHA-256 hashes), with rotation and revocation
 - 🔏 **Password management**: self-service password change (verifies the old password); admins can reset any user's password
-- 👥 **User isolation**: everyone sees only their own images; images are `public` or `private`, and private ones are invisible to everyone but the owner and admins
-- 🏢 **Teams & team spaces**: create teams, invite members by username, member roles (owner / admin / member), a dedicated team image space, private images shared within the team
-- 🛠️ **Admin dashboard**: system stats (users / images / teams / storage), user role & password management, team overview & disbanding, full image management
-- 🗑️ **Image deletion**: owners, admins and team managers can delete images
-- ⏳ **Signed links for private images**: private images are only reachable through **time-limited signed links** (default 24h, HMAC anti-tamper/anti-forgery/anti-replay) or by the owner/team/admin — guessing short codes or replaying old links gets nothing
+- 👥 **User isolation**: everyone sees only their own media; images and videos can both be `public` or `private`
+- 🏢 **Teams & team spaces**: create teams, invite members, assign roles, and manage separate image/video tabs with private media shared inside the team
+- 🛠️ **Admin dashboard**: users, images, videos, pending uploads, teams and storage statistics, plus user and team management
+- 🗑️ **Media deletion**: owners, admins and team managers can delete media they manage
+- ⏳ **Signed links for private media**: both private images and videos support expiring HMAC-signed links; guessing a short code does not disclose the resource
 - 🛡️ **Rate limiting**: login throttled per IP + per account (anti brute-force), image fetch per IP (anti enumeration), upload per user
-- 🏷️ **Upload naming**: give images custom names (Chinese supported); falls back to the filename
+- 🏷️ **Upload naming**: give images and videos custom display names (Chinese supported); falls back to the filename
 - 🔍 **Search**: real-time search by name / filename / short code (personal space and team spaces)
 - 🔒 **Secure by default**: non-root container, SVG served as attachment (stored-XSS protection), bcrypt password hashing, upload size limits
 - 📦 **API-first**: complete REST API (PicGo / ShareX / uPic compatibility planned)
-- 🖥️ **Vue 3 SPA**: multi-view UI (My Images / My Teams / Admin / Account), delivered in the same container via multi-stage build
+- 🖥️ **Vue 3 SPA**: responsive light UI (Images / Videos / Teams / Admin / Account), delivered in the same container via multi-stage build
 
 ## 📚 Table of Contents
 
@@ -71,9 +73,7 @@ docker compose up -d
 
 > Compose prints "Published ports are discarded when using host network mode" — that's expected in host mode.
 
-Images and the SQLite database persist in `./data` — container rebuilds never lose data.
-
-> **Upgrade note (v0.2+)**: this version added user/visibility columns. If you upgrade from v0.1 with existing data, back up and clear `data/` (`mv data data.bak`) first.
+Images, videos, unfinished parts, and SQLite persist under `./data`. Schema upgrades are idempotent, but back up this directory before upgrading.
 
 ### One-liner upload
 
@@ -95,6 +95,11 @@ curl -X POST http://<server-ip>:8080/api/upload \
 | `PORT` | `8080` | Service port. In `bridge` mode: the host-mapped port; in `host` mode: the port the container listens on directly |
 | `NETWORK_MODE` | `bridge` | Network mode: `bridge` (default, port mapping) or `host` (bind directly to the host network) |
 | `MAX_UPLOAD_SIZE_MB` | `10` | Per-file upload size limit (MB) |
+| `MAX_VIDEO_SIZE_MB` | `2048` | Maximum original video size (MiB) |
+| `VIDEO_CHUNK_SIZE_MB` | `8` | Video chunk size (MiB); reverse-proxy body limit must be larger |
+| `VIDEO_UPLOAD_TTL_HOURS` | `168` | Sliding lifetime of an unfinished video session |
+| `MAX_ACTIVE_VIDEO_UPLOADS` | `3` | Maximum unfinished video sessions per user |
+| `MIN_FREE_SPACE_MB` | `1024` | Reserved free disk space; initialization/part writes fail with 507 below it |
 | `SHORT_CODE_LENGTH` | `10` | Short-code length (base62 chars; longer = harder to enumerate) |
 | `PUBLIC_URL` | *(empty)* | Base prefix for returned links, e.g. `https://img.example.com`; leave empty to auto-derive from the request |
 | `ADMIN_PASSWORD` | *(empty)* | Creates/refreshes the `admin` account on startup; empty = no admin bootstrapped |
@@ -102,7 +107,7 @@ curl -X POST http://<server-ip>:8080/api/upload \
 | `INVITE_CODE` | *(empty)* | Invite code required when `ALLOW_REGISTRATION=invite` |
 | `JWT_SECRET` | *(empty)* | JWT signing secret; empty = ephemeral (all sessions reset on restart). Use `openssl rand -hex 32` |
 | `DEFAULT_VISIBILITY` | `private` | Default visibility for new uploads: `private` (only you/team/admins + signed links) or `public` (anyone with the link) |
-| `SIGNED_URL_TTL_SECONDS` | `86400` | TTL of expiring signed links for private images (seconds) |
+| `SIGNED_URL_TTL_SECONDS` | `86400` | TTL of expiring signed links for private media (seconds) |
 
 ## 🔌 API Overview
 
@@ -129,6 +134,36 @@ All endpoints except register / login / public image fetch / health require `Aut
 | PATCH | `/api/images/{code}` | update `name` / `visibility` (owner/admin/team-manager) |
 | DELETE | `/api/images/{code}` | delete (owner/admin/team-manager) |
 | GET | `/api/images/{code}/link?ttl` | expiring signed link (owner/admin/team-member) |
+
+### Videos
+
+Compute SHA-256 for up to 1 MiB at the start, middle, and end, then set `fingerprint` to `SHA256(UTF-8(size:first_sha256:middle_sha256:last_sha256))`. It prevents selecting a different local file when resuming; each chunk additionally has its own SHA-256.
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/video-uploads` | initialize `{filename,size,name?,visibility?,team_id?,fingerprint}`; returns `upload_id`, `chunk_size`, `total_parts`, `uploaded_parts`, `expires_at` |
+| GET | `/api/video-uploads/{upload_id}` | authoritative status and uploaded part numbers |
+| PUT | `/api/video-uploads/{upload_id}/parts/{part_number}` | raw bytes with `Content-Range` and `X-Chunk-SHA256`; identical replay is idempotent |
+| POST | `/api/video-uploads/{upload_id}/complete` | verify all parts, fingerprint and real container type, then atomically publish |
+| DELETE | `/api/video-uploads/{upload_id}` | cancel an unfinished session and remove its temporary data |
+| GET | `/api/videos?limit&offset&q` | list personal videos (admins see all) |
+| PATCH | `/api/videos/{code}` | update `name` / `visibility` |
+| DELETE | `/api/videos/{code}` | delete the stored video |
+| GET | `/api/videos/{code}/link?ttl` | create a signed link |
+| GET | `/v/{code}` | stream/download, including `Range`, 206 and 416; add `?download=1` for attachment |
+| GET | `/api/teams/{id}/videos?q` | team-space videos |
+
+Example part upload (for an 8-byte file split into a 4-byte first part):
+
+```bash
+curl -X PUT "$BASE/api/video-uploads/$UPLOAD_ID/parts/0" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Range: bytes 0-3/8" \
+  -H "X-Chunk-SHA256: $(sha256sum part-0 | cut -d' ' -f1)" \
+  -H "Content-Type: application/octet-stream" --data-binary @part-0
+```
+
+Part numbers are zero-based and may arrive out of order. A successful part refreshes the seven-day expiry. Completion returns the final video record. Missing parts, a mismatched hash, or replaying one part number with different bytes returns 409. A missing/malformed `Content-Range` returns 400; a range that does not match the requested part returns 416. Another user's upload ID is not disclosed.
 
 ### API keys
 
@@ -157,14 +192,15 @@ curl -X DELETE "http://<server-ip>:8080/api/images/<code>" -H "Authorization: Be
 | POST | `/api/teams/{id}/members` | invite member `{username}` |
 | PATCH | `/api/teams/{id}/members/{member_id}` | change role `{role: admin\|member}` (owner only) |
 | DELETE | `/api/teams/{id}/members/{member_id}` | remove member |
-| DELETE | `/api/teams/{id}` | disband team (images return to their uploaders) |
+| DELETE | `/api/teams/{id}` | disband team (media and pending sessions return to their uploaders) |
 | GET | `/api/teams/{id}/images?q` | team space images (members/admins) |
+| GET | `/api/teams/{id}/videos?q` | team space videos (members/admins) |
 
 ### Admin (global `admin` role)
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/admin/stats` | `{users, images, teams, storage_bytes}` |
+| GET | `/api/admin/stats` | `{users,images,videos,media_total,pending_upload_bytes,teams,storage_bytes}` |
 | GET | `/api/admin/teams` | all teams with member counts |
 | GET | `/api/users` | all users |
 | PATCH | `/api/admin/users/{id}/role` | set role `{role: admin\|user}` (cannot change self) |
@@ -178,10 +214,10 @@ Backend (data lands in `./data`):
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
-uvicorn app.main:app --reload     # http://localhost:8080
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-Frontend (Vite HMR, proxied to the backend):
+Frontend (Vite HMR, proxied to `http://localhost:8000`; override with `VITE_API_TARGET`):
 
 ```bash
 cd frontend && npm install && npm run dev   # http://localhost:5173
@@ -201,6 +237,13 @@ pytest
 ```
 
 > Visiting `/` before the frontend is built returns a 404 hint (the Docker image ships with the built frontend; only bare-backend local runs are affected).
+
+### Reverse proxy and deployment notes
+
+- Keep exactly one Uvicorn worker. SQLite and incomplete upload files are local; multi-instance/shared-object-storage deployment is outside this release.
+- Persist all of `/data`, including `/data/uploads`. The entrypoint initializes ownership once and then avoids recursively changing a large volume on every restart.
+- For Nginx, set `client_max_body_size` above `VIDEO_CHUNK_SIZE_MB` (for the default use at least `9m`) and do not strip `Range`, `If-Range`, `Content-Range`, or `Accept-Ranges`. Apply the equivalent request-body setting in Caddy.
+- The dependency floor `starlette>=0.49.1` includes the upstream fix for quadratic `Range` parsing. Keep dependencies updated when exposing `/v` publicly.
 
 ## 📁 Project Structure
 

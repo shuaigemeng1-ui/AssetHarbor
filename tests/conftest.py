@@ -7,6 +7,7 @@ functions live here too and are imported by the domain test modules
 """
 
 import itertools
+import hashlib
 import os
 import shutil
 import sys
@@ -30,6 +31,13 @@ os.environ["OSS_LOGIN_RATE_LIMIT_PER_MINUTE"] = "100000"
 os.environ["OSS_LOGIN_RATE_LIMIT_PER_USERNAME"] = "100000"
 os.environ["OSS_IMAGES_RATE_LIMIT_PER_MINUTE"] = "100000"
 os.environ["OSS_UPLOAD_RATE_LIMIT_PER_MINUTE"] = "100000"
+# Keep resumable-video integration tests small while exercising the exact same
+# protocol used by the 2 GiB / 8 MiB production defaults.
+os.environ["OSS_MAX_VIDEO_SIZE_MB"] = "4"
+os.environ["OSS_VIDEO_CHUNK_SIZE_MB"] = "1"
+os.environ["OSS_VIDEO_UPLOAD_TTL_HOURS"] = "168"
+os.environ["OSS_MAX_ACTIVE_VIDEO_UPLOADS"] = "100"
+os.environ["OSS_MIN_FREE_SPACE_MB"] = "0"
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -44,6 +52,7 @@ from app.main import app  # noqa: E402
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 FAKE_PNG = PNG_MAGIC + b"\x00" * 64
 SVG = b'<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>'
+MP4_HEADER = b"\x00\x00\x00\x18ftypisom\x00\x00\x00\x00mp41mp42"
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -97,6 +106,65 @@ def signed_link(client, token, code, ttl=None):
 def url_path(url):
     """Extract the path+query from an absolute URL: /i/CODE?expires=..&sig=.."""
     return url.split("://", 1)[-1].split("/", 1)[-1]
+
+
+def video_fingerprint(data):
+    """Browser-compatible quick fingerprint used by resumable uploads."""
+    sample_size = 1024 * 1024
+    size = len(data)
+    offsets = (0, max(0, size // 2 - sample_size // 2), max(0, size - sample_size))
+    hashes = [
+        hashlib.sha256(data[offset : offset + min(sample_size, size - offset)]).hexdigest()
+        for offset in offsets
+    ]
+    return hashlib.sha256(f"{size}:{hashes[0]}:{hashes[1]}:{hashes[2]}".encode()).hexdigest()
+
+
+def init_video(client, token, data, filename="clip.mp4", **overrides):
+    payload = {
+        "filename": filename,
+        "size": len(data),
+        "name": filename,
+        "visibility": "public",
+        "team_id": None,
+        "fingerprint": video_fingerprint(data),
+    }
+    payload.update(overrides)
+    return client.post("/api/video-uploads", headers=auth(token), json=payload)
+
+
+def put_video_part(client, token, upload_id, part_number, data, start, total, **headers):
+    digest = hashlib.sha256(data).hexdigest()
+    request_headers = {
+        **auth(token),
+        "Content-Type": "application/octet-stream",
+        "Content-Range": f"bytes {start}-{start + len(data) - 1}/{total}",
+        "X-Chunk-SHA256": digest,
+        **headers,
+    }
+    return client.put(
+        f"/api/video-uploads/{upload_id}/parts/{part_number}",
+        headers=request_headers,
+        content=data,
+    )
+
+
+def upload_video(client, token, data=None, **overrides):
+    data = data or (MP4_HEADER + b"video-test-payload")
+    initialized = init_video(client, token, data, **overrides)
+    assert initialized.status_code == 201, initialized.text
+    info = initialized.json()
+    chunk_size = info["chunk_size"]
+    for number, start in enumerate(range(0, len(data), chunk_size)):
+        response = put_video_part(
+            client, token, info["upload_id"], number, data[start : start + chunk_size], start, len(data)
+        )
+        assert response.status_code == 200, response.text
+    completed = client.post(
+        f"/api/video-uploads/{info['upload_id']}/complete", headers=auth(token)
+    )
+    assert completed.status_code == 200, completed.text
+    return info, completed.json()
 
 
 # ---------------------------------------------------------------------------

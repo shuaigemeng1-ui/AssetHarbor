@@ -1,7 +1,9 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { getSignedLink } from '../api'
+import { toast } from '../stores/feedback'
 import { copyText } from '../utils/clipboard'
+import { formatBytes } from '../utils/format'
 
 const props = defineProps({
   item: { type: Object, required: true },
@@ -9,83 +11,88 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['delete', 'toggle-visibility'])
-
 const copied = ref(false)
 const signedUrl = ref(null)
 const linkFailed = ref(false)
+const localUrl = ref(null)
 
-const isPrivate = computed(() => props.item.result?.visibility === 'private')
+const result = computed(() => props.item.result)
+const isPrivate = computed(() => result.value?.visibility === 'private')
 
-// 私密图：<img> 标签无法携带 Authorization 头，必须通过过期签名链接预览；
-// 链接由 /api/images/{code}/link 生成，默认 24h 有效。
-onMounted(async () => {
-  if (isPrivate.value && props.item.result) {
-    try {
-      signedUrl.value = (await getSignedLink(props.item.result.code)).url
-    } catch {
-      linkFailed.value = true
-    }
+watch(() => props.item.file, file => {
+  if (localUrl.value) URL.revokeObjectURL(localUrl.value)
+  localUrl.value = file?.type?.startsWith('image/') ? URL.createObjectURL(file) : null
+}, { immediate: true })
+
+watch(() => [result.value?.code, result.value?.visibility], async () => {
+  signedUrl.value = null
+  linkFailed.value = false
+  if (!result.value || !isPrivate.value) return
+  try {
+    signedUrl.value = (await getSignedLink(result.value.code)).url
+  } catch {
+    linkFailed.value = true
   }
+}, { immediate: true })
+
+onBeforeUnmount(() => {
+  if (localUrl.value) URL.revokeObjectURL(localUrl.value)
 })
 
 const previewUrl = computed(() => {
-  if (isPrivate.value) return signedUrl.value || null
-  return props.item.result?.url ?? null
+  if (!result.value) return localUrl.value
+  return isPrivate.value ? signedUrl.value : result.value.url
 })
 
 const copyTarget = computed(() => {
-  if (!props.item.result) return ''
-  return isPrivate.value ? signedUrl.value || props.item.result.url : props.item.result.url
-})
-
-const infoText = computed(() => {
-  if (props.item.status === 'uploading') return '上传中…'
-  const r = props.item.result
-  if (!r) return ''
-  const parts = []
-  if (r.name) parts.push(r.name)
-  parts.push(`${(r.size / 1024).toFixed(1)} KB`)
-  if (r.visibility === 'private') parts.push('🔒 私密')
-  parts.push(r.content_type)
-  parts.push(r.code)
-  if (r.owner_username) parts.push(`@${r.owner_username}`)
-  return parts.join(' · ')
+  if (!result.value) return ''
+  return isPrivate.value ? signedUrl.value || result.value.url : result.value.url
 })
 
 async function copyUrl() {
-  await copyText(copyTarget.value)
+  const ok = await copyText(copyTarget.value)
+  if (!ok) {
+    toast('复制失败，请手动复制链接', 'error')
+    return
+  }
   copied.value = true
-  setTimeout(() => (copied.value = false), 1200)
+  toast(isPrivate.value ? '限时签名链接已复制' : '图片链接已复制', 'success')
+  window.setTimeout(() => (copied.value = false), 1200)
 }
 </script>
 
 <template>
-  <div class="row">
-    <template v-if="item.status === 'error'">
-      <div class="error-box">❌ {{ item.file.name }}：{{ item.error }}</div>
-    </template>
+  <article class="media-card image-card" :class="{ pending: item.status === 'uploading' }">
+    <div class="media-preview image-preview">
+      <img v-if="previewUrl" :src="previewUrl" :alt="result?.name || result?.original_filename || item.file?.name || '图片预览'" referrerpolicy="no-referrer" />
+      <div v-else class="preview-placeholder">
+        <span>{{ item.status === 'error' ? '!' : linkFailed ? '🔒' : '…' }}</span>
+        <small>{{ item.status === 'error' ? '上传失败' : linkFailed ? '预览不可用' : '正在处理' }}</small>
+      </div>
+      <span v-if="result" class="visibility-pill" :class="result.visibility">
+        {{ result.visibility === 'private' ? '私密' : '公开' }}
+      </span>
+    </div>
 
-    <template v-else>
-      <img v-if="previewUrl" :src="previewUrl" class="thumb" alt="" referrerpolicy="no-referrer" />
-      <div v-else class="thumb placeholder" :title="linkFailed ? '无法生成预览链接' : ''">
-        {{ linkFailed ? '🔒' : '⏳' }}
+    <div class="media-card-body">
+      <div class="media-card-heading">
+        <div>
+          <h3>{{ result?.name || result?.original_filename || item.file?.name || '未命名图片' }}</h3>
+          <p v-if="result">{{ formatBytes(result.size) }} · {{ result.content_type }} · {{ result.code }}</p>
+          <p v-else-if="item.status === 'uploading'">正在上传…</p>
+          <p v-else class="error-text">{{ item.error }}</p>
+        </div>
       </div>
 
-      <div class="meta">
-        <span class="url">{{ item.result?.url || '上传中…' }}</span>
-        <span class="info">{{ infoText }}</span>
-        <span v-if="isPrivate && signedUrl" class="info link-hint">复制的是限时签名链接</span>
+      <div v-if="result" class="card-actions">
+        <button class="ghost" :disabled="copied || (isPrivate && !signedUrl)" @click="copyUrl">
+          {{ copied ? '已复制' : '复制链接' }}
+        </button>
+        <button v-if="deletable" class="ghost" @click="emit('toggle-visibility')">
+          {{ result.visibility === 'private' ? '设为公开' : '设为私密' }}
+        </button>
+        <button v-if="deletable" class="ghost danger" @click="emit('delete')">删除</button>
       </div>
-
-      <button v-if="item.result" class="copy" :disabled="copied" :title="copyTarget" @click="copyUrl">
-        {{ copied ? '已复制 ✓' : '复制链接' }}
-      </button>
-      <button v-if="deletable && item.result" class="copy" :title="'切换公开/私密'" @click="emit('toggle-visibility')">
-        {{ item.result.visibility === 'private' ? '设为公开' : '设为私密' }}
-      </button>
-      <button v-if="deletable && item.result" class="copy danger" title="删除图片" @click="emit('delete')">
-        删除
-      </button>
-    </template>
-  </div>
+    </div>
+  </article>
 </template>

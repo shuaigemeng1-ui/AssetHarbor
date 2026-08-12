@@ -32,7 +32,7 @@ def list_images(
     q: str = Query("", max_length=100, description="Search name / filename / code"),
     db: Session = Depends(get_db),
 ) -> ImageListResponse:
-    filters = []
+    filters = [Image.media_kind == "image"]
     if current_user.role != "admin":
         filters.append(Image.owner_id == current_user.id)
         filters.append(Image.team_id.is_(None))  # team images live in the team space
@@ -86,7 +86,9 @@ def delete_image_endpoint(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
-    image = db.execute(select(Image).where(Image.code == code)).scalar_one_or_none()
+    image = db.execute(
+        select(Image).where(Image.code == code, Image.media_kind == "image")
+    ).scalar_one_or_none()
     if image is None:
         raise HTTPException(status_code=404, detail="image not found")
     if not can_manage_image(db, current_user, image):
@@ -106,7 +108,9 @@ def update_image_endpoint(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ImageInfo:
-    image = db.execute(select(Image).where(Image.code == code)).scalar_one_or_none()
+    image = db.execute(
+        select(Image).where(Image.code == code, Image.media_kind == "image")
+    ).scalar_one_or_none()
     if image is None:
         raise HTTPException(status_code=404, detail="image not found")
     if not can_manage_image(db, current_user, image):
@@ -161,7 +165,9 @@ def get_signed_link(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SignedLinkResponse:
-    image = db.execute(select(Image).where(Image.code == code)).scalar_one_or_none()
+    image = db.execute(
+        select(Image).where(Image.code == code, Image.media_kind == "image")
+    ).scalar_one_or_none()
     if image is None:
         raise HTTPException(status_code=404, detail="image not found")
 

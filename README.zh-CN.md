@@ -1,4 +1,4 @@
-# oss · 自托管图床
+# oss · 自托管图片与视频存储
 
 [**English**](./README.md) | **简体中文**
 
@@ -7,31 +7,33 @@
 [![Vue](https://img.shields.io/badge/Vue-3.x-42b883.svg)]()
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ed.svg)]()
 
-一个开箱即用、Docker 一键部署的**自托管图片托管服务**：上传图片，立即得到一条短码 URL。基于 **FastAPI + Vue 3 + SQLite**，支持用户隔离、角色权限（RBAC）、团队与团队空间、管理员界面、API Key 鉴权和私密图限时签名链接。
+一个 Docker 一键部署的**自托管媒体存储服务**：图片维持简单直传，视频支持原文件分片上传、断点续传和 Range 拖动播放。基于 **FastAPI + Vue 3 + SQLite**，支持用户隔离、RBAC、团队空间、API Key 和私密媒体限时签名链接。
 
-> **Status: v0.5** — 上传 + 短码链接 + 认证/RBAC + 用户隔离 + 团队与团队空间 + 管理员界面 + API Key 鉴权与改密 + 签名链接/限速 + Docker 部署可用。
+> 视频保持原文件：不使用 FFmpeg，不转码，不生成持久化封面或 HLS。浏览器能否播放取决于容器与编码组合；任何已存视频都可以下载。
 
 ---
 
 ## ✨ 特性
 
 - 🚀 **一键部署**：`docker compose up -d`，端口、管理员密码、上传上限等全部环境变量可配
-- 🔗 **短码 URL**：上传即返回 `https://你的域名/i/Ab3xYz9Kq1`，密码学随机、不可预测
+- 🔗 **短码 URL**：图片使用 `/i/{code}`，视频使用 `/v/{code}`，短码密码学随机、不可预测
 - 🖼️ **多格式支持**：jpg / png / gif / webp / svg / bmp / ico / avif / tiff，**按魔数嗅探真实类型**，不信任文件名
+- 🎬 **常见视频格式**：MP4/M4V、MOV、WebM、MKV、AVI、MPEG/MPG/TS、OGV、3GP、FLV、WMV，按容器头识别，不信任扩展名或客户端 MIME
+- ⏯️ **断点续传与拖动播放**：默认 8 MiB 分片，支持乱序、暂停、失败重试、刷新后重新选文件续传；`/v/{code}` 支持 Range、206 与 416
 - 🔐 **认证与 RBAC**：JWT 登录、`admin`/`user` 双角色、管理员密码环境变量引导、注册策略可配（开放/邀请码/关闭）
-- 🔑 **API Key 鉴权**：为脚本/命令行生成鉴权 Key，可上传/下载/删除图片；**明文只显示一次**（数据库仅存 SHA-256 哈希）、支持**轮换**（旧 Key 立即失效）与撤销
+- 🔑 **API Key 鉴权**：为脚本/命令行生成鉴权 Key，可访问图片与视频 API；**明文只显示一次**（数据库仅存 SHA-256 哈希）、支持**轮换**（旧 Key 立即失效）与撤销
 - 🔏 **改密**：用户自助改密（校验旧密码）；管理员可重置任意用户密码
-- 👥 **用户隔离**：每个人只能看到自己的图片；图片可分**公开/私密**，私密图仅本人与管理员可见
-- 🏢 **团队与团队空间**：建团队、按用户名邀请成员、成员角色（拥有者/管理员/成员）、团队空间专属图片库、团队内共享私密图
-- 🛠️ **管理员界面**：系统统计（用户/图片/团队/存储）、用户角色与密码管理、团队总览与解散、全量图片管理
-- 🗑️ **图片删除**：属主/管理员/团队管理员可删除图片
-- ⏳ **私密图签名链接**：私密图只能通过**限时签名链接**（默认 24h，HMAC 防篡改/防伪造/防重放）或本人/团队/管理员访问——随手输入短码无法看到任何私密内容
+- 👥 **用户隔离**：每个人只能看到自己的媒体；图片和视频均支持**公开/私密**
+- 🏢 **团队与团队空间**：建团队、按用户名邀请成员、成员角色（拥有者/管理员/成员）、团队图片/视频分栏及私密媒体共享
+- 🛠️ **管理员界面**：系统统计（用户/图片/视频/待完成上传/团队/存储）、用户与团队管理
+- 🗑️ **媒体删除**：属主/管理员/团队管理员可删除有权管理的图片或视频
+- ⏳ **私密媒体签名链接**：私密图片与视频均可生成限时 HMAC 签名链接，其他人无法通过猜测短码探测资源
 - 🛡️ **速率限制**：登录接口按 IP+账号限速（防暴力破解）、图片接口按 IP 限速（防短码枚举）、上传按用户限速
-- 🏷️ **上传命名**：上传时可给图片自定义名称，支持中文；未命名则回退为文件名
+- 🏷️ **上传命名**：图片与视频均可自定义展示名称，支持中文；未命名则回退为文件名
 - 🔍 **搜索**：按名称/文件名/短码实时搜索（个人空间与团队空间均支持）
 - 🔒 **安全默认值**：非 root 运行、SVG 附件式下发（防存储型 XSS）、bcrypt 密码哈希、上传大小限制
 - 📦 **API 优先**：完整 REST API（后续兼容 PicGo / ShareX / uPic 客户端）
-- 🖥️ **Vue 3 前端**：SPA 多视图（我的图片 / 我的团队 / 管理 / 账户），与后端同容器交付（多阶段构建）
+- 🖥️ **Vue 3 前端**：浅色响应式 SPA（图片 / 视频 / 团队 / 管理 / 账户），与后端同容器交付
 
 ## 📚 目录
 
@@ -70,9 +72,7 @@ docker compose up -d
 
 > host 模式下 Compose 会提示 "Published ports are discarded when using host network mode"，属正常现象。
 
-图片数据和 SQLite 数据库都持久化在 `./data` 目录，容器重建不丢数据。
-
-> **升级注意（v0.2+）**：本版本新增了用户/可见性等字段，若从 v0.1 升级且 `data/` 里有旧数据，请先备份并清空 `data/`（`mv data data.bak`）再启动。
+图片、视频、未完成分片和 SQLite 都持久化在 `./data`。数据库升级保持幂等，但升级镜像前仍应备份该目录。
 
 ### 一行命令上传
 
@@ -94,6 +94,11 @@ curl -X POST http://服务器IP:8080/api/upload \
 | `PORT` | `8080` | 服务端口。`bridge` 模式下为宿主机映射端口；`host` 模式下为容器直接监听的宿主机端口 |
 | `NETWORK_MODE` | `bridge` | 网络模式：`bridge`（默认，端口映射）或 `host`（直接使用宿主机网络） |
 | `MAX_UPLOAD_SIZE_MB` | `10` | 单文件上传大小上限（MB） |
+| `MAX_VIDEO_SIZE_MB` | `2048` | 单个视频原文件大小上限（MiB） |
+| `VIDEO_CHUNK_SIZE_MB` | `8` | 视频分片大小（MiB）；反向代理请求体上限必须大于它 |
+| `VIDEO_UPLOAD_TTL_HOURS` | `168` | 未完成上传会话的滑动有效期（默认 7 天） |
+| `MAX_ACTIVE_VIDEO_UPLOADS` | `3` | 每位用户最多未完成视频会话数 |
+| `MIN_FREE_SPACE_MB` | `1024` | 磁盘保留空间；不足时初始化或写片返回 507 |
 | `SHORT_CODE_LENGTH` | `10` | 短码长度（base62 字符，越长越难枚举） |
 | `PUBLIC_URL` | *(空)* | 返回链接的前缀，如 `https://img.example.com`；留空则按请求自动推断 |
 | `ADMIN_PASSWORD` | *(空)* | 首次启动自动创建/刷新 `admin` 管理员账号；留空则不创建 |
@@ -101,7 +106,7 @@ curl -X POST http://服务器IP:8080/api/upload \
 | `INVITE_CODE` | *(空)* | `ALLOW_REGISTRATION=invite` 时的注册邀请码 |
 | `JWT_SECRET` | *(空)* | JWT 签名密钥；留空则每次重启登录态失效（建议 `openssl rand -hex 32` 生成） |
 | `DEFAULT_VISIBILITY` | `private` | 新上传图片的默认可见性：`private`（仅自己/团队/管理员 + 签名链接）或 `public`（任何人可访问） |
-| `SIGNED_URL_TTL_SECONDS` | `86400` | 私密图签名链接有效期（秒） |
+| `SIGNED_URL_TTL_SECONDS` | `86400` | 私密媒体签名链接有效期（秒） |
 
 ## 🔌 API 概览
 
@@ -128,6 +133,26 @@ curl -X POST http://服务器IP:8080/api/upload \
 | PATCH | `/api/images/{code}` | 修改 `name` / `visibility`（属主/管理员/团队管理员） |
 | DELETE | `/api/images/{code}` | 删除图片（属主/管理员/团队管理员） |
 | GET | `/api/images/{code}/link?ttl` | 生成限时签名链接（属主/团队成员/管理员） |
+
+### 视频与断点续传
+
+快速指纹的算法为：分别计算文件开头、中间、末尾最多 1 MiB 的 SHA-256，再对 UTF-8 文本 `size:head_hash:middle_hash:tail_hash` 计算 SHA-256。它用于确认刷新后重新选择的是同一文件；每个分片还需单独提供 SHA-256。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/video-uploads` | 初始化 `{filename,size,name?,visibility?,team_id?,fingerprint}`；返回 `upload_id`、`chunk_size`、`total_parts`、`uploaded_parts`、`expires_at` |
+| GET | `/api/video-uploads/{upload_id}` | 查询服务端真实状态和已上传分片序号 |
+| PUT | `/api/video-uploads/{upload_id}/parts/{part_number}` | 原始二进制，请求头必须含 `Content-Range` 与 `X-Chunk-SHA256`；相同内容重复提交幂等成功 |
+| POST | `/api/video-uploads/{upload_id}/complete` | 校验全部分片、快速指纹和真实容器格式后原子发布 |
+| DELETE | `/api/video-uploads/{upload_id}` | 取消未完成会话并清理临时文件 |
+| GET | `/api/videos?limit&offset&q` | 个人视频列表（管理员查看全部） |
+| PATCH | `/api/videos/{code}` | 修改 `name` / `visibility` |
+| DELETE | `/api/videos/{code}` | 删除正式视频 |
+| GET | `/api/videos/{code}/link?ttl` | 生成限时签名链接 |
+| GET | `/v/{code}` | 播放/下载，支持 Range、206、416；`?download=1` 使用原文件名下载 |
+| GET | `/api/teams/{id}/videos?q` | 团队空间视频 |
+
+分片从 0 编号，可乱序上传。每次成功写片会刷新 7 天有效期。缺片、哈希不一致，或用同一分片号重传不同内容时返回 409；缺少或无法解析 `Content-Range` 返回 400，与对应分片不匹配的范围返回 416；其他用户无法探知该上传 ID。完整 API 示例见 `/docs`。
 
 ### API Key 鉴权（脚本/命令行）
 
@@ -158,8 +183,9 @@ curl -X DELETE "http://服务器IP:8080/api/images/<code>" -H "Authorization: Be
 | POST | `/api/teams/{id}/members` | 按用户名邀请成员 |
 | PATCH | `/api/teams/{id}/members/{member_id}` | 改角色 `{role: admin\|member}`（仅 owner） |
 | DELETE | `/api/teams/{id}/members/{member_id}` | 移除成员 |
-| DELETE | `/api/teams/{id}` | 解散团队（图片回到上传者个人空间） |
+| DELETE | `/api/teams/{id}` | 解散团队（媒体与未完成会话回到上传者个人空间） |
 | GET | `/api/teams/{id}/images?q` | 团队空间图片（成员/管理员） |
+| GET | `/api/teams/{id}/videos?q` | 团队空间视频（成员/管理员） |
 
 > 团队内角色：`owner`（拥有者，管理一切）> `admin`（可管理成员）> `member`（可查看/上传）。团队私密图对**团队成员**可见，对团队外返回 404。
 
@@ -167,7 +193,7 @@ curl -X DELETE "http://服务器IP:8080/api/images/<code>" -H "Authorization: Be
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/admin/stats` | 系统统计 `{users, images, teams, storage_bytes}` |
+| GET | `/api/admin/stats` | `{users,images,videos,media_total,pending_upload_bytes,teams,storage_bytes}` |
 | GET | `/api/admin/teams` | 全部团队（含拥有者、成员数） |
 | GET | `/api/users` | 全部用户 |
 | PATCH | `/api/admin/users/{id}/role` | 设置角色 `{role: admin\|user}`（不能改自己） |
@@ -196,10 +222,10 @@ SVG 类图片一律以附件形式下发（`Content-Disposition: attachment` + `
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
-uvicorn app.main:app --reload     # http://localhost:8080
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-前端（Vite 热更新，已配置代理到 8080）：
+前端（Vite 热更新，默认代理到 `http://localhost:8000`，可用 `VITE_API_TARGET` 覆盖）：
 
 ```bash
 cd frontend && npm install && npm run dev   # http://localhost:5173
@@ -219,6 +245,13 @@ pytest
 ```
 
 > 前端未构建时，访问 `/` 会得到 404 提示（镜像内已内置构建产物，只有本地裸跑后端会触发）。
+
+### 反向代理与部署注意事项
+
+- 保持单个 Uvicorn worker。SQLite 与上传中间文件都在本机；多实例和共享对象存储不在当前范围。
+- 持久化整个 `/data`，其中 `/data/uploads` 保存未完成分片。入口脚本只在首次挂载时递归初始化权限，后续启动不会扫描全部媒体文件。
+- Nginx 的 `client_max_body_size` 必须大于 `VIDEO_CHUNK_SIZE_MB`（默认配置至少设为 `9m`）；不要移除 `Range`、`If-Range`、`Content-Range`、`Accept-Ranges`。Caddy 同样需要放宽请求体限制。
+- 依赖下限 `starlette>=0.49.1` 包含上游 Range 解析复杂度漏洞修复；公网开放 `/v` 时请持续更新依赖。
 
 ## 📁 项目结构
 

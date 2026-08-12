@@ -153,6 +153,7 @@ async def store_upload(
         content_type=mime,
         size=len(data),
         sha256=digest,
+        media_kind="image",
         owner_id=owner.id if owner else None,
         visibility=visibility,
         team_id=team_id,

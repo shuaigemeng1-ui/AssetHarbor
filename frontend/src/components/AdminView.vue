@@ -1,19 +1,14 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { deleteTeam, getAdminStats, listAdminTeams, listUsers, resetUserPassword, setUserRole } from '../api'
+import { confirmAction, toast } from '../stores/feedback'
+import { formatBytes } from '../utils/format'
 
 const props = defineProps({ user: { type: Object, required: true } })
 
 const stats = ref(null)
 const users = ref([])
 const teams = ref([])
-
-function fmtBytes(n) {
-  if (n >= 1 << 30) return `${(n / (1 << 30)).toFixed(2)} GB`
-  if (n >= 1 << 20) return `${(n / (1 << 20)).toFixed(2)} MB`
-  if (n >= 1 << 10) return `${(n / (1 << 10)).toFixed(2)} KB`
-  return `${n} B`
-}
 
 function fmtDate(s) {
   return new Date(s).toLocaleString()
@@ -26,18 +21,24 @@ onMounted(async () => {
     users.value = u
     teams.value = t
   } catch (err) {
-    window.alert(err.message)
+    toast(err.message, 'error')
   }
 })
 
 async function toggleRole(u) {
   const next = u.role === 'admin' ? 'user' : 'admin'
-  if (!window.confirm(`把 ${u.username} ${next === 'admin' ? '设为管理员' : '降为普通用户'}？`)) return
+  const ok = await confirmAction({
+    title: next === 'admin' ? '设为系统管理员' : '取消管理员权限',
+    message: `确定把 ${u.username} ${next === 'admin' ? '设为管理员' : '降为普通用户'}？`,
+    confirmText: '确认变更',
+  })
+  if (!ok) return
   try {
     await setUserRole(u.id, next)
     users.value = await listUsers()
+    toast('用户角色已更新', 'success')
   } catch (err) {
-    window.alert(err.message)
+    toast(err.message, 'error')
   }
 }
 
@@ -45,24 +46,31 @@ async function doResetPassword(u) {
   const np = window.prompt(`为 ${u.username} 设置新密码（至少 6 位）：`)
   if (!np) return
   if (np.length < 6) {
-    window.alert('密码至少 6 位')
+    toast('密码至少 6 位', 'error')
     return
   }
   try {
     await resetUserPassword(u.id, np)
-    window.alert(`已重置 ${u.username} 的密码`)
+    toast(`已重置 ${u.username} 的密码`, 'success')
   } catch (err) {
-    window.alert(err.message)
+    toast(err.message, 'error')
   }
 }
 
 async function doDeleteTeam(t) {
-  if (!window.confirm(`解散团队「${t.name}」？团队图片将回到上传者的个人空间。`)) return
+  const ok = await confirmAction({
+    title: '解散团队',
+    message: `解散「${t.name}」？团队图片和视频将回到各上传者的个人空间。`,
+    confirmText: '解散团队',
+    danger: true,
+  })
+  if (!ok) return
   try {
     await deleteTeam(t.id)
     teams.value = await listAdminTeams()
+    toast('团队已解散', 'success')
   } catch (err) {
-    window.alert(err.message)
+    toast(err.message, 'error')
   }
 }
 </script>
@@ -80,12 +88,24 @@ async function doDeleteTeam(t) {
         <div class="stat-label">图片</div>
       </div>
       <div class="stat-card">
+        <div class="stat-num">{{ stats?.videos ?? '–' }}</div>
+        <div class="stat-label">视频</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num">{{ stats?.media_total ?? '–' }}</div>
+        <div class="stat-label">全部媒体</div>
+      </div>
+      <div class="stat-card">
         <div class="stat-num">{{ stats?.teams ?? '–' }}</div>
         <div class="stat-label">团队</div>
       </div>
       <div class="stat-card">
-        <div class="stat-num">{{ stats ? fmtBytes(stats.storage_bytes) : '–' }}</div>
+        <div class="stat-num">{{ stats ? formatBytes(stats.storage_bytes) : '–' }}</div>
         <div class="stat-label">存储占用</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num">{{ stats ? formatBytes(stats.pending_upload_bytes) : '–' }}</div>
+        <div class="stat-label">待完成上传</div>
       </div>
     </div>
 

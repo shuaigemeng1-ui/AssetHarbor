@@ -15,8 +15,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     OSS_DATA_DIR=/data
 
-# gosu lets the entrypoint drop from root to the unprivileged `oss` user
-# after fixing up the permissions of the mounted data volume.
+# gosu lets the entrypoint initialize a mounted data volume once, then drop
+# privileges to the unprivileged `oss` user.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends gosu passwd \
     && rm -rf /var/lib/apt/lists/* \
@@ -40,4 +40,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 # 监听端口由环境变量 OSS_APP_PORT 控制（默认 8080）：
 # bridge 网络模式由 compose 端口映射转发；host 网络模式下直接监听宿主机端口。
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${OSS_APP_PORT:-8080}"]
+# Keep a single worker: resumable uploads use local SQLite and filesystem state.
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${OSS_APP_PORT:-8080} --workers 1"]

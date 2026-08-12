@@ -34,7 +34,9 @@ def get_image(
     # Throttle code-scanning attempts regardless of whether the code exists.
     check_rate_limit(f"img:{client_ip(request)}", settings.images_rate_limit_per_minute, 60)
 
-    image = db.execute(select(Image).where(Image.code == code)).scalar_one_or_none()
+    image = db.execute(
+        select(Image).where(Image.code == code, Image.media_kind == "image")
+    ).scalar_one_or_none()
     if image is None:
         raise HTTPException(status_code=404, detail="image not found")
 

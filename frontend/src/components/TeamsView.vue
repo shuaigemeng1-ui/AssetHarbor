@@ -4,17 +4,14 @@ import {
   addTeamMember,
   changeTeamMemberRole,
   createTeam,
-  deleteImage,
   deleteTeam,
   getTeam,
-  listTeamImages,
   listTeams,
   removeTeamMember,
-  updateImage,
-  uploadFile,
 } from '../api'
-import ImageResult from './ImageResult.vue'
-import UploadDropzone from './UploadDropzone.vue'
+import { confirmAction, toast } from '../stores/feedback'
+import GalleryView from './GalleryView.vue'
+import VideoView from './VideoView.vue'
 
 const props = defineProps({ user: { type: Object, required: true } })
 
@@ -23,19 +20,13 @@ const selected = ref(null)
 const createName = ref('')
 const createDesc = ref('')
 const addUsername = ref('')
-const spaceItems = ref([])
-const spaceLoading = ref(false)
-const spaceQuery = ref('')
-const uploadName = ref('')
-const uploadVisibility = ref('private')
+const spaceTab = ref('images')
+const loadingTeam = ref(false)
 
-let nextId = 1
-let searchTimer = null
-
-const myRole = computed(() => selected.value?.role) // owner | admin | member（全局管理员显示 admin）
-const canManage = computed(() =>
-  myRole.value === 'owner' || myRole.value === 'admin' || props.user.role === 'admin',
-)
+const myRole = computed(() => selected.value?.role)
+const canManage = computed(() => (
+  ['owner', 'admin'].includes(myRole.value) || props.user.role === 'admin'
+))
 
 function roleLabel(role) {
   return { owner: '拥有者', admin: '管理员', member: '成员' }[role] || role
@@ -44,36 +35,21 @@ function roleLabel(role) {
 async function loadTeams() {
   try {
     teams.value = await listTeams()
-  } catch (err) {
-    window.alert(err.message)
+  } catch (error) {
+    toast(`团队加载失败：${error.message}`, 'error')
   }
 }
 
 async function openTeam(id) {
+  loadingTeam.value = true
   try {
     selected.value = await getTeam(id)
-    await loadSpace()
-  } catch (err) {
-    window.alert(err.message)
-  }
-}
-
-async function loadSpace() {
-  if (!selected.value) return
-  spaceLoading.value = true
-  try {
-    const { items } = await listTeamImages(selected.value.id, { q: spaceQuery.value })
-    spaceItems.value = items.map(info => ({ id: nextId++, status: 'done', result: info, file: null }))
-  } catch (err) {
-    window.alert(err.message)
+    spaceTab.value = 'images'
+  } catch (error) {
+    toast(`团队加载失败：${error.message}`, 'error')
   } finally {
-    spaceLoading.value = false
+    loadingTeam.value = false
   }
-}
-
-function onSpaceQuery() {
-  clearTimeout(searchTimer)
-  searchTimer = setTimeout(loadSpace, 300)
 }
 
 async function doCreate() {
@@ -83,175 +59,164 @@ async function doCreate() {
     createDesc.value = ''
     await loadTeams()
     await openTeam(team.id)
-  } catch (err) {
-    window.alert(`创建失败：${err.message}`)
+    toast('团队创建成功', 'success')
+  } catch (error) {
+    toast(`创建失败：${error.message}`, 'error')
   }
 }
 
 async function doAddMember() {
+  if (!addUsername.value.trim()) return
   try {
     await addTeamMember(selected.value.id, addUsername.value.trim())
     addUsername.value = ''
     selected.value = await getTeam(selected.value.id)
-  } catch (err) {
-    window.alert(err.message)
+    toast('成员已加入团队', 'success')
+  } catch (error) {
+    toast(error.message, 'error')
   }
 }
 
 async function doRemove(member) {
-  if (!window.confirm(`确定把 ${member.username} 移出团队？`)) return
+  const ok = await confirmAction({
+    title: '移除团队成员',
+    message: `确定把 ${member.username} 移出团队？`,
+    confirmText: '移除',
+    danger: true,
+  })
+  if (!ok) return
   try {
     await removeTeamMember(selected.value.id, member.id)
     selected.value = await getTeam(selected.value.id)
-  } catch (err) {
-    window.alert(err.message)
+    toast('成员已移除', 'success')
+  } catch (error) {
+    toast(error.message, 'error')
   }
 }
 
 async function doToggleRole(member) {
   const next = member.role === 'admin' ? 'member' : 'admin'
-  if (!window.confirm(`把 ${member.username} ${next === 'admin' ? '设为管理员' : '降为成员'}？`)) return
+  const ok = await confirmAction({
+    title: next === 'admin' ? '设为管理员' : '取消管理员权限',
+    message: `确定将 ${member.username} ${next === 'admin' ? '设为团队管理员' : '降为普通成员'}？`,
+    confirmText: '确认变更',
+  })
+  if (!ok) return
   try {
     await changeTeamMemberRole(selected.value.id, member.id, next)
     selected.value = await getTeam(selected.value.id)
-  } catch (err) {
-    window.alert(err.message)
+    toast('成员角色已更新', 'success')
+  } catch (error) {
+    toast(error.message, 'error')
   }
 }
 
 async function doDeleteTeam() {
-  if (!window.confirm(`确定解散团队「${selected.value.name}」？团队图片将回到上传者的个人空间。`)) return
+  const ok = await confirmAction({
+    title: '解散团队',
+    message: `确定解散「${selected.value.name}」？团队图片和视频会回到各上传者的个人空间。`,
+    confirmText: '解散团队',
+    danger: true,
+  })
+  if (!ok) return
   try {
     await deleteTeam(selected.value.id)
     selected.value = null
     await loadTeams()
-  } catch (err) {
-    window.alert(err.message)
+    toast('团队已解散', 'success')
+  } catch (error) {
+    toast(error.message, 'error')
   }
-}
-
-async function handleFiles(files) {
-  const list = Array.from(files)
-  if (!list.length || !selected.value) return
-
-  const base = uploadName.value.trim()
-  for (let i = 0; i < list.length; i++) {
-    const name = base ? (list.length > 1 ? `${base}-${i + 1}` : base) : ''
-    const item = { id: nextId++, file, status: 'uploading', result: null, error: null }
-    spaceItems.value.unshift(item)
-    try {
-      item.result = await uploadFile(file, { name, visibility: uploadVisibility.value, teamId: selected.value.id })
-      item.status = 'done'
-    } catch (err) {
-      item.error = err.message
-      item.status = 'error'
-    }
-  }
-}
-
-async function onDelete(item) {
-  if (!window.confirm(`确定删除图片「${item.result.name || item.result.code}」？此操作不可恢复。`)) return
-  try {
-    await deleteImage(item.result.code)
-    spaceItems.value = spaceItems.value.filter(i => i.id !== item.id)
-  } catch (err) {
-    window.alert(`删除失败：${err.message}`)
-  }
-}
-
-async function onToggleVisibility(item) {
-  const next = item.result.visibility === 'private' ? 'public' : 'private'
-  if (next === 'public' && !window.confirm('设为公开后，任何人拿到链接都能访问。确定？')) return
-  try {
-    item.result = await updateImage(item.result.code, { visibility: next })
-  } catch (err) {
-    window.alert(`操作失败：${err.message}`)
-  }
-}
-
-function canDelete(item) {
-  if (props.user.role === 'admin' || item.result?.owner_id === props.user.id) return true
-  return selected.value && (selected.value.role === 'owner' || selected.value.role === 'admin')
 }
 
 onMounted(loadTeams)
 </script>
 
 <template>
-  <section>
+  <section class="teams-view">
+    <div class="section-heading page-heading">
+      <div>
+        <p class="eyebrow">协作空间</p>
+        <h2>团队</h2>
+        <p>邀请成员，在同一个空间管理图片和视频。</p>
+      </div>
+    </div>
+
     <div class="teams-layout">
-      <div class="team-panel">
-        <h2 class="section-title">我的团队 <span class="count">{{ teams.length }}</span></h2>
+      <aside class="team-panel">
+        <div class="aside-title">
+          <h3>我的团队</h3>
+          <span>{{ teams.length }}</span>
+        </div>
         <ul v-if="teams.length" class="team-cards">
-          <li v-for="t in teams" :key="t.id" :class="{ active: selected?.id === t.id }" @click="openTeam(t.id)">
-            <div class="team-name">{{ t.name }}</div>
-            <div class="team-meta">{{ t.member_count }} 人 · {{ roleLabel(t.role) }}</div>
+          <li v-for="team in teams" :key="team.id">
+            <button :class="{ active: selected?.id === team.id }" @click="openTeam(team.id)">
+              <span class="team-avatar">{{ team.name.slice(0, 1).toUpperCase() }}</span>
+              <span>
+                <strong>{{ team.name }}</strong>
+                <small>{{ team.member_count }} 人 · {{ roleLabel(team.role) }}</small>
+              </span>
+            </button>
           </li>
         </ul>
         <p v-else class="status">还没有加入任何团队</p>
 
-        <div class="team-create-form">
-          <input v-model="createName" placeholder="新团队名称" maxlength="64" />
+        <form class="team-create-form" @submit.prevent="doCreate">
+          <h4>创建新团队</h4>
+          <input v-model="createName" placeholder="团队名称" maxlength="64" required />
           <input v-model="createDesc" placeholder="简介（可选）" maxlength="255" />
-          <button class="primary" :disabled="!createName.trim()" @click="doCreate">创建团队</button>
-        </div>
-      </div>
+          <button class="primary" :disabled="!createName.trim()">创建团队</button>
+        </form>
+      </aside>
 
       <div v-if="selected" class="team-detail">
-        <div class="team-head">
-          <h2>{{ selected.name }}</h2>
-          <p v-if="selected.description" class="subtitle">{{ selected.description }}</p>
+        <div class="team-head surface-card">
+          <div class="team-title-group">
+            <span class="team-avatar large">{{ selected.name.slice(0, 1).toUpperCase() }}</span>
+            <div>
+              <h2>{{ selected.name }}</h2>
+              <p>{{ selected.description || '这个团队还没有简介。' }}</p>
+            </div>
+          </div>
           <div class="team-actions">
             <span class="role-badge">{{ roleLabel(myRole) }}</span>
             <button v-if="canManage" class="ghost danger" @click="doDeleteTeam">解散团队</button>
           </div>
         </div>
 
-        <h3 class="section-title">成员 <span class="count">{{ selected.members.length }}</span></h3>
-        <div v-if="canManage" class="add-member">
-          <input v-model="addUsername" placeholder="输入用户名邀请" @keyup.enter="doAddMember" />
-          <button class="primary" :disabled="!addUsername.trim()" @click="doAddMember">邀请</button>
-        </div>
-        <ul class="member-list">
-          <li v-for="m in selected.members" :key="m.id">
-            <span class="username">{{ m.username }}</span>
-            <span class="role-badge" :class="{ owner: m.role === 'owner', admin: m.role === 'admin' }">
-              {{ roleLabel(m.role) }}
-            </span>
-            <span v-if="canManage && m.role !== 'owner'" class="member-actions">
-              <button class="ghost" @click="doToggleRole(m)">
-                {{ m.role === 'admin' ? '降为成员' : '设为管理员' }}
-              </button>
-              <button class="ghost danger" @click="doRemove(m)">移除</button>
-            </span>
-          </li>
-        </ul>
+        <section class="members-panel surface-card">
+          <div class="panel-title-row">
+            <h3>成员 <span>{{ selected.members.length }}</span></h3>
+            <form v-if="canManage" class="add-member" @submit.prevent="doAddMember">
+              <input v-model="addUsername" placeholder="输入用户名邀请" />
+              <button class="secondary" :disabled="!addUsername.trim()">邀请</button>
+            </form>
+          </div>
+          <ul class="member-list">
+            <li v-for="member in selected.members" :key="member.id">
+              <span class="member-avatar">{{ member.username.slice(0, 1).toUpperCase() }}</span>
+              <span class="username">{{ member.username }}</span>
+              <span class="role-badge" :class="{ owner: member.role === 'owner', admin: member.role === 'admin' }">{{ roleLabel(member.role) }}</span>
+              <span v-if="canManage && member.role !== 'owner'" class="member-actions">
+                <button class="ghost" @click="doToggleRole(member)">{{ member.role === 'admin' ? '降为成员' : '设为管理员' }}</button>
+                <button class="ghost danger" @click="doRemove(member)">移除</button>
+              </span>
+            </li>
+          </ul>
+        </section>
 
-        <h3 class="section-title">团队空间 <span class="count">{{ spaceItems.length }}</span></h3>
-        <div class="options">
-          <input v-model="uploadName" class="name-input" placeholder="图片命名（可选）" maxlength="255" />
-          <select v-model="uploadVisibility" class="vis-select">
-            <option value="private">私密 · 仅团队可见</option>
-            <option value="public">公开 · 任何人可访问</option>
-          </select>
+        <div class="space-tabs" role="tablist" aria-label="团队空间类型">
+          <button role="tab" :aria-selected="spaceTab === 'images'" :class="{ active: spaceTab === 'images' }" @click="spaceTab = 'images'">图片</button>
+          <button role="tab" :aria-selected="spaceTab === 'videos'" :class="{ active: spaceTab === 'videos' }" @click="spaceTab = 'videos'">视频</button>
         </div>
-        <UploadDropzone @files="handleFiles" />
-        <div class="search-row">
-          <input v-model="spaceQuery" class="search" type="search" placeholder="搜索团队空间…" @input="onSpaceQuery" />
-          <span v-if="spaceQuery" class="clear" @click="spaceQuery = ''; loadSpace()">✕</span>
-        </div>
-        <p v-if="spaceLoading" class="status">加载中…</p>
-        <ul v-else class="results">
-          <li v-for="item in spaceItems" :key="item.id">
-            <ImageResult :item="item" :deletable="item.status === 'done' && canDelete(item)"
-                         @delete="onDelete(item)" @toggle-visibility="onToggleVisibility(item)" />
-          </li>
-        </ul>
-        <p v-if="!spaceLoading && !spaceItems.length" class="status">团队空间还没有图片</p>
+        <GalleryView v-if="spaceTab === 'images'" :key="`images-${selected.id}`" :user="user" :team-id="selected.id" :can-manage="canManage" />
+        <VideoView v-else :key="`videos-${selected.id}`" :user="user" :team-id="selected.id" :can-manage="canManage" />
       </div>
 
       <div v-else class="team-detail placeholder-panel">
-        <p class="status">选择左侧团队查看成员与空间，或创建一个新团队</p>
+        <div class="empty-icon">◎</div>
+        <h3>{{ loadingTeam ? '正在加载团队…' : '选择一个团队' }}</h3>
+        <p>从左侧进入团队空间，或创建一个新团队。</p>
       </div>
     </div>
   </section>

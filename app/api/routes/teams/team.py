@@ -1,12 +1,13 @@
 """Team CRUD: create, list mine, detail, delete."""
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ....models import Image, Team, TeamMember, User
+from ....models import Team, TeamMember, User
 from ....schemas import TeamCreate, TeamDetail, TeamOut
 from ....services.teams import can_manage_team, get_membership
+from ....services.videos import dissolve_team_media
 from ...deps import get_current_user, get_db
 from ._common import get_team_or_404, member_out, team_out
 
@@ -100,7 +101,4 @@ def delete_team(
     if not can_manage_team(db, team.id, current_user.id, require_owner=True) and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="team owner privileges required")
 
-    # Images return to their uploader's personal space.
-    db.execute(update(Image).where(Image.team_id == team.id).values(team_id=None))
-    db.delete(team)  # cascades team_members rows
-    db.commit()
+    dissolve_team_media(db, team)

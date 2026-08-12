@@ -1,6 +1,15 @@
 <script setup>
 import { ref } from 'vue'
 
+const props = defineProps({
+  accept: { type: String, default: 'image/*' },
+  multiple: { type: Boolean, default: true },
+  label: { type: String, default: '点击选择或拖拽文件到此处' },
+  description: { type: String, default: '' },
+  ariaLabel: { type: String, default: '选择或拖拽文件上传' },
+  compact: { type: Boolean, default: false },
+})
+
 const emit = defineEmits(['files'])
 const input = ref(null)
 const dragging = ref(false)
@@ -9,24 +18,24 @@ function openPicker() {
   input.value?.click()
 }
 
-function onInput(e) {
-  emit('files', e.target.files)
-  e.target.value = ''
+function onInput(event) {
+  emit('files', event.target.files)
+  event.target.value = ''
 }
 
-function onDrop(e) {
+function onDrop(event) {
   dragging.value = false
-  emit('files', e.dataTransfer.files)
+  emit('files', event.dataTransfer.files)
 }
 </script>
 
 <template>
   <div
     class="drop"
-    :class="{ dragover: dragging }"
+    :class="{ dragover: dragging, compact }"
     role="button"
     tabindex="0"
-    aria-label="选择或拖拽图片上传"
+    :aria-label="ariaLabel"
     @click="openPicker"
     @keydown.enter.prevent="openPicker"
     @keydown.space.prevent="openPicker"
@@ -35,8 +44,9 @@ function onDrop(e) {
     @dragleave.prevent="dragging = false"
     @drop.prevent="onDrop"
   >
-    <input ref="input" type="file" accept="image/*" multiple hidden @change="onInput" />
-    <p class="hint">点击选择 或 拖拽图片到此处</p>
-    <p class="sub">支持 jpg / png / gif / webp / svg / bmp / ico / avif / tiff</p>
+    <input ref="input" type="file" :accept="accept" :multiple="multiple" hidden @change="onInput" />
+    <div class="drop-icon" aria-hidden="true">↑</div>
+    <p class="hint">{{ label }}</p>
+    <p v-if="description" class="sub">{{ description }}</p>
   </div>
 </template>
