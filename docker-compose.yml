@@ -1,0 +1,17 @@
+services:
+  oss:
+    build: .
+    # 发布到仓库时改成你自己的镜像名，例如 ghcr.io/你的用户名/oss:latest
+    image: oss:latest
+    container_name: oss
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      OSS_DATA_DIR: /data
+      OSS_MAX_UPLOAD_SIZE_MB: "${MAX_UPLOAD_SIZE_MB:-10}"
+      OSS_SHORT_CODE_LENGTH: "${SHORT_CODE_LENGTH:-10}"
+      OSS_PUBLIC_URL: "${PUBLIC_URL:-}"
+    volumes:
+      # 图片文件和 SQLite 数据库都持久化在这个目录
+      - ./data:/data
