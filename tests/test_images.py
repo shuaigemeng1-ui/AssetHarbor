@@ -185,6 +185,46 @@ def test_patch_invalid_visibility(client):
     assert client.patch(f"/api/images/{code}", headers=h, json={"visibility": "sneaky"}).status_code == 422
 
 
+# --- cache control & link revocation ---------------------------------------
+
+
+def test_private_image_not_cached(client):
+    _, token = new_user(client)
+    h = auth(token)
+    code = upload(client, token, data={"visibility": "private"}).json()["code"]
+
+    resp = client.get(f"/i/{code}", headers=h)
+    assert resp.status_code == 200
+    assert "no-store" in resp.headers["cache-control"]
+    assert "max-age=31536000" not in resp.headers["cache-control"]
+
+
+def test_public_image_immutably_cached(client):
+    _, token = new_user(client)
+    code = upload(client, token).json()["code"]  # test env default is public
+    resp = client.get(f"/i/{code}")
+    assert "max-age=31536000" in resp.headers["cache-control"]
+    assert "immutable" in resp.headers["cache-control"]
+
+
+def test_signed_link_revoked_when_made_private(client):
+    _, token = new_user(client)
+    h = auth(token)
+    code = upload(client, token).json()["code"]  # public
+
+    # 公开时签发的链接（公开图也可生成）
+    path = url_path(signed_link(client, token, code)["url"])
+    assert client.get(f"/{path}").status_code == 200
+
+    # 设为私密 → 旧签名链接立即失效
+    client.patch(f"/api/images/{code}", headers=h, json={"visibility": "private"})
+    assert client.get(f"/{path}").status_code == 404
+
+    # 新生成的签名链接仍有效
+    new_path = url_path(signed_link(client, token, code)["url"])
+    assert client.get(f"/{new_path}").status_code == 200
+
+
 # --- rate limit ------------------------------------------------------------
 
 

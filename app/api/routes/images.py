@@ -47,7 +47,9 @@ def get_image(
             and is_team_member(db, image.team_id, current_user.id)
         )
         has_valid_link = bool(
-            expires and sig and verify_image_signature(image.code, expires, sig)
+            expires
+            and sig
+            and verify_image_signature(image.code, expires, sig, image.signing_version)
         )
         if not (is_owner or is_admin or in_team or has_valid_link):
             # 404 (not 403) so private images are not discoverable.
@@ -57,7 +59,12 @@ def get_image(
     if not path.is_file():
         raise HTTPException(status_code=404, detail="image not found")
 
-    headers = dict(_IMMUTABLE_CACHE)
+    if image.visibility == "private":
+        # Never cache private images: once cached with a long/immutable lifetime,
+        # a browser would keep showing them even after they are revoked.
+        headers = {"Cache-Control": "private, no-store, max-age=0"}
+    else:
+        headers = dict(_IMMUTABLE_CACHE)
     if image.content_type == "image/svg+xml":
         headers.update(_SVG_HEADERS)
 

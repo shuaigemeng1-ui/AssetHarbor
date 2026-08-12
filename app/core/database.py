@@ -38,6 +38,10 @@ def _migrate() -> None:
             conn.execute(
                 text("ALTER TABLE images ADD COLUMN team_id INTEGER REFERENCES teams(id)")
             )
+        if "signing_version" not in cols:
+            conn.execute(
+                text("ALTER TABLE images ADD COLUMN signing_version INTEGER NOT NULL DEFAULT 1")
+            )
 
 
 def init_db() -> None:

@@ -31,5 +31,8 @@ class Image(Base):
     # Ownership & team space: an image belongs to a user, optionally in a team.
     owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True, index=True)
+    # Bumped whenever the image becomes private, revoking previously issued
+    # signed links (they embed this version in the HMAC).
+    signing_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     owner: Mapped[User | None] = relationship(back_populates="images")

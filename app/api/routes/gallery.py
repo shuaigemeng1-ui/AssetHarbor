@@ -112,10 +112,15 @@ def update_image_endpoint(
     if not can_manage_image(db, current_user, image):
         raise HTTPException(status_code=403, detail="you can only modify images you manage")
 
+    was_private = image.visibility == "private"
     if payload.visibility is not None:
         if payload.visibility not in ("public", "private"):
             raise HTTPException(status_code=422, detail="visibility must be 'public' or 'private'")
-        image.visibility = payload.visibility
+        if payload.visibility != image.visibility:
+            image.visibility = payload.visibility
+            if payload.visibility == "private" and not was_private:
+                # Revoke every previously issued signed link for this image.
+                image.signing_version += 1
     if payload.name is not None:
         image.name = payload.name.strip() or image.name
     db.commit()
@@ -169,5 +174,7 @@ def get_signed_link(
         # 404 (not 403): don't reveal that the image exists.
         raise HTTPException(status_code=404, detail="image not found")
 
-    url, expires = build_signed_image_url(request, image.code, ttl_seconds=ttl)
+    url, expires = build_signed_image_url(
+        request, image.code, ttl_seconds=ttl, version=image.signing_version
+    )
     return SignedLinkResponse(url=url, expires_at=datetime.fromtimestamp(expires, tz=timezone.utc))
