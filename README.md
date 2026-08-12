@@ -164,6 +164,7 @@ curl -X DELETE "http://<server-ip>:8080/api/images/<code>" -H "Authorization: Be
 | GET | `/api/users` | all users |
 | PATCH | `/api/admin/users/{id}/role` | set role `{role: admin\|user}` (cannot change self) |
 | PATCH | `/api/admin/users/{id}/password` | reset password `{new_password}` |
+| DELETE | `/api/admin/users/{id}` | delete a user and all their data (images, keys, teams) |
 
 ## 🛠️ Local Development
 

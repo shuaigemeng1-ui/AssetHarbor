@@ -1,12 +1,13 @@
-"""Admin-only endpoints: stats, user role & password management, team overview."""
+"""Admin-only endpoints: stats, user management, team overview."""
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
-from ...models import Image, Team, TeamMember, User
+from ...models import ApiKey, Image, Team, TeamMember, User
 from ...schemas import AdminStats, ResetPasswordRequest, RoleUpdate, TeamAdminOut, UserOut
 from ...core.security import hash_password
+from ...services.images import delete_image
 from ..deps import get_db, require_admin
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -85,4 +86,32 @@ def reset_password(
     if target is None:
         raise HTTPException(status_code=404, detail="user not found")
     target.password_hash = hash_password(payload.new_password)
+    db.commit()
+
+
+@router.delete("/users/{user_id}", status_code=204, summary="Delete a user and all their data (admin)")
+def delete_user(
+    user_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> None:
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="cannot delete your own account")
+    target = db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="user not found")
+
+    # Images (rows + files on disk).
+    for image in db.execute(select(Image).where(Image.owner_id == target.id)).scalars().all():
+        delete_image(db, image)
+
+    # Teams owned by the user (their team-space images return to their owners).
+    for team in db.execute(select(Team).where(Team.owner_id == target.id)).scalars().all():
+        db.execute(update(Image).where(Image.team_id == team.id).values(team_id=None))
+        db.delete(team)
+
+    # Memberships in other teams, API keys, then the account itself.
+    db.execute(delete(TeamMember).where(TeamMember.user_id == target.id))
+    db.execute(delete(ApiKey).where(ApiKey.user_id == target.id))
+    db.delete(target)
     db.commit()

@@ -167,6 +167,7 @@ curl -X DELETE "http://服务器IP:8080/api/images/<code>" -H "Authorization: Be
 | GET | `/api/users` | 全部用户 |
 | PATCH | `/api/admin/users/{id}/role` | 设置角色 `{role: admin\|user}`（不能改自己） |
 | PATCH | `/api/admin/users/{id}/password` | 重置密码 `{new_password}` |
+| DELETE | `/api/admin/users/{id}` | 删除用户及其全部数据（图片/Key/团队） |
 
 ### 获取图片与签名链接
 

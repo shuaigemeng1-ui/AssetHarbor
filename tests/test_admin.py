@@ -1,6 +1,6 @@
 """Admin interface & RBAC: stats, user management, team overview, full visibility."""
 
-from conftest import auth, login, new_user, upload
+from conftest import _uname, auth, login, new_user, upload
 
 
 def test_admin_sees_all_images_with_owner(client):
@@ -74,3 +74,37 @@ def test_admin_set_user_role(client):
     # 不能改自己的角色
     admin_me = client.get("/api/auth/me", headers=auth(atoken)).json()
     assert client.patch(f"/api/admin/users/{admin_me['id']}/role", headers=auth(atoken), json={"role": "user"}).status_code == 400
+
+
+def test_admin_delete_user_removes_all_data(client):
+    atoken = login(client, "admin", "admin-pass")
+    _, token = new_user(client)
+    h = auth(token)
+
+    code = upload(client, token).json()["code"]
+    key = client.post("/api/keys", headers=h).json()["key"]
+    team_name = f"team-of-{_uname()}"
+    client.post("/api/teams", headers=h, json={"name": team_name})
+    uid = client.get("/api/auth/me", headers=h).json()["id"]
+
+    assert client.delete(f"/api/admin/users/{uid}", headers=auth(atoken)).status_code == 204
+
+    # 账号 / 图片 / key / 团队 全部清理
+    assert client.get("/api/auth/me", headers=h).status_code == 401
+    assert client.get(f"/i/{code}").status_code == 404
+    assert client.get("/api/auth/me", headers={"X-API-Key": key}).status_code == 401
+    teams = client.get("/api/admin/teams", headers=auth(atoken)).json()
+    assert all(t["name"] != team_name for t in teams)
+
+
+def test_admin_cannot_delete_self(client):
+    atoken = login(client, "admin", "admin-pass")
+    admin_me = client.get("/api/auth/me", headers=auth(atoken)).json()
+    assert client.delete(f"/api/admin/users/{admin_me['id']}", headers=auth(atoken)).status_code == 400
+
+
+def test_admin_delete_user_forbidden_for_non_admin(client):
+    _, token = new_user(client)
+    _, victim = new_user(client)
+    vid = client.get("/api/auth/me", headers=auth(victim)).json()["id"]
+    assert client.delete(f"/api/admin/users/{vid}", headers=auth(token)).status_code == 403
