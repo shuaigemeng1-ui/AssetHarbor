@@ -2,12 +2,25 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ...models import ApiKey, Image, Team, TeamMember, UploadSession, User
-from ...schemas import AdminStats, ResetPasswordRequest, RoleUpdate, TeamAdminOut, UserOut
+from ...schemas import (
+    AdminStats,
+    AdminUserCreate,
+    ResetPasswordRequest,
+    RoleUpdate,
+    TeamAdminOut,
+    UserOut,
+)
 from ...core.security import hash_password
 from ...services.images import delete_image
+from ...services.library import (
+    fresh_library_user,
+    prepare_groups_for_user_deletion,
+    serialized_library_lifecycle,
+)
 from ...services.videos import delete_upload_sessions_for_owner, dissolve_team_media
 from ..deps import get_db, require_admin
 
@@ -16,6 +29,30 @@ router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(re
 
 def _user_out(user: User) -> UserOut:
     return UserOut(id=user.id, username=user.username, role=user.role, created_at=user.created_at)
+
+
+@router.post("/users", response_model=UserOut, status_code=201, summary="Create a user (admin)")
+def create_user(
+    payload: AdminUserCreate,
+    db: Session = Depends(get_db),
+) -> UserOut:
+    if payload.role not in ("admin", "user"):
+        raise HTTPException(status_code=422, detail="role must be 'admin' or 'user'")
+    if db.execute(select(User.id).where(User.username == payload.username)).scalar_one_or_none() is not None:
+        raise HTTPException(status_code=409, detail="username already taken")
+    user = User(
+        username=payload.username,
+        password_hash=hash_password(payload.password),
+        role=payload.role,
+    )
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="username already taken")
+    db.refresh(user)
+    return _user_out(user)
 
 
 @router.get("/stats", response_model=AdminStats, summary="System statistics (admin)")
@@ -74,12 +111,17 @@ def admin_teams(db: Session = Depends(get_db)) -> list[TeamAdminOut]:
 
 
 @router.patch("/users/{user_id}/role", response_model=UserOut, summary="Set a user's global role (admin)")
+@serialized_library_lifecycle
 def set_user_role(
     user_id: int,
     payload: RoleUpdate,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> UserOut:
+    db.rollback()
+    current_user = fresh_library_user(db, current_user)
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="admin privileges required")
     if payload.role not in ("admin", "user"):
         raise HTTPException(status_code=422, detail="role must be 'admin' or 'user'")
     if user_id == current_user.id:
@@ -110,11 +152,17 @@ def reset_password(
 
 
 @router.delete("/users/{user_id}", status_code=204, summary="Delete a user and all their data (admin)")
+@serialized_library_lifecycle
 def delete_user(
     user_id: int,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> None:
+    # Fresh transaction after entering the no-FK lifecycle lease.
+    db.rollback()
+    current_user = fresh_library_user(db, current_user)
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="admin privileges required")
     if user_id == current_user.id:
         raise HTTPException(status_code=400, detail="cannot delete your own account")
     target = db.get(User, user_id)
@@ -122,8 +170,18 @@ def delete_user(
         raise HTTPException(status_code=404, detail="user not found")
 
     # Sessions have no database foreign keys and are cleaned explicitly,
-    # including their on-disk temporary chunks.
+    # including their on-disk temporary chunks. Cancellation intentionally
+    # starts with rollback for PUT-race safety, so this must happen before
+    # staging any other lifecycle changes in this transaction.
     delete_upload_sessions_for_owner(db, target.id)
+
+    # New media-library tables intentionally have no foreign keys, so their
+    # owner/item lifecycle is maintained explicitly before deleting assets.
+    prepare_groups_for_user_deletion(db, target.id)
+    # Team dissolution also begins with a defensive rollback. Persist group
+    # cleanup/transfers first so an image-less team owner cannot leave orphan
+    # personal or shared groups behind.
+    db.commit()
 
     # Images (rows + files on disk).
     for image in db.execute(select(Image).where(Image.owner_id == target.id)).scalars().all():

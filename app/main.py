@@ -13,19 +13,23 @@ Layered layout:
 
 import asyncio
 import logging
+import os
+import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
-from .api.routes import admin, auth, gallery, images, keys, teams, upload, users, videos
+from .api.routes import admin, auth, gallery, images, keys, library, teams, upload, users, videos
 from .core.config import settings
-from .core.database import init_db
+from .core.database import SessionLocal, init_db
 from .core.security import ensure_admin
 from .schemas import HealthResponse
-from .services.videos import cleanup_expired_uploads, recover_finalizing_uploads
+from .services.library import cleanup_orphan_media_library
+from .services.videos import cleanup_expired_uploads, ensure_free_space, recover_finalizing_uploads
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 logger = logging.getLogger(__name__)
@@ -48,6 +52,7 @@ async def _cleanup_uploads_periodically(stop: asyncio.Event) -> None:
 async def lifespan(_: FastAPI):
     init_db()
     ensure_admin()
+    cleanup_orphan_media_library()
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
     recover_finalizing_uploads()
     cleanup_expired_uploads()
@@ -63,8 +68,9 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title="oss",
     version=settings.version,
-    description="Self-hosted image and video storage with short-code URLs, "
-    "resumable video uploads, per-user isolation and role-based access control. "
+    description="Self-hosted image and video media library with short-code URLs, "
+    "resumable uploads, personal/team collections, per-user isolation and "
+    "role-based access control. "
     "Images use POST /api/upload and GET /i/{code}; videos use the "
     "/api/video-uploads flow and GET /v/{code}.",
     lifespan=lifespan,
@@ -81,6 +87,7 @@ app.include_router(teams.router)
 app.include_router(admin.router)
 app.include_router(keys.router)
 app.include_router(videos.router)
+app.include_router(library.router)
 
 if STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -100,6 +107,55 @@ def _serve_index() -> FileResponse:
 @app.get("/healthz", response_model=HealthResponse, tags=["meta"])
 def healthz() -> HealthResponse:
     return HealthResponse(status="ok", version=settings.version)
+
+
+def _probe_data_directory() -> None:
+    """Durably write and remove a tiny readiness probe in the data volume."""
+    probe_path: Path | None = None
+    descriptor: int | None = None
+    failure: OSError | None = None
+    try:
+        settings.data_dir.mkdir(parents=True, exist_ok=True)
+        descriptor, raw_path = tempfile.mkstemp(prefix=".readyz-", dir=settings.data_dir)
+        probe_path = Path(raw_path)
+        if os.write(descriptor, b"ready") != 5:
+            raise OSError("short readiness probe write")
+        os.fsync(descriptor)
+    except OSError as exc:
+        failure = exc
+    finally:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError as exc:
+                failure = failure or exc
+        if probe_path is not None:
+            try:
+                probe_path.unlink(missing_ok=True)
+            except OSError as exc:
+                failure = failure or exc
+    if failure is not None:
+        raise failure
+
+
+@app.get("/readyz", response_model=HealthResponse, tags=["meta"])
+def readyz() -> HealthResponse:
+    """Readiness: SQLite is readable and the data volume can accept writes."""
+    try:
+        with SessionLocal() as db:
+            if db.execute(text("SELECT 1")).scalar_one() != 1:
+                raise RuntimeError("unexpected SQLite probe result")
+    except Exception as exc:
+        logger.warning("readiness database probe failed: %s", exc)
+        raise HTTPException(status_code=503, detail="database is not ready") from exc
+
+    try:
+        _probe_data_directory()
+        ensure_free_space()
+    except Exception as exc:
+        logger.warning("readiness storage probe failed: %s", exc)
+        raise HTTPException(status_code=503, detail="storage is not ready") from exc
+    return HealthResponse(status="ready", version=settings.version)
 
 
 # Custom bilingual (中文/English) API documentation — replaces the built-in Swagger UI.

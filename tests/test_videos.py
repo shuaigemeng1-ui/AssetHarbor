@@ -59,12 +59,57 @@ def test_initialize_status_resume_and_owner_isolation(client):
     assert body["uploaded_parts"] == []
     assert body["expires_at"]
 
-    # Re-initializing the same file/team returns the durable session.
-    resumed = init_video(client, owner, data, name="ignored on resume", visibility="private")
+    # Re-initializing the same file and immutable metadata returns the durable session.
+    resumed = init_video(client, owner, data, name="  演示视频  ", visibility="private")
     assert resumed.status_code == 201
     assert resumed.json()["upload_id"] == body["upload_id"]
     assert client.get(f"/api/video-uploads/{body['upload_id']}", headers=auth(owner)).status_code == 200
     assert client.get(f"/api/video-uploads/{body['upload_id']}", headers=auth(other)).status_code == 404
+
+
+def test_session_reuse_includes_visibility_name_and_original_filename(client):
+    data = _sample()
+    _, token = new_user(client)
+    base = init_video(
+        client,
+        token,
+        data,
+        filename="folder/original.mp4",
+        name="Launch",
+        visibility="public",
+    )
+    assert base.status_code == 201
+    base_id = base.json()["upload_id"]
+
+    # Normalized filename/name and identical visibility remain idempotent.
+    same = init_video(
+        client,
+        token,
+        data,
+        filename="C:\\incoming\\original.mp4",
+        name="  Launch  ",
+        visibility="public",
+    )
+    assert same.status_code == 201
+    assert same.json()["upload_id"] == base_id
+
+    private = init_video(
+        client, token, data, filename="original.mp4", name="Launch", visibility="private"
+    )
+    renamed = init_video(
+        client, token, data, filename="original.mp4", name="Launch private", visibility="public"
+    )
+    refiled = init_video(
+        client, token, data, filename="another.mp4", name="Launch", visibility="public"
+    )
+    assert private.status_code == renamed.status_code == refiled.status_code == 201
+    ids = {
+        base_id,
+        private.json()["upload_id"],
+        renamed.json()["upload_id"],
+        refiled.json()["upload_id"],
+    }
+    assert len(ids) == 4
 
 
 def test_configured_size_boundary_without_allocating_gigabytes(client, monkeypatch):

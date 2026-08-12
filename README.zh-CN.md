@@ -65,7 +65,8 @@ docker compose up -d
 
 # 4. 打开上传页
 #    http://服务器IP:8080
-#    用 admin / $ADMIN_PASSWORD 登录，或注册新账号（默认开放注册）
+#    用 admin / $ADMIN_PASSWORD 登录。新安装默认关闭自助注册；
+#    确需公开注册时显式设置 ALLOW_REGISTRATION=open。
 ```
 
 **网络模式**：默认 `bridge` 模式将宿主机端口（`PORT`）映射进容器。若需要容器直接绑定宿主机网络（如绑定指定宿主机 IP），在 `.env` 设置 `NETWORK_MODE=host`——此时 `PORT` 即容器直接监听的宿主机端口。
@@ -98,12 +99,16 @@ curl -X POST http://服务器IP:8080/api/upload \
 | `VIDEO_CHUNK_SIZE_MB` | `8` | 视频分片大小（MiB）；反向代理请求体上限必须大于它 |
 | `VIDEO_UPLOAD_TTL_HOURS` | `168` | 未完成上传会话的滑动有效期（默认 7 天） |
 | `MAX_ACTIVE_VIDEO_UPLOADS` | `3` | 每位用户最多未完成视频会话数 |
-| `MIN_FREE_SPACE_MB` | `1024` | 磁盘保留空间；不足时初始化或写片返回 507 |
+| `MIN_FREE_SPACE_MB` | `1024` | 磁盘保留空间；不足时图片/视频写入返回 507 |
+| `VIDEO_CLEANUP_INTERVAL_SECONDS` | `3600` | 清理过期/未完成视频上传的执行间隔（秒） |
+| `SQLITE_BUSY_TIMEOUT_MS` | `5000` | SQLite 等待写锁释放的最长时间（毫秒） |
 | `SHORT_CODE_LENGTH` | `10` | 短码长度（base62 字符，越长越难枚举） |
 | `PUBLIC_URL` | *(空)* | 返回链接的前缀，如 `https://img.example.com`；留空则按请求自动推断 |
 | `ADMIN_PASSWORD` | *(空)* | 首次启动自动创建/刷新 `admin` 管理员账号；留空则不创建 |
-| `ALLOW_REGISTRATION` | `open` | 注册策略：`open` 开放 / `invite` 邀请码 / `closed` 关闭 |
+| `ALLOW_REGISTRATION` | `closed` | 注册策略：`open` 开放 / `invite` 邀请码 / `closed` 关闭；升级后仍需公开注册必须显式设为 `open` |
 | `INVITE_CODE` | *(空)* | `ALLOW_REGISTRATION=invite` 时的注册邀请码 |
+| `REGISTRATION_RATE_LIMIT_PER_MINUTE` | `10` | 每 IP 每分钟自助注册尝试次数 |
+| `REGISTRATION_RATE_LIMIT_PER_USERNAME` | `3` | 每用户名每分钟自助注册尝试次数 |
 | `JWT_SECRET` | *(空)* | JWT 签名密钥；留空则每次重启登录态失效（建议 `openssl rand -hex 32` 生成） |
 | `DEFAULT_VISIBILITY` | `private` | 新上传图片的默认可见性：`private`（仅自己/团队/管理员 + 签名链接）或 `public`（任何人可访问） |
 | `SIGNED_URL_TTL_SECONDS` | `86400` | 私密媒体签名链接有效期（秒） |
@@ -122,6 +127,7 @@ curl -X POST http://服务器IP:8080/api/upload \
 | POST | `/api/auth/login` | 表单 `username` & `password` → `{access_token, user}` |
 | GET | `/api/auth/me` | 当前用户信息 |
 | POST | `/api/auth/change-password` | `{old_password, new_password}` 修改自己的密码 |
+| GET | `/api/auth/config` | 前端可安全读取的注册模式、上传限制等配置 |
 
 ### 图片
 
@@ -153,6 +159,18 @@ curl -X POST http://服务器IP:8080/api/upload \
 | GET | `/api/teams/{id}/videos?q` | 团队空间视频 |
 
 分片从 0 编号，可乱序上传。每次成功写片会刷新 7 天有效期。缺片、哈希不一致，或用同一分片号重传不同内容时返回 409；缺少或无法解析 `Content-Range` 返回 400，与对应分片不匹配的范围返回 416；其他用户无法探知该上传 ID。完整 API 示例见 `/docs`。
+
+### 统一媒体库与分组
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/library/stats` | 当前用户个人媒体库概览；管理员返回全局概览 |
+| GET | `/api/media?kind&team_id&group_id&q&limit&offset` | 图片/视频统一分页、搜索与范围筛选 |
+| GET | `/api/media-groups?team_id&q&limit&offset` | 列出个人或团队分组 |
+| POST | `/api/media-groups` | 创建 `{name,description?,color?,sort_order?,team_id?,codes?}`；传 `codes` 时原子创建并加入媒体 |
+| GET / PATCH / DELETE | `/api/media-groups/{id}` | 查看、修改或删除分组；删除分组不会删除媒体 |
+| GET / POST | `/api/media-groups/{id}/items` | 分页读取组内媒体，或用 `{codes:[...]}` 批量加入 |
+| DELETE | `/api/media-groups/{id}/items/{code}` | 从分组移出媒体，不删除资产 |
 
 ### API Key 鉴权（脚本/命令行）
 
@@ -196,9 +214,10 @@ curl -X DELETE "http://服务器IP:8080/api/images/<code>" -H "Authorization: Be
 | GET | `/api/admin/stats` | `{users,images,videos,media_total,pending_upload_bytes,teams,storage_bytes}` |
 | GET | `/api/admin/teams` | 全部团队（含拥有者、成员数） |
 | GET | `/api/users` | 全部用户 |
+| POST | `/api/admin/users` | 在关闭自助注册时创建 `{username,password,role?}` 用户 |
 | PATCH | `/api/admin/users/{id}/role` | 设置角色 `{role: admin\|user}`（不能改自己） |
 | PATCH | `/api/admin/users/{id}/password` | 重置密码 `{new_password}` |
-| DELETE | `/api/admin/users/{id}` | 删除用户及其全部数据（图片/Key/团队） |
+| DELETE | `/api/admin/users/{id}` | 删除账号、个人媒体/分组、未完成上传与 Key；其拥有的团队会解散，团队媒体回到仍存在的上传者，共享分组转交或删除 |
 
 ### 获取图片与签名链接
 
@@ -252,6 +271,19 @@ pytest
 - 持久化整个 `/data`，其中 `/data/uploads` 保存未完成分片。入口脚本只在首次挂载时递归初始化权限，后续启动不会扫描全部媒体文件。
 - Nginx 的 `client_max_body_size` 必须大于 `VIDEO_CHUNK_SIZE_MB`（默认配置至少设为 `9m`）；不要移除 `Range`、`If-Range`、`Content-Range`、`Accept-Ranges`。Caddy 同样需要放宽请求体限制。
 - 依赖下限 `starlette>=0.49.1` 包含上游 Range 解析复杂度漏洞修复；公网开放 `/v` 时请持续更新依赖。
+- `/healthz` 仅做轻量存活检查；`/readyz` 还会验证 SQLite 可读、在 `/data` 完成一次可落盘且会删除的写探测，并检查磁盘保留空间。流量就绪探针应使用 `/readyz`。
+
+### 维护窗口内的 SQLite WAL 一致备份与恢复
+
+SQLite 数据库、`files` 下的正式媒体和 `uploads` 下的断点续传状态共同组成一份备份集。单独备份 SQLite 即使数据库内部一致，也可能引用另一个时间点已经新增或删除的媒体，因此**不能**视为服务级一致备份。
+
+每次备份都应进入维护窗口：
+
+1. 停止 `oss` 容器，并确认没有应用进程继续写入 `./data`。
+2. 将整个 `./data` 作为一个整体进行快照、复制或归档；`oss.db`、可能存在的 `oss.db-wal`/`oss.db-shm`、`files`、`uploads` 和权限标记必须保存在同一备份集中。
+3. 重启服务前验证快照/归档可读，记录或核对校验和，并确认数据库与两个媒体目录均来自这一份备份集。
+
+恢复时保持 `oss` 停止，先校验选定备份，再整体恢复数据目录，不要逐项拼接文件。恢复 UID/GID 1000 的属主权限（真正的全新卷也可交给入口脚本初始化），启动后同时检查 `/healthz` 与 `/readyz`。禁止混用不同备份集中的数据库和媒体目录。
 
 ## 📁 项目结构
 
@@ -304,7 +336,7 @@ oss/
   - 登录：每 IP 20 次/分 + 每账号 5 次/分（防暴力破解）
   - 取图 `GET /i/{code}`：每 IP 240 次/分（防短码枚举）
   - 上传：每用户 60 次/分
-- **注册策略**：默认开放，可切换邀请码/关闭模式；管理员账号由环境变量引导创建
+- **注册策略**：默认关闭，可显式切换邀请码/开放模式；管理员可通过控制台或 API 创建用户
 - **随机短码**：`secrets.randbelow` 均匀采样 base62（默认 10 位 ≈ 8.4×10¹⁷），防顺序枚举
 - **最小权限**：容器内以非 root 用户运行，数据卷权限由 entrypoint 自动修复
 - 上传有大小上限，按块读取，超限即断

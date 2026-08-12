@@ -35,7 +35,7 @@ COPY --from=frontend --chown=oss:oss /build/frontend/dist /app/app/static
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD python -c "import os,sys,urllib.request; port=os.environ.get('OSS_APP_PORT','8080'); sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:'+port+'/healthz', timeout=2).status==200 else 1)"
+    CMD python -c "import os,sys,urllib.request; port=os.environ.get('OSS_APP_PORT','8080'); sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:'+port+'/readyz', timeout=2).status==200 else 1)"
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 # 监听端口由环境变量 OSS_APP_PORT 控制（默认 8080）：

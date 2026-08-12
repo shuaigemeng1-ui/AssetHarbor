@@ -3,7 +3,7 @@
 Re-exports everything so callers can use ``from app.schemas import X``.
 """
 
-from .admin import AdminStats
+from .admin import AdminStats, AdminUserCreate
 from .auth import (
     ChangePasswordRequest,
     RegisterRequest,
@@ -13,7 +13,18 @@ from .auth import (
 )
 from .image import ImageInfo, ImageListResponse, ImageUpdate, SignedLinkResponse, UploadResponse
 from .key import ApiKeyCreate, ApiKeyCreated, ApiKeyOut
-from .meta import HealthResponse
+from .library import (
+    LibraryStats,
+    MediaGroupCreate,
+    MediaGroupItemsAdd,
+    MediaGroupItemsResult,
+    MediaGroupListResponse,
+    MediaGroupOut,
+    MediaGroupUpdate,
+    UnifiedMediaInfo,
+    UnifiedMediaListResponse,
+)
+from .meta import HealthResponse, PublicConfig
 from .team import (
     AddMember,
     RoleUpdate,
@@ -35,6 +46,7 @@ from .video import (
 __all__ = [
     "AddMember",
     "AdminStats",
+    "AdminUserCreate",
     "ApiKeyCreate",
     "ApiKeyCreated",
     "ApiKeyOut",
@@ -43,6 +55,13 @@ __all__ = [
     "ImageInfo",
     "ImageListResponse",
     "ImageUpdate",
+    "LibraryStats",
+    "MediaGroupCreate",
+    "MediaGroupItemsAdd",
+    "MediaGroupItemsResult",
+    "MediaGroupListResponse",
+    "MediaGroupOut",
+    "MediaGroupUpdate",
     "RegisterRequest",
     "ResetPasswordRequest",
     "RoleUpdate",
@@ -55,6 +74,8 @@ __all__ = [
     "TokenResponse",
     "UploadResponse",
     "UserOut",
+    "UnifiedMediaInfo",
+    "UnifiedMediaListResponse",
     "VideoInfo",
     "VideoListResponse",
     "VideoPartResponse",

@@ -1,7 +1,8 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { deleteImage, listImages, listTeamImages, updateImage, uploadFile } from '../api'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { deleteImage, fetchPublicConfig, listImages, listTeamImages, updateImage, uploadFile } from '../api'
 import { confirmAction, toast } from '../stores/feedback'
+import CollectionPickerModal from './CollectionPickerModal.vue'
 import ImageResult from './ImageResult.vue'
 import UploadDropzone from './UploadDropzone.vue'
 
@@ -20,36 +21,45 @@ const loadError = ref('')
 const query = ref('')
 const uploadName = ref('')
 const uploadVisibility = ref('private')
+const groupTarget = ref(null)
+const publicConfig = ref(null)
 const PAGE_SIZE = 12
 let nextId = 1
 let searchTimer = null
+let loadGeneration = 0
 
 const isTeam = computed(() => props.teamId !== null && props.teamId !== undefined)
 const hasMore = computed(() => images.value.length < total.value)
-
-async function fetchPage(offset) {
-  const options = { limit: PAGE_SIZE, offset, q: query.value.trim() }
-  return isTeam.value ? listTeamImages(props.teamId, options) : listImages(options)
-}
+const groupTargetTeamId = computed(() => groupTarget.value?.team_id ?? props.teamId)
 
 async function loadGallery({ append = false } = {}) {
+  const generation = ++loadGeneration
+  const scope = String(props.teamId ?? 'personal')
+  const requestQuery = query.value.trim()
+  const offset = append ? images.value.length : 0
   if (append) loadingMore.value = true
   else loading.value = true
   loadError.value = ''
   try {
-    const response = await fetchPage(append ? images.value.length : 0)
+    const response = isTeam.value
+      ? await listTeamImages(props.teamId, { limit: PAGE_SIZE, offset, q: requestQuery })
+      : await listImages({ limit: PAGE_SIZE, offset, q: requestQuery })
+    if (generation !== loadGeneration || scope !== String(props.teamId ?? 'personal') || requestQuery !== query.value.trim()) return
     const incoming = response.items || []
     images.value = append ? [...images.value, ...incoming] : incoming
     total.value = Number(response.total || 0)
   } catch (error) {
-    loadError.value = error.message
+    if (generation === loadGeneration) loadError.value = error.message
   } finally {
-    loading.value = false
-    loadingMore.value = false
+    if (generation === loadGeneration) {
+      loading.value = false
+      loadingMore.value = false
+    }
   }
 }
 
 function onQueryInput() {
+  loadGeneration++
   clearTimeout(searchTimer)
   searchTimer = window.setTimeout(() => loadGallery(), 300)
 }
@@ -60,29 +70,48 @@ async function handleFiles(files) {
   for (let index = 0; index < list.length; index++) {
     const file = list[index]
     const name = base ? (list.length > 1 ? `${base}-${index + 1}` : base) : ''
-    const pending = { id: nextId++, file, status: 'uploading', result: null, error: '' }
+    const pendingId = nextId++
+    // Keep mutations reactive while the request is in flight. Vue wraps
+    // objects inserted into a reactive array, so removing by raw-object
+    // identity can leave a completed card stuck in "uploading" forever.
+    const pending = reactive({ id: pendingId, file, name, visibility: uploadVisibility.value, teamId: props.teamId, status: 'uploading', result: null, error: '' })
     uploads.value.unshift(pending)
-    try {
-      pending.result = await uploadFile(file, {
-        name,
-        visibility: uploadVisibility.value,
-        teamId: props.teamId,
-      })
-      pending.status = 'done'
-      uploads.value = uploads.value.filter(item => item !== pending)
-      if (!query.value.trim()) {
-        images.value.unshift(pending.result)
-        total.value++
-      } else {
-        await loadGallery()
-      }
-      toast(`${file.name} 上传成功`, 'success')
-    } catch (error) {
-      pending.error = error.message
-      pending.status = 'error'
-      toast(`${file.name} 上传失败：${error.message}`, 'error')
-    }
+    await runUpload(pending)
   }
+}
+
+async function runUpload(pending) {
+  pending.status = 'uploading'
+  pending.error = ''
+  try {
+    const result = await uploadFile(pending.file, {
+      name: pending.name,
+      visibility: pending.visibility,
+      teamId: pending.teamId,
+    })
+    pending.result = result
+    pending.status = 'done'
+    uploads.value = uploads.value.filter(item => item.id !== pending.id)
+    if (!query.value.trim()) {
+      images.value.unshift(result)
+      total.value++
+    } else {
+      await loadGallery()
+    }
+    toast(`${pending.file.name} 上传成功`, 'success')
+  } catch (error) {
+    pending.error = error.message
+    pending.status = 'error'
+    toast(`${pending.file.name} 上传失败：${error.message}`, 'error')
+  }
+}
+
+function retryUpload(pending) {
+  if (pending.status === 'error') runUpload(pending)
+}
+
+function removeUpload(pending) {
+  uploads.value = uploads.value.filter(item => item.id !== pending.id)
 }
 
 function wrapped(item) {
@@ -130,6 +159,12 @@ function canDelete(item) {
   return props.user.role === 'admin' || props.canManage || item.owner_id === props.user.id
 }
 
+function canGroup(item) {
+  if (isTeam.value || props.user.role !== 'admin') return true
+  if (item.team_id !== null && item.team_id !== undefined) return true
+  return String(item.owner_id) === String(props.user.id)
+}
+
 function clearSearch() {
   query.value = ''
   loadGallery()
@@ -141,7 +176,13 @@ watch(() => props.teamId, () => {
   loadGallery()
 })
 
-onMounted(loadGallery)
+onMounted(async () => {
+  loadGallery()
+  try {
+    publicConfig.value = await fetchPublicConfig()
+    uploadVisibility.value = publicConfig.value.default_visibility || uploadVisibility.value
+  } catch { /* upload APIs remain usable when optional public config is unavailable */ }
+})
 onBeforeUnmount(() => clearTimeout(searchTimer))
 </script>
 
@@ -158,7 +199,7 @@ onBeforeUnmount(() => clearTimeout(searchTimer))
 
     <div class="upload-panel">
       <div class="options">
-        <input v-model="uploadName" class="name-input" type="text" placeholder="图片命名（可选，多张自动加序号）" maxlength="255" />
+        <input v-model="uploadName" class="name-input" type="text" placeholder="图片命名（可选，多张自动加序号）" maxlength="255" aria-label="图片显示名称" />
         <select v-model="uploadVisibility" class="vis-select" aria-label="图片可见性">
           <option value="private">私密 · 仅自己/团队可见</option>
           <option value="public">公开 · 任何人可访问</option>
@@ -167,7 +208,7 @@ onBeforeUnmount(() => clearTimeout(searchTimer))
       <UploadDropzone
         accept="image/*"
         label="选择图片，或拖拽到这里"
-        description="支持 JPG、PNG、GIF、WebP、SVG、AVIF 等常用格式"
+        :description="`支持 JPG、PNG、GIF、WebP、SVG、AVIF 等常用格式${publicConfig ? ` · 最大 ${publicConfig.max_upload_size_mb} MB` : ''}`"
         aria-label="选择或拖拽图片上传"
         @files="handleFiles"
       />
@@ -175,17 +216,17 @@ onBeforeUnmount(() => clearTimeout(searchTimer))
 
     <div class="library-toolbar">
       <div class="search-row">
-        <input v-model="query" class="search" type="search" placeholder="搜索名称、文件名或短码" @input="onQueryInput" />
+        <input v-model="query" class="search" type="search" placeholder="搜索名称、文件名或短码" aria-label="搜索图片" @input="onQueryInput" />
         <button v-if="query" class="clear" aria-label="清除搜索" @click="clearSearch">×</button>
       </div>
     </div>
 
     <div v-if="uploads.length" class="media-grid pending-grid">
-      <ImageResult v-for="item in uploads" :key="item.id" :item="item" />
+      <ImageResult v-for="item in uploads" :key="item.id" :item="item" @retry="retryUpload(item)" @remove-pending="removeUpload(item)" />
     </div>
 
-    <p v-if="loading" class="status loading-state">正在加载图片…</p>
-    <p v-else-if="loadError" class="status error">加载失败：{{ loadError }}</p>
+    <p v-if="loading" class="status loading-state" aria-live="polite">正在加载图片…</p>
+    <p v-else-if="loadError" class="status error" role="alert">加载失败：{{ loadError }}</p>
     <template v-else>
       <div v-if="images.length" class="media-grid">
         <ImageResult
@@ -193,6 +234,8 @@ onBeforeUnmount(() => clearTimeout(searchTimer))
           :key="item.id || item.code"
           :item="wrapped(item)"
           :deletable="canDelete(item)"
+          :groupable="canGroup(item)"
+          @add-to-group="groupTarget = item"
           @delete="onDelete(item)"
           @toggle-visibility="onToggleVisibility(item)"
         />
@@ -208,5 +251,14 @@ onBeforeUnmount(() => clearTimeout(searchTimer))
         </button>
       </div>
     </template>
+
+    <CollectionPickerModal
+      v-if="groupTarget"
+      :media="groupTarget"
+      :team-id="groupTargetTeamId"
+      :user-id="user.id"
+      :can-manage="canManage || user.role === 'admin'"
+      @close="groupTarget = null"
+    />
   </section>
 </template>

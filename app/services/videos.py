@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from ..core.config import settings
 from ..core.database import SessionLocal
 from ..models import Image, Team, UploadPart, UploadSession, User
+from .library import delete_team_groups, fresh_library_user, serialized_library_lifecycle
 from .shortcode import generate_short_code
 from .teams import get_membership
 
@@ -190,6 +191,17 @@ def _release_write_space(reserved_bytes: int) -> None:
         _reserved_write_bytes = max(0, _reserved_write_bytes - max(0, reserved_bytes))
 
 
+@contextmanager
+def reserve_write_space(required_bytes: int):
+    """Share the video-chunk disk reservation with other media writers."""
+    required = max(0, required_bytes)
+    _reserve_write_space(required)
+    try:
+        yield
+    finally:
+        _release_write_space(required)
+
+
 def _part_peak_growth(expected_size: int, offset: int, current_file_size: int) -> int:
     """Conservatively reserve temporary and random-access target allocation.
 
@@ -314,6 +326,7 @@ def _check_team_access(db: Session, team_id: int | None, user: User) -> None:
         raise HTTPException(status_code=403, detail="you are not a member of this team")
 
 
+@serialized_library_lifecycle
 @_serialized(_session_create_lock)
 def create_upload_session(
     db: Session,
@@ -330,6 +343,7 @@ def create_upload_session(
     # Refresh the transaction after entering it so a team checked by the route
     # cannot be deleted while this session is being inserted.
     db.rollback()
+    user = fresh_library_user(db, user)
     if visibility not in ("public", "private"):
         raise HTTPException(status_code=422, detail="visibility must be 'public' or 'private'")
     if size <= 0:
@@ -344,6 +358,13 @@ def create_upload_session(
         raise HTTPException(status_code=422, detail="fingerprint must be a SHA-256 hex digest")
     _check_team_access(db, team_id, user)
 
+    # These values become immutable metadata on the finalized asset. Session
+    # reuse must therefore match the complete normalized intent, not merely
+    # the file bytes. In particular, a public initialization must never be
+    # silently resumed when the caller asks for a private upload later.
+    normalized_filename = _safe_filename(filename)
+    normalized_name = name.strip()[:255] or normalized_filename
+
     now = _now()
     existing = db.execute(
         select(UploadSession)
@@ -351,6 +372,9 @@ def create_upload_session(
             UploadSession.owner_id == user.id,
             UploadSession.fingerprint == normalized_fp,
             UploadSession.size == size,
+            UploadSession.original_filename == normalized_filename,
+            UploadSession.name == normalized_name,
+            UploadSession.visibility == visibility,
             UploadSession.team_id.is_(team_id) if team_id is None else UploadSession.team_id == team_id,
             UploadSession.status.in_(_ACTIVE_STATUSES),
             UploadSession.expires_at > now,
@@ -383,8 +407,8 @@ def create_upload_session(
         upload_id=str(uuid.uuid4()),
         owner_id=user.id,
         team_id=team_id,
-        original_filename=_safe_filename(filename),
-        name=name.strip()[:255] or _safe_filename(filename),
+        original_filename=normalized_filename,
+        name=normalized_name,
         visibility=visibility,
         size=size,
         chunk_size=chunk_size,
@@ -689,6 +713,7 @@ def _create_final_image(db: Session, upload: UploadSession, info: dict[str, str]
     return image
 
 
+@serialized_library_lifecycle
 @_serialized(_finalization_lock)
 def complete_upload_session(db: Session, upload: UploadSession, user: User) -> Image:
     upload_id = upload.upload_id
@@ -697,8 +722,11 @@ def complete_upload_session(db: Session, upload: UploadSession, user: User) -> I
         # upload cancellation both commit under compatible lifecycle locks, so
         # finalization must make its decision from a fresh database snapshot.
         db.rollback()
+        user = fresh_library_user(db, user)
         current = db.get(UploadSession, upload_id)
         if current is None:
+            raise HTTPException(status_code=404, detail="upload session not found")
+        if current.owner_id != user.id and user.role != "admin":
             raise HTTPException(status_code=404, detail="upload session not found")
         if current.status == "completed" and current.final_code:
             image = db.execute(select(Image).where(
@@ -799,6 +827,7 @@ def complete_upload_session(db: Session, upload: UploadSession, user: User) -> I
             raise
 
 
+@serialized_library_lifecycle
 @_serialized(_finalization_lock)
 def recover_finalizing_session(db: Session, upload: UploadSession) -> None:
     """Idempotently finish one session interrupted around its atomic move."""
@@ -829,6 +858,27 @@ def recover_finalizing_session(db: Session, upload: UploadSession) -> None:
         os.replace(source, destination)
     if not destination.is_file():
         upload.status = "failed"
+        upload.updated_at = _now()
+        db.commit()
+        return
+
+    owner = db.get(User, upload.owner_id)
+    try:
+        if owner is None:
+            raise HTTPException(status_code=404, detail="upload owner not found")
+        _check_team_access(db, upload.team_id, owner)
+    except HTTPException:
+        # Authorization may have been revoked while the process was down.
+        # Restore the atomically moved file to resumable storage and never
+        # create an owner/team-scoped asset from stale authorization.
+        if destination.is_file():
+            if not source.is_file():
+                session_dir(upload.upload_id).mkdir(parents=True, exist_ok=True)
+                os.replace(destination, source)
+            else:
+                destination.unlink(missing_ok=True)
+        upload.status = "active" if owner is not None else "failed"
+        upload.resume_info = ""
         upload.updated_at = _now()
         db.commit()
         return
@@ -905,6 +955,7 @@ def _cleanup_upload_directory(child: Path, stale_before: float) -> bool:
     return False
 
 
+@serialized_library_lifecycle
 @_serialized(_session_create_lock)
 def cleanup_expired_uploads() -> int:
     """Delete expired tracking/temp data and old orphan upload directories."""
@@ -972,6 +1023,7 @@ def cleanup_expired_uploads() -> int:
     return removed
 
 
+@serialized_library_lifecycle
 @_serialized(_session_create_lock)
 @_serialized(_finalization_lock)
 def dissolve_team_media(db: Session, team: Team) -> None:
@@ -987,6 +1039,10 @@ def dissolve_team_media(db: Session, team: Team) -> None:
     current = db.get(Team, team_id)
     if current is None:
         return
+    # Team groups are shared-space organization metadata. Once media is
+    # returned to each uploader's personal space, keeping a mixed-owner group
+    # would violate the scope invariant, so groups/items are removed explicitly.
+    delete_team_groups(db, team_id)
     db.execute(update(Image).where(Image.team_id == team_id).values(team_id=None))
     db.execute(
         update(UploadSession).where(UploadSession.team_id == team_id).values(team_id=None)

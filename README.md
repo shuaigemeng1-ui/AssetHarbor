@@ -65,8 +65,8 @@ docker compose up -d
 
 # 4. Open the web UI
 #    http://<server-ip>:8080
-#    Sign in with admin / $ADMIN_PASSWORD, or register a new account
-#    (registration policy defaults to open)
+#    Sign in with admin / $ADMIN_PASSWORD. New installs disable self-registration.
+#    Set ALLOW_REGISTRATION=open explicitly if public sign-up is intended.
 ```
 
 **Network mode**: the default `bridge` mode maps the host port (`PORT`) to the container. If you need the container to bind directly to the host network (e.g. bind a specific host IP), set `NETWORK_MODE=host` in `.env` — `PORT` then becomes the host port the app listens on directly.
@@ -99,12 +99,16 @@ curl -X POST http://<server-ip>:8080/api/upload \
 | `VIDEO_CHUNK_SIZE_MB` | `8` | Video chunk size (MiB); reverse-proxy body limit must be larger |
 | `VIDEO_UPLOAD_TTL_HOURS` | `168` | Sliding lifetime of an unfinished video session |
 | `MAX_ACTIVE_VIDEO_UPLOADS` | `3` | Maximum unfinished video sessions per user |
-| `MIN_FREE_SPACE_MB` | `1024` | Reserved free disk space; initialization/part writes fail with 507 below it |
+| `MIN_FREE_SPACE_MB` | `1024` | Reserved free disk space; image/video writes fail with 507 below it |
+| `VIDEO_CLEANUP_INTERVAL_SECONDS` | `3600` | Interval between expired/incomplete video-upload cleanup passes |
+| `SQLITE_BUSY_TIMEOUT_MS` | `5000` | SQLite busy-writer wait time in milliseconds |
 | `SHORT_CODE_LENGTH` | `10` | Short-code length (base62 chars; longer = harder to enumerate) |
 | `PUBLIC_URL` | *(empty)* | Base prefix for returned links, e.g. `https://img.example.com`; leave empty to auto-derive from the request |
 | `ADMIN_PASSWORD` | *(empty)* | Creates/refreshes the `admin` account on startup; empty = no admin bootstrapped |
-| `ALLOW_REGISTRATION` | `open` | Registration policy: `open` / `invite` / `closed` |
+| `ALLOW_REGISTRATION` | `closed` | Registration policy: `open` / `invite` / `closed`; upgrades that need public sign-up must explicitly set `open` |
 | `INVITE_CODE` | *(empty)* | Invite code required when `ALLOW_REGISTRATION=invite` |
+| `REGISTRATION_RATE_LIMIT_PER_MINUTE` | `10` | Self-registration attempts per IP per minute |
+| `REGISTRATION_RATE_LIMIT_PER_USERNAME` | `3` | Self-registration attempts per username per minute |
 | `JWT_SECRET` | *(empty)* | JWT signing secret; empty = ephemeral (all sessions reset on restart). Use `openssl rand -hex 32` |
 | `DEFAULT_VISIBILITY` | `private` | Default visibility for new uploads: `private` (only you/team/admins + signed links) or `public` (anyone with the link) |
 | `SIGNED_URL_TTL_SECONDS` | `86400` | TTL of expiring signed links for private media (seconds) |
@@ -123,6 +127,7 @@ All endpoints except register / login / public image fetch / health require `Aut
 | POST | `/api/auth/login` | form `username` & `password` → `{access_token, user}` |
 | GET | `/api/auth/me` | current user |
 | POST | `/api/auth/change-password` | `{old_password, new_password}` |
+| GET | `/api/auth/config` | non-sensitive UI config: registration mode and upload limits |
 
 ### Images
 
@@ -165,6 +170,18 @@ curl -X PUT "$BASE/api/video-uploads/$UPLOAD_ID/parts/0" \
 
 Part numbers are zero-based and may arrive out of order. A successful part refreshes the seven-day expiry. Completion returns the final video record. Missing parts, a mismatched hash, or replaying one part number with different bytes returns 409. A missing/malformed `Content-Range` returns 400; a range that does not match the requested part returns 416. Another user's upload ID is not disclosed.
 
+### Unified library and groups
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/library/stats` | current personal-library overview; global overview for admins |
+| GET | `/api/media?kind&team_id&group_id&q&limit&offset` | unified, searchable image/video listing |
+| GET | `/api/media-groups?team_id&q&limit&offset` | list personal or team groups |
+| POST | `/api/media-groups` | create `{name,description?,color?,sort_order?,team_id?,codes?}`; `codes` atomically creates and adds media |
+| GET / PATCH / DELETE | `/api/media-groups/{id}` | view, update, or delete a group without deleting its media |
+| GET / POST | `/api/media-groups/{id}/items` | paginate group media or add `{codes:[...]}` |
+| DELETE | `/api/media-groups/{id}/items/{code}` | remove media from a group without deleting the asset |
+
 ### API keys
 
 | Method | Path | Description |
@@ -203,9 +220,10 @@ curl -X DELETE "http://<server-ip>:8080/api/images/<code>" -H "Authorization: Be
 | GET | `/api/admin/stats` | `{users,images,videos,media_total,pending_upload_bytes,teams,storage_bytes}` |
 | GET | `/api/admin/teams` | all teams with member counts |
 | GET | `/api/users` | all users |
+| POST | `/api/admin/users` | create `{username,password,role?}` while self-registration is closed |
 | PATCH | `/api/admin/users/{id}/role` | set role `{role: admin\|user}` (cannot change self) |
 | PATCH | `/api/admin/users/{id}/password` | reset password `{new_password}` |
-| DELETE | `/api/admin/users/{id}` | delete a user and all their data (images, keys, teams) |
+| DELETE | `/api/admin/users/{id}` | delete the account, personal media/groups, pending uploads and keys; owned teams are dissolved, their media returns to surviving uploaders, and shared groups are transferred or removed |
 
 ## 🛠️ Local Development
 
@@ -244,6 +262,19 @@ pytest
 - Persist all of `/data`, including `/data/uploads`. The entrypoint initializes ownership once and then avoids recursively changing a large volume on every restart.
 - For Nginx, set `client_max_body_size` above `VIDEO_CHUNK_SIZE_MB` (for the default use at least `9m`) and do not strip `Range`, `If-Range`, `Content-Range`, or `Accept-Ranges`. Apply the equivalent request-body setting in Caddy.
 - The dependency floor `starlette>=0.49.1` includes the upstream fix for quadratic `Range` parsing. Keep dependencies updated when exposing `/v` publicly.
+- `/healthz` is a lightweight liveness check. `/readyz` additionally verifies SQLite readability, a durable write/remove probe in `/data`, and the configured free-space reserve; point traffic readiness checks at `/readyz`.
+
+### Maintenance-window backup and restore (SQLite WAL)
+
+The SQLite database, completed media under `files`, and resumable-upload state under `uploads` form one backup set. A database-only SQLite backup can be internally consistent while still referring to media that was added or removed at a different time, so it is **not** a consistent service backup.
+
+Use a maintenance window for every backup:
+
+1. Stop the `oss` container and confirm that no application process is writing to `./data`.
+2. Snapshot, copy, or archive the **entire** `./data` directory as one unit. Keep `oss.db`, `oss.db-wal`, `oss.db-shm` (when present), `files`, `uploads`, and the permission marker together.
+3. Before restarting the service, verify that the snapshot/archive can be read, record or compare checksums, and confirm that the database and both media directories are present in the same backup set.
+
+To restore, keep `oss` stopped, validate the selected backup before replacing data, and restore the whole data directory rather than individual files. Restore ownership to UID/GID 1000 (or let the entrypoint initialize a genuinely fresh volume), then start the container and verify both `/healthz` and `/readyz`. Never combine a database and media directories from different backup sets.
 
 ## 📁 Project Structure
 
@@ -296,7 +327,7 @@ oss/
   - Login: 20/min per IP + 5/min per account (anti brute-force)
   - `GET /i/{code}`: 240/min per IP (anti enumeration)
   - Upload: 60/min per user
-- **Registration policy**: open by default, switchable to invite-only or closed; admin bootstrapped from env
+- **Registration policy**: closed by default, explicitly switchable to invite-only or open; admins can create accounts from the dashboard/API
 - **Short codes**: `secrets.randbelow` uniform base62 sampling (10 chars ≈ 8.4×10¹⁷), no sequential enumeration
 - **Least privilege**: container runs as a non-root user; data-volume permissions fixed by the entrypoint
 - Uploads are read in chunks and aborted past the size limit

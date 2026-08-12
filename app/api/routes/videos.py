@@ -291,7 +291,7 @@ def delete_video(
     db: Session = Depends(get_db),
 ) -> None:
     video = _managed_video(db, code, current_user)
-    delete_image(db, video)
+    delete_image(db, video, current_user)
 
 
 @router.get(

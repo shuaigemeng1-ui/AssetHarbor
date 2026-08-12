@@ -1,6 +1,7 @@
 """Application settings, read from environment variables (OSS_* prefix) or a .env file."""
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -9,7 +10,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="OSS_", env_file=".env", extra="ignore")
 
     app_name: str = "oss"
-    version: str = "0.5.0"
+    version: str = "0.6.0"
 
     # --- storage -----------------------------------------------------------
     # Base directory for the SQLite database and uploaded files.
@@ -44,7 +45,9 @@ class Settings(BaseSettings):
     # Bootstrap password for the built-in "admin" account (empty = skip).
     admin_password: str = ""
     # Registration policy: open | invite | closed
-    allow_registration: str = "open"
+    # Closed by default now that administrators can provision accounts.
+    # Operators may explicitly choose open/invite for public deployments.
+    allow_registration: Literal["open", "invite", "closed"] = "closed"
     invite_code: str = ""
     # JWT signing secret. Leave empty for an ephemeral secret (tokens reset on
     # every restart) — set it in .env for stable tokens across restarts.
@@ -61,6 +64,8 @@ class Settings(BaseSettings):
     # In-process rate limits, per 60s window. See app/services/ratelimit.py.
     login_rate_limit_per_minute: int = 20        # per IP
     login_rate_limit_per_username: int = 5       # per account
+    registration_rate_limit_per_minute: int = 10  # per IP
+    registration_rate_limit_per_username: int = 3
     images_rate_limit_per_minute: int = 240      # GET /i/{code} per IP
     upload_rate_limit_per_minute: int = 60       # per user
 

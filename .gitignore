@@ -16,6 +16,7 @@ __pycache__/
 .env
 data/
 tests/_tmp_data/
+tests/_tmp_data_*/
 
 # OS
 .DS_Store

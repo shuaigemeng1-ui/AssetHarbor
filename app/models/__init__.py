@@ -3,8 +3,19 @@ model on ``Base.metadata`` (needed by ``create_all``)."""
 
 from .api_key import ApiKey
 from .image import Image
+from .media_group import MediaGroup, MediaGroupItem
 from .team import Team, TeamMember
 from .upload import UploadPart, UploadSession
 from .user import User
 
-__all__ = ["ApiKey", "Image", "Team", "TeamMember", "UploadPart", "UploadSession", "User"]
+__all__ = [
+    "ApiKey",
+    "Image",
+    "MediaGroup",
+    "MediaGroupItem",
+    "Team",
+    "TeamMember",
+    "UploadPart",
+    "UploadSession",
+    "User",
+]

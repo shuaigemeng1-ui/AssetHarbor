@@ -32,6 +32,33 @@ def test_register_validation(client):
     assert client.post("/api/auth/register", json={"username": "ok-name", "password": "123"}).status_code == 422
 
 
+def test_public_config_hides_secrets(client):
+    response = client.get("/api/auth/config")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["registration_mode"] == "open"
+    assert body["max_video_size_mb"] > 0
+    assert "invite_code" not in body
+    assert "jwt_secret" not in body
+
+
+def test_register_rate_limited_per_username(client, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "registration_rate_limit_per_username", 2)
+    name = _uname("registration_limit")
+    statuses = [
+        client.post(
+            "/api/auth/register",
+            json={"username": name, "password": "pass123"},
+        ).status_code
+        for _ in range(3)
+    ]
+    assert statuses[0] == 201
+    assert statuses[1] == 409
+    assert statuses[2] == 429
+
+
 def test_change_password_flow(client):
     name, token = new_user(client)
     h = auth(token)

@@ -93,7 +93,7 @@ def delete_image_endpoint(
         raise HTTPException(status_code=404, detail="image not found")
     if not can_manage_image(db, current_user, image):
         raise HTTPException(status_code=403, detail="you can only delete images you manage")
-    delete_image(db, image)
+    delete_image(db, image, current_user)
 
 
 @router.patch(

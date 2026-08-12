@@ -11,6 +11,7 @@ import {
 } from '../api'
 import { confirmAction, toast } from '../stores/feedback'
 import GalleryView from './GalleryView.vue'
+import CollectionsView from './CollectionsView.vue'
 import VideoView from './VideoView.vue'
 
 const props = defineProps({ user: { type: Object, required: true } })
@@ -24,9 +25,11 @@ const spaceTab = ref('images')
 const loadingTeam = ref(false)
 
 const myRole = computed(() => selected.value?.role)
-const canManage = computed(() => (
+const canManageMembers = computed(() => (
   ['owner', 'admin'].includes(myRole.value) || props.user.role === 'admin'
 ))
+const canChangeRoles = computed(() => myRole.value === 'owner' || props.user.role === 'admin')
+const canDissolve = computed(() => myRole.value === 'owner' || props.user.role === 'admin')
 
 function roleLabel(role) {
   return { owner: '拥有者', admin: '管理员', member: '成员' }[role] || role
@@ -78,17 +81,24 @@ async function doAddMember() {
 }
 
 async function doRemove(member) {
+  const removingSelf = member.id === selected.value.members.find(item => item.username === props.user.username)?.id
   const ok = await confirmAction({
-    title: '移除团队成员',
-    message: `确定把 ${member.username} 移出团队？`,
-    confirmText: '移除',
+    title: removingSelf ? '退出团队' : '移除团队成员',
+    message: removingSelf ? `确定退出「${selected.value.name}」？你的团队分组会转交给团队拥有者。` : `确定把 ${member.username} 移出团队？`,
+    confirmText: removingSelf ? '退出团队' : '移除',
     danger: true,
   })
   if (!ok) return
   try {
     await removeTeamMember(selected.value.id, member.id)
-    selected.value = await getTeam(selected.value.id)
-    toast('成员已移除', 'success')
+    if (removingSelf) {
+      selected.value = null
+      await loadTeams()
+      toast('已退出团队', 'success')
+    } else {
+      selected.value = await getTeam(selected.value.id)
+      toast('成员已移除', 'success')
+    }
   } catch (error) {
     toast(error.message, 'error')
   }
@@ -163,8 +173,8 @@ onMounted(loadTeams)
 
         <form class="team-create-form" @submit.prevent="doCreate">
           <h4>创建新团队</h4>
-          <input v-model="createName" placeholder="团队名称" maxlength="64" required />
-          <input v-model="createDesc" placeholder="简介（可选）" maxlength="255" />
+          <input v-model="createName" placeholder="团队名称" maxlength="64" aria-label="新团队名称" required />
+          <input v-model="createDesc" placeholder="简介（可选）" maxlength="255" aria-label="新团队简介" />
           <button class="primary" :disabled="!createName.trim()">创建团队</button>
         </form>
       </aside>
@@ -180,15 +190,15 @@ onMounted(loadTeams)
           </div>
           <div class="team-actions">
             <span class="role-badge">{{ roleLabel(myRole) }}</span>
-            <button v-if="canManage" class="ghost danger" @click="doDeleteTeam">解散团队</button>
+            <button v-if="canDissolve" class="ghost danger" @click="doDeleteTeam">解散团队</button>
           </div>
         </div>
 
         <section class="members-panel surface-card">
           <div class="panel-title-row">
             <h3>成员 <span>{{ selected.members.length }}</span></h3>
-            <form v-if="canManage" class="add-member" @submit.prevent="doAddMember">
-              <input v-model="addUsername" placeholder="输入用户名邀请" />
+            <form v-if="canManageMembers" class="add-member" @submit.prevent="doAddMember">
+              <input v-model="addUsername" placeholder="输入用户名邀请" aria-label="要邀请的用户名" />
               <button class="secondary" :disabled="!addUsername.trim()">邀请</button>
             </form>
           </div>
@@ -197,20 +207,22 @@ onMounted(loadTeams)
               <span class="member-avatar">{{ member.username.slice(0, 1).toUpperCase() }}</span>
               <span class="username">{{ member.username }}</span>
               <span class="role-badge" :class="{ owner: member.role === 'owner', admin: member.role === 'admin' }">{{ roleLabel(member.role) }}</span>
-              <span v-if="canManage && member.role !== 'owner'" class="member-actions">
-                <button class="ghost" @click="doToggleRole(member)">{{ member.role === 'admin' ? '降为成员' : '设为管理员' }}</button>
-                <button class="ghost danger" @click="doRemove(member)">移除</button>
+              <span v-if="member.role !== 'owner' && (canManageMembers || member.username === user.username)" class="member-actions">
+                <button v-if="canChangeRoles" class="ghost" @click="doToggleRole(member)">{{ member.role === 'admin' ? '降为成员' : '设为管理员' }}</button>
+                <button v-if="canManageMembers || member.username === user.username" class="ghost danger" @click="doRemove(member)">{{ member.username === user.username ? '退出团队' : '移除' }}</button>
               </span>
             </li>
           </ul>
         </section>
 
         <div class="space-tabs" role="tablist" aria-label="团队空间类型">
-          <button role="tab" :aria-selected="spaceTab === 'images'" :class="{ active: spaceTab === 'images' }" @click="spaceTab = 'images'">图片</button>
-          <button role="tab" :aria-selected="spaceTab === 'videos'" :class="{ active: spaceTab === 'videos' }" @click="spaceTab = 'videos'">视频</button>
+          <button id="team-tab-images" role="tab" aria-controls="team-panel-images" :aria-selected="spaceTab === 'images'" :class="{ active: spaceTab === 'images' }" @click="spaceTab = 'images'">图片</button>
+          <button id="team-tab-videos" role="tab" aria-controls="team-panel-videos" :aria-selected="spaceTab === 'videos'" :class="{ active: spaceTab === 'videos' }" @click="spaceTab = 'videos'">视频</button>
+          <button id="team-tab-groups" role="tab" aria-controls="team-panel-groups" :aria-selected="spaceTab === 'groups'" :class="{ active: spaceTab === 'groups' }" @click="spaceTab = 'groups'">分组</button>
         </div>
-        <GalleryView v-if="spaceTab === 'images'" :key="`images-${selected.id}`" :user="user" :team-id="selected.id" :can-manage="canManage" />
-        <VideoView v-else :key="`videos-${selected.id}`" :user="user" :team-id="selected.id" :can-manage="canManage" />
+        <div v-if="spaceTab === 'images'" id="team-panel-images" role="tabpanel" aria-labelledby="team-tab-images"><GalleryView :key="`images-${selected.id}`" :user="user" :team-id="selected.id" :can-manage="canManageMembers" /></div>
+        <div v-else-if="spaceTab === 'videos'" id="team-panel-videos" role="tabpanel" aria-labelledby="team-tab-videos"><VideoView :key="`videos-${selected.id}`" :user="user" :team-id="selected.id" :can-manage="canManageMembers" /></div>
+        <div v-else id="team-panel-groups" role="tabpanel" aria-labelledby="team-tab-groups"><CollectionsView :key="`groups-${selected.id}`" :user="user" :team-id="selected.id" :can-manage="canManageMembers" /></div>
       </div>
 
       <div v-else class="team-detail placeholder-panel">

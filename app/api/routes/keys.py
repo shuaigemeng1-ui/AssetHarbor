@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from ...models import ApiKey, User
 from ...schemas import ApiKeyCreate, ApiKeyCreated, ApiKeyOut
 from ...core.security import generate_api_key, hash_api_key
+from ...services.library import fresh_library_user, serialized_library_lifecycle
 from ..deps import get_current_user, get_db
 
 router = APIRouter(prefix="/api", tags=["keys"])
@@ -51,11 +52,14 @@ def list_keys(
 
 
 @router.post("/keys", response_model=ApiKeyCreated, status_code=201, summary="Create an API key (shown once)")
+@serialized_library_lifecycle
 def create_key(
     payload: ApiKeyCreate | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiKeyCreated:
+    db.rollback()
+    current_user = fresh_library_user(db, current_user)
     name = payload.name.strip() if payload else ""
     key = generate_api_key()
     ak = ApiKey(
@@ -71,15 +75,18 @@ def create_key(
 
 
 @router.post("/keys/{key_id}/rotate", response_model=ApiKeyCreated, summary="Rotate an API key (old one is revoked)")
+@serialized_library_lifecycle
 def rotate_key(
     key_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiKeyCreated:
+    db.rollback()
+    current_user = fresh_library_user(db, current_user)
     ak = _get_own_key(db, key_id, current_user)
     name = ak.name
     db.delete(ak)
-    db.commit()  # the old key is now revoked
+    db.flush()  # revoke and replace atomically in the final commit below
 
     key = generate_api_key()
     new_ak = ApiKey(

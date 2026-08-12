@@ -115,6 +115,44 @@ def _migrate() -> None:
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_upload_sessions_expires_at ON upload_sessions (expires_at)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_upload_parts_upload_id ON upload_parts (upload_id)"))
 
+        # 媒体分组采用应用层生命周期管理，两个新表均不声明外键。
+        # 每个字段都保留中文注释，方便其他数据库方言迁移时直接复用。
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS media_groups (
+                    id INTEGER NOT NULL PRIMARY KEY,                 -- 媒体分组编号
+                    owner_id INTEGER NOT NULL,                       -- 分组创建用户编号（不使用外键）
+                    team_id INTEGER,                                 -- 所属团队编号，空值表示个人分组（不使用外键）
+                    name VARCHAR(100) NOT NULL,                      -- 分组名称
+                    description VARCHAR(500) NOT NULL DEFAULT '',   -- 分组说明
+                    color VARCHAR(16) NOT NULL DEFAULT '#2563eb',   -- 分组主题颜色
+                    sort_order INTEGER NOT NULL DEFAULT 0,           -- 分组排序值
+                    created_at DATETIME NOT NULL,                    -- 创建时间
+                    updated_at DATETIME NOT NULL                     -- 最后更新时间
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS media_group_items (
+                    id INTEGER NOT NULL PRIMARY KEY,                 -- 分组成员记录编号
+                    group_id INTEGER NOT NULL,                       -- 媒体分组编号（不使用外键）
+                    media_id INTEGER NOT NULL,                       -- 媒体资源编号（不使用外键）
+                    added_by INTEGER NOT NULL,                       -- 添加操作用户编号（不使用外键）
+                    created_at DATETIME NOT NULL,                    -- 加入分组时间
+                    CONSTRAINT uq_media_group_item UNIQUE (group_id, media_id)
+                )
+                """
+            )
+        )
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_media_groups_owner_id ON media_groups (owner_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_media_groups_team_id ON media_groups (team_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_media_group_items_group_id ON media_group_items (group_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_media_group_items_media_id ON media_group_items (media_id)"))
+
 
 def init_db() -> None:
     """Create tables if they do not exist yet, then apply migrations."""

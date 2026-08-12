@@ -1,9 +1,10 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { deleteVideo, listTeamVideos, listVideos, updateVideo } from '../api'
+import { deleteVideo, fetchPublicConfig, listTeamVideos, listVideos, updateVideo } from '../api'
 import { confirmAction, toast } from '../stores/feedback'
 import { addVideoFiles, VIDEO_ACCEPT } from '../stores/videoUploads'
 import UploadDropzone from './UploadDropzone.vue'
+import CollectionPickerModal from './CollectionPickerModal.vue'
 import VideoCard from './VideoCard.vue'
 import VideoPlayerModal from './VideoPlayerModal.vue'
 import VideoUploadQueue from './VideoUploadQueue.vue'
@@ -23,34 +24,43 @@ const query = ref('')
 const uploadName = ref('')
 const uploadVisibility = ref('private')
 const selectedVideo = ref(null)
+const groupTarget = ref(null)
+const publicConfig = ref(null)
 const PAGE_SIZE = 12
 let searchTimer
+let loadGeneration = 0
 
 const isTeam = computed(() => props.teamId !== null && props.teamId !== undefined)
 const hasMore = computed(() => videos.value.length < total.value)
-
-async function fetchPage(offset) {
-  const options = { limit: PAGE_SIZE, offset, q: query.value.trim() }
-  return isTeam.value ? listTeamVideos(props.teamId, options) : listVideos(options)
-}
+const groupTargetTeamId = computed(() => groupTarget.value?.team_id ?? props.teamId)
 
 async function loadVideos({ append = false } = {}) {
+  const generation = ++loadGeneration
+  const scope = String(props.teamId ?? 'personal')
+  const requestQuery = query.value.trim()
+  const offset = append ? videos.value.length : 0
   if (append) loadingMore.value = true
   else loading.value = true
   loadError.value = ''
   try {
-    const response = await fetchPage(append ? videos.value.length : 0)
+    const response = isTeam.value
+      ? await listTeamVideos(props.teamId, { limit: PAGE_SIZE, offset, q: requestQuery })
+      : await listVideos({ limit: PAGE_SIZE, offset, q: requestQuery })
+    if (generation !== loadGeneration || scope !== String(props.teamId ?? 'personal') || requestQuery !== query.value.trim()) return
     videos.value = append ? [...videos.value, ...(response.items || [])] : (response.items || [])
     total.value = Number(response.total || 0)
   } catch (error) {
-    loadError.value = error.message
+    if (generation === loadGeneration) loadError.value = error.message
   } finally {
-    loading.value = false
-    loadingMore.value = false
+    if (generation === loadGeneration) {
+      loading.value = false
+      loadingMore.value = false
+    }
   }
 }
 
 function onQueryInput() {
+  loadGeneration++
   clearTimeout(searchTimer)
   searchTimer = window.setTimeout(() => loadVideos(), 300)
 }
@@ -66,6 +76,7 @@ function handleFiles(files) {
       teamId: props.teamId,
     })
     if (result?.error) toast(`${file.name}：${result.error}`, 'error')
+    else if (result?.duplicate) toast(`${file.name} 已在相同上传队列中`, 'info')
   })
 }
 
@@ -111,6 +122,12 @@ function canDelete(item) {
   return props.user.role === 'admin' || props.canManage || item.owner_id === props.user.id
 }
 
+function canGroup(item) {
+  if (isTeam.value || props.user.role !== 'admin') return true
+  if (item.team_id !== null && item.team_id !== undefined) return true
+  return String(item.owner_id) === String(props.user.id)
+}
+
 function clearSearch() {
   query.value = ''
   loadVideos()
@@ -133,6 +150,10 @@ watch(() => props.teamId, () => {
 onMounted(() => {
   window.addEventListener('oss:video-upload-complete', onUploadComplete)
   loadVideos()
+  fetchPublicConfig().then(config => {
+    publicConfig.value = config
+    uploadVisibility.value = config.default_visibility || uploadVisibility.value
+  }).catch(() => {})
 })
 onBeforeUnmount(() => {
   clearTimeout(searchTimer)
@@ -153,7 +174,7 @@ onBeforeUnmount(() => {
 
     <div class="upload-panel video-upload-panel">
       <div class="options">
-        <input v-model="uploadName" class="name-input" placeholder="视频命名（可选，多文件自动加序号）" maxlength="255" />
+        <input v-model="uploadName" class="name-input" placeholder="视频命名（可选，多文件自动加序号）" maxlength="255" aria-label="视频显示名称" />
         <select v-model="uploadVisibility" class="vis-select" aria-label="视频可见性">
           <option value="private">私密 · 仅自己/团队可见</option>
           <option value="public">公开 · 任何人可访问</option>
@@ -162,7 +183,7 @@ onBeforeUnmount(() => {
       <UploadDropzone
         :accept="VIDEO_ACCEPT"
         label="选择视频，或拖拽到这里"
-        description="支持 MP4、MOV、WebM、MKV、AVI、MPEG、TS、OGV、3GP、FLV、WMV · 默认最大 2 GB，以服务器配置为准"
+        :description="`支持 MP4、MOV、WebM、MKV、AVI、MPEG、TS、OGV、3GP、FLV、WMV${publicConfig ? ` · 最大 ${publicConfig.max_video_size_mb} MB · ${publicConfig.video_chunk_size_mb} MB 分片` : ''}`"
         aria-label="选择或拖拽视频上传"
         @files="handleFiles"
       />
@@ -172,13 +193,13 @@ onBeforeUnmount(() => {
 
     <div class="library-toolbar">
       <div class="search-row">
-        <input v-model="query" class="search" type="search" placeholder="搜索名称、文件名或短码" @input="onQueryInput" />
+        <input v-model="query" class="search" type="search" placeholder="搜索名称、文件名或短码" aria-label="搜索视频" @input="onQueryInput" />
         <button v-if="query" class="clear" aria-label="清除搜索" @click="clearSearch">×</button>
       </div>
     </div>
 
-    <p v-if="loading" class="status loading-state">正在加载视频…</p>
-    <p v-else-if="loadError" class="status error">加载失败：{{ loadError }}</p>
+    <p v-if="loading" class="status loading-state" aria-live="polite">正在加载视频…</p>
+    <p v-else-if="loadError" class="status error" role="alert">加载失败：{{ loadError }}</p>
     <template v-else>
       <div v-if="videos.length" class="media-grid">
         <VideoCard
@@ -186,6 +207,8 @@ onBeforeUnmount(() => {
           :key="`${item.code}-${item.visibility}`"
           :item="item"
           :deletable="canDelete(item)"
+          :groupable="canGroup(item)"
+          @add-to-group="groupTarget = item"
           @play="selectedVideo = item"
           @delete="onDelete(item)"
           @toggle-visibility="onToggleVisibility(item)"
@@ -204,5 +227,13 @@ onBeforeUnmount(() => {
     </template>
 
     <VideoPlayerModal v-if="selectedVideo" :item="selectedVideo" @close="selectedVideo = null" />
+    <CollectionPickerModal
+      v-if="groupTarget"
+      :media="groupTarget"
+      :team-id="groupTargetTeamId"
+      :user-id="user.id"
+      :can-manage="canManage || user.role === 'admin'"
+      @close="groupTarget = null"
+    />
   </section>
 </template>

@@ -1,6 +1,24 @@
 """Teams: lifecycle, membership management, team space isolation."""
 
-from conftest import FAKE_PNG, auth, new_user
+from conftest import FAKE_PNG, auth, login, new_user
+
+
+def test_global_admin_lists_all_teams_without_membership(client):
+    admin_token = login(client, "admin", "admin-pass")
+    _, owner_token = new_user(client)
+    created = client.post(
+        "/api/teams",
+        headers=auth(owner_token),
+        json={"name": f"admin-visible-{id(owner_token)}"},
+    )
+    assert created.status_code == 201
+    team_id = created.json()["id"]
+
+    teams = client.get("/api/teams", headers=auth(admin_token))
+    assert teams.status_code == 200
+    info = next(team for team in teams.json() if team["id"] == team_id)
+    assert info["role"] == "admin"
+    assert info["member_count"] == 1
 
 
 def test_team_lifecycle(client):

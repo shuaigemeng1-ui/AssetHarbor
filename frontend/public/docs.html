@@ -102,6 +102,7 @@
     <a href="#upload" data-zh="上传" data-en="Upload"></a>
     <a href="#images" data-zh="图片" data-en="Images"></a>
     <a href="#videos" data-zh="视频" data-en="Videos"></a>
+    <a href="#library" data-zh="媒体库" data-en="Library"></a>
     <a href="#teams" data-zh="团队" data-en="Teams"></a>
     <a href="#admin" data-zh="管理员" data-en="Admin"></a>
     <a href="#other" data-zh="其他" data-en="Other"></a>
@@ -117,6 +118,7 @@
       <tr><td><span class="method m-post">POST</span></td><td class="path">/api/auth/register</td><td data-zh="注册账号 {username, password, invite_code?}" data-en="Register {username, password, invite_code?}"></td></tr>
       <tr><td><span class="method m-post">POST</span></td><td class="path">/api/auth/login</td><td data-zh="登录（表单 username &amp; password）→ 返回 token" data-en="Login (form username &amp; password) → token"></td></tr>
       <tr><td><span class="method m-get">GET</span></td><td class="path">/api/auth/me</td><td data-zh="当前登录用户信息" data-en="Current user info"></td></tr>
+      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/auth/config</td><td data-zh="公开安全配置：注册模式、图片/视频上传限制" data-en="Public-safe config: registration mode and image/video upload limits"></td></tr>
       <tr><td><span class="method m-post">POST</span></td><td class="path">/api/auth/change-password</td><td data-zh="修改自己的密码 {old_password, new_password}" data-en="Change own password {old_password, new_password}"></td></tr>
     </tbody>
   </table>
@@ -226,6 +228,21 @@ curl -X PUT {{BASE}}/api/video-uploads/$UPLOAD_ID/parts/0 \
 curl {{BASE}}/api/video-uploads/$UPLOAD_ID -H "Authorization: Bearer $TOKEN"
 curl -X POST {{BASE}}/api/video-uploads/$UPLOAD_ID/complete -H "Authorization: Bearer $TOKEN"</code></pre></div>
 
+  <!-- ============ Unified library ============ -->
+  <h2 id="library">🗂️ <span data-zh="统一媒体库与分组" data-en="Unified Library &amp; Groups"></span></h2>
+  <table>
+    <thead><tr><th data-zh="方法" data-en="Method"></th><th data-zh="路径" data-en="Path"></th><th data-zh="说明" data-en="Description"></th></tr></thead>
+    <tbody>
+      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/library/stats</td><td data-zh="个人媒体库概览；管理员返回全局概览" data-en="Personal library overview; global overview for admins"></td></tr>
+      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/media?kind&amp;team_id&amp;group_id&amp;q&amp;limit&amp;offset</td><td data-zh="图片/视频统一分页、搜索和空间筛选" data-en="Unified image/video pagination, search and scope filters"></td></tr>
+      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/media-groups?team_id&amp;q&amp;limit&amp;offset</td><td data-zh="列出个人或团队分组" data-en="List personal or team groups"></td></tr>
+      <tr><td><span class="method m-post">POST</span></td><td class="path">/api/media-groups</td><td data-zh="创建分组 {name,description?,color?,sort_order?,team_id?,codes?}；codes 可原子加入媒体" data-en="Create a group {name,description?,color?,sort_order?,team_id?,codes?}; codes atomically adds media"></td></tr>
+      <tr><td>GET / PATCH / DELETE</td><td class="path">/api/media-groups/{id}</td><td data-zh="查看、修改或删除分组；不会删除媒体" data-en="View, update or delete a group without deleting media"></td></tr>
+      <tr><td>GET / POST</td><td class="path">/api/media-groups/{id}/items</td><td data-zh="分页读取组内媒体，或批量加入 {codes:[...]}" data-en="Paginate group media or add {codes:[...]}"></td></tr>
+      <tr><td><span class="method m-delete">DELETE</span></td><td class="path">/api/media-groups/{id}/items/{code}</td><td data-zh="移出分组，不删除媒体资产" data-en="Remove from a group without deleting the asset"></td></tr>
+    </tbody>
+  </table>
+
   <!-- ============ Teams ============ -->
   <h2 id="teams">🏢 <span data-zh="团队" data-en="Teams"></span></h2>
   <table>
@@ -252,19 +269,21 @@ curl -X POST {{BASE}}/api/video-uploads/$UPLOAD_ID/complete -H "Authorization: B
       <tr><td><span class="method m-get">GET</span></td><td class="path">/api/admin/stats</td><td data-zh="统计 {users,images,videos,media_total,pending_upload_bytes,teams,storage_bytes}" data-en="Stats {users,images,videos,media_total,pending_upload_bytes,teams,storage_bytes}"></td></tr>
       <tr><td><span class="method m-get">GET</span></td><td class="path">/api/admin/teams</td><td data-zh="全部团队（含拥有者、成员数）" data-en="All teams with member counts"></td></tr>
       <tr><td><span class="method m-get">GET</span></td><td class="path">/api/users</td><td data-zh="全部用户" data-en="All users"></td></tr>
+      <tr><td><span class="method m-post">POST</span></td><td class="path">/api/admin/users</td><td data-zh="创建用户 {username,password,role?}" data-en="Create a user {username,password,role?}"></td></tr>
       <tr><td><span class="method m-patch">PATCH</span></td><td class="path">/api/admin/users/{id}/role</td><td data-zh="设置角色 {role: admin|user}（不能改自己）" data-en="Set role {role: admin|user} (not self)"></td></tr>
       <tr><td><span class="method m-patch">PATCH</span></td><td class="path">/api/admin/users/{id}/password</td><td data-zh="重置密码 {new_password}" data-en="Reset password {new_password}"></td></tr>
-      <tr><td><span class="method m-delete">DELETE</span></td><td class="path">/api/admin/users/{id}</td><td data-zh="删除用户及其全部数据（图片/Key/团队）" data-en="Delete user + all data (images/keys/teams)"></td></tr>
+      <tr><td><span class="method m-delete">DELETE</span></td><td class="path">/api/admin/users/{id}</td><td data-zh="删除账号、个人媒体/分组、未完成上传和 Key；解散其团队并转移或清理共享数据" data-en="Delete account, personal media/groups, pending uploads and keys; dissolve owned teams and transfer or clean shared data"></td></tr>
     </tbody>
   </table>
-  <p class="note" data-zh="部署要求：持久化整个 /data（含 /data/uploads）；只运行一个 Uvicorn worker。Nginx/Caddy 请求体上限必须大于分片大小，且不得移除 Range 相关请求/响应头。" data-en="Deployment: persist all of /data (including /data/uploads) and run one Uvicorn worker. The Nginx/Caddy body limit must exceed the part size, and Range-related headers must be preserved."></p>
+  <p class="note" data-zh="部署要求：持久化整个 /data（含 /data/uploads）；只运行一个 Uvicorn worker。Nginx/Caddy 请求体上限必须大于分片大小，且不得移除 Range 相关请求/响应头。备份和恢复必须在维护窗口停止容器后对整个数据目录做同一份快照或归档；单独备份 SQLite 不能保证媒体一致。恢复前应校验备份完整性，且不得混用不同备份集。" data-en="Deployment: persist all of /data (including /data/uploads) and run one Uvicorn worker. The Nginx/Caddy body limit must exceed the part size, and Range-related headers must be preserved. For backup or restore, stop the container during a maintenance window and snapshot or archive the entire data directory as one set; a SQLite-only backup cannot guarantee media consistency. Validate the backup before restoring and never mix backup sets."></p>
 
   <!-- ============ Other ============ -->
   <h2 id="other">🧭 <span data-zh="其他" data-en="Other"></span></h2>
   <table>
     <thead><tr><th data-zh="方法" data-en="Method"></th><th data-zh="路径" data-en="Path"></th><th data-zh="说明" data-en="Description"></th></tr></thead>
     <tbody>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/healthz</td><td data-zh="健康检查 {status, version}" data-en="Health check {status, version}"></td></tr>
+      <tr><td><span class="method m-get">GET</span></td><td class="path">/healthz</td><td data-zh="轻量存活检查 {status, version}" data-en="Lightweight liveness check {status, version}"></td></tr>
+      <tr><td><span class="method m-get">GET</span></td><td class="path">/readyz</td><td data-zh="就绪检查：SQLite、数据目录可写与磁盘保留空间" data-en="Readiness: SQLite, writable data directory and free-space reserve"></td></tr>
       <tr><td><span class="method m-get">GET</span></td><td class="path">/openapi.json</td><td data-zh="OpenAPI 规范（供工具使用）" data-en="OpenAPI spec (for tooling)"></td></tr>
     </tbody>
   </table>

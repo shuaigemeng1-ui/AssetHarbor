@@ -23,6 +23,7 @@ let roundRobinIndex = 0
 let sessionGeneration = 0
 const activeJobs = new Map()
 const retryTimers = new Map()
+const fingerprintJobs = new Map()
 
 export const videoUploadState = reactive({
   tasks: [],
@@ -35,6 +36,7 @@ export const activeVideoUploadCount = computed(() => videoUploadState.tasks.filt
 )).length)
 
 const labels = {
+  checking: '正在检查文件',
   queued: '排队等待',
   initializing: '正在初始化',
   uploading: '上传中',
@@ -82,6 +84,44 @@ function makeTask(values) {
     runBaseBytes: 0,
     ...values,
   })
+}
+
+function normalizeTeamId(value) {
+  return value === null || value === undefined || value === '' ? null : String(value)
+}
+
+function isUnfinishedLocalTask(task) {
+  return !['completed', 'cancelled', 'cancelling'].includes(task.status)
+}
+
+function sameUploadContext(task, { name, visibility, teamId }) {
+  return isUnfinishedLocalTask(task)
+    && task.name === name
+    && task.visibility === visibility
+    && normalizeTeamId(task.teamId) === normalizeTeamId(teamId)
+}
+
+function sameFileObjectUpload(task, file, context) {
+  return sameUploadContext(task, context) && task.file === file
+}
+
+function sameFingerprintUpload(task, candidate) {
+  return task !== candidate
+    && sameUploadContext(task, candidate)
+    && task.ownerId === candidate.ownerId
+    && task.size === candidate.size
+    && Boolean(task.fingerprint)
+    && task.fingerprint === candidate.fingerprint
+}
+
+function isRetryableHttpStatus(status) {
+  return status === undefined || status === null || status === 0
+    || [408, 429, 507].includes(Number(status))
+    || Number(status) >= 500
+}
+
+export function shouldRetryUploadError(error) {
+  return !error?.aborted && isRetryableHttpStatus(error?.status)
 }
 
 function persistenceKey(task) {
@@ -240,6 +280,7 @@ export function resetVideoUploads() {
     abortTaskJobs(task)
   }
   videoUploadState.tasks.splice(0)
+  fingerprintJobs.clear()
   ownerId = null
   initializedOwnerId = null
   initializingCount = 0
@@ -276,9 +317,20 @@ async function validateRestoredTask(task, generation) {
 
 export function addVideoFiles(files, { name = '', visibility = 'private', teamId = null } = {}) {
   const accepted = []
+  const context = { name, visibility, teamId }
   for (const file of Array.from(files || [])) {
     if (!VIDEO_EXTENSION_RE.test(file.name) && !file.type.startsWith('video/')) {
       accepted.push({ file, error: '不支持此视频格式' })
+      continue
+    }
+    // Object identity is the only safe synchronous shortcut. Browser metadata
+    // (name/size/lastModified) is not a content identity and can collide.
+    const existing = videoUploadState.tasks.find(task => sameFileObjectUpload(task, file, context))
+    if (existing) {
+      if (!existing.file && ['waiting_file', 'failed'].includes(existing.status)) {
+        attachVideoFile(existing, file).catch(() => {})
+      }
+      accepted.push({ file, task: existing, duplicate: true })
       continue
     }
     const task = makeTask({
@@ -289,13 +341,60 @@ export function addVideoFiles(files, { name = '', visibility = 'private', teamId
       name,
       visibility,
       teamId,
-      status: 'queued',
+      status: 'checking',
     })
     videoUploadState.tasks.unshift(task)
-    accepted.push({ file, task })
+    const result = { file, task }
+    accepted.push(result)
+    prepareLocalTask(task, result)
   }
-  maybeInitializeTasks()
   return accepted
+}
+
+async function prepareLocalTask(task, result) {
+  const generation = sessionGeneration
+  const job = (async () => {
+    try {
+      const fingerprint = await videoFingerprint(task.file)
+      if (!isCurrentTask(task, generation) || task.status !== 'checking') return
+      task.fingerprint = fingerprint
+
+      // Fingerprint continuations run serially on the JS event loop. Whichever
+      // finishes first becomes the canonical local task; every later match is
+      // removed before it can initialize a second server session.
+      const existing = videoUploadState.tasks.find(candidate => sameFingerprintUpload(candidate, task))
+      if (existing) {
+        result.task = existing
+        result.duplicate = true
+        const index = videoUploadState.tasks.indexOf(task)
+        if (index >= 0) videoUploadState.tasks.splice(index, 1)
+
+        // A matching persisted task can adopt the freshly selected file without
+        // hashing it a second time, then continue from its server-side parts.
+        if (!existing.file) {
+          existing.file = task.file
+          existing.filename = task.file.name
+          existing.error = ''
+          resumeVideoTask(existing).catch(() => {})
+        }
+        maybeInitializeTasks()
+        return
+      }
+
+      task.status = 'queued'
+      maybeInitializeTasks()
+    } catch (error) {
+      if (!isCurrentTask(task, generation) || task.status !== 'checking') return
+      task.status = 'failed'
+      task.error = `无法读取文件指纹：${error.message}`
+    }
+  })()
+  fingerprintJobs.set(task.localId, job)
+  try {
+    await job
+  } finally {
+    if (fingerprintJobs.get(task.localId) === job) fingerprintJobs.delete(task.localId)
+  }
 }
 
 function unfinishedServerSessions() {
@@ -327,7 +426,7 @@ async function initializeTask(task) {
   task.status = 'initializing'
   task.error = ''
   try {
-    task.fingerprint = await videoFingerprint(task.file)
+    if (!task.fingerprint) task.fingerprint = await videoFingerprint(task.file)
     if (!isCurrentTask(task, generation) || ['cancelled', 'cancelling'].includes(task.status)) return
     if (!videoUploadState.online) {
       task.status = 'network_paused'
@@ -366,8 +465,13 @@ async function initializeTask(task) {
       || !isCurrentTask(task, generation)
       || error.name === 'AbortError'
     if (wasCancelled) return
-    task.status = 'failed'
-    task.error = error.message
+    if (isRetryableHttpStatus(error.status)) {
+      task.status = 'network_paused'
+      task.error = `初始化暂时失败：${error.message}，可点击继续重试`
+    } else {
+      task.status = 'failed'
+      task.error = error.message
+    }
   } finally {
     task.initController = null
     if (generation === sessionGeneration) {
@@ -465,6 +569,34 @@ async function startChunk(task, partNumber) {
       saveTask(task)
       return
     }
+    let retryCause = error
+    if (error.status === 409) {
+      try {
+        const complete = await reconcileTask(task)
+        if (complete) return
+        if (task.uploadedParts.includes(partNumber)) {
+          task.status = 'uploading'
+          task.error = ''
+          return
+        }
+      } catch (reconcileError) {
+        if (!shouldRetryUploadError(reconcileError)) {
+          task.status = 'failed'
+          task.error = reconcileError.message
+          abortTaskJobs(task)
+          saveTask(task)
+          return
+        }
+        retryCause = reconcileError
+      }
+    }
+    if (!shouldRetryUploadError(retryCause)) {
+      task.status = 'failed'
+      task.error = retryCause.message
+      abortTaskJobs(task)
+      saveTask(task)
+      return
+    }
     const attempts = (task.partRetries[partNumber] || 0) + 1
     task.partRetries[partNumber] = attempts
     if (attempts <= 3) {
@@ -479,7 +611,7 @@ async function startChunk(task, partNumber) {
       retryTimers.set(key, timer)
     } else {
       task.status = 'failed'
-      task.error = error.message
+      task.error = retryCause.message
       abortTaskJobs(task)
       saveTask(task)
     }

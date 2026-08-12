@@ -41,12 +41,20 @@ export function login(username, password) {
   })
 }
 
-export function register(username, password) {
+export function register(username, password, inviteCode = '') {
   return request('/api/auth/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({
+      username,
+      password,
+      ...(inviteCode ? { invite_code: inviteCode } : {}),
+    }),
   })
+}
+
+export function fetchPublicConfig() {
+  return request('/api/auth/config', { suppressUnauthorized: true })
 }
 
 export function fetchMe() {
@@ -218,6 +226,88 @@ export function updateVideo(code, { name, visibility } = {}) {
   })
 }
 
+// --- unified media library and groups ------------------------------------
+
+function mediaQuery({ teamId, groupId, kind = 'all', q = '', limit = 20, offset = 0 } = {}) {
+  const params = new URLSearchParams({
+    kind,
+    limit: String(limit),
+    offset: String(offset),
+  })
+  if (teamId !== null && teamId !== undefined) params.set('team_id', String(teamId))
+  if (groupId !== null && groupId !== undefined) params.set('group_id', String(groupId))
+  if (q) params.set('q', q)
+  return params
+}
+
+export function getLibraryStats() {
+  return request('/api/library/stats')
+}
+
+export function listMedia(options = {}) {
+  return request(`/api/media?${mediaQuery(options)}`)
+}
+
+export function listMediaGroups({ teamId, q = '', limit = 50, offset = 0 } = {}) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (teamId !== null && teamId !== undefined) params.set('team_id', String(teamId))
+  if (q) params.set('q', q)
+  return request(`/api/media-groups?${params}`)
+}
+
+export function createMediaGroup({ name, description = '', color = '#2563eb', sortOrder = 0, teamId = null, codes = [] }) {
+  return request('/api/media-groups', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name,
+      description,
+      color,
+      sort_order: sortOrder,
+      team_id: teamId,
+      ...(codes.length ? { codes } : {}),
+    }),
+  })
+}
+
+export function getMediaGroup(groupId) {
+  return request(`/api/media-groups/${groupId}`)
+}
+
+export function updateMediaGroup(groupId, { name, description, color, sortOrder } = {}) {
+  const payload = {}
+  if (name !== undefined) payload.name = name
+  if (description !== undefined) payload.description = description
+  if (color !== undefined) payload.color = color
+  if (sortOrder !== undefined) payload.sort_order = sortOrder
+  return request(`/api/media-groups/${groupId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteMediaGroup(groupId) {
+  return request(`/api/media-groups/${groupId}`, { method: 'DELETE' })
+}
+
+export function listMediaGroupItems(groupId, { kind = 'all', q = '', limit = 20, offset = 0 } = {}) {
+  const params = mediaQuery({ kind, q, limit, offset })
+  return request(`/api/media-groups/${groupId}/items?${params}`)
+}
+
+export function addMediaGroupItems(groupId, codes) {
+  return request(`/api/media-groups/${groupId}/items`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ codes }),
+  })
+}
+
+export function removeMediaGroupItem(groupId, code) {
+  return request(`/api/media-groups/${groupId}/items/${encodeURIComponent(code)}`, { method: 'DELETE' })
+}
+
 // --- teams -----------------------------------------------------------------
 
 export function createTeam(name, description) {
@@ -284,6 +374,18 @@ export function listAdminTeams() {
 
 export function listUsers() {
   return request('/api/users')
+}
+
+export function createUser(username, password, role = 'user') {
+  return request('/api/admin/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password, role }),
+  })
+}
+
+export function deleteUser(userId) {
+  return request(`/api/admin/users/${userId}`, { method: 'DELETE' })
 }
 
 export function setUserRole(userId, role) {

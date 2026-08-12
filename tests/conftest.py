@@ -11,11 +11,15 @@ import hashlib
 import os
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
 
-TEST_DATA_DIR = Path(__file__).parent / "_tmp_data"
+# Isolate simultaneous pytest invocations (for example focused checks running
+# alongside a full suite) so their shared usernames and startup cleanup cannot
+# corrupt each other's SQLite/filesystem state.
+TEST_DATA_DIR = Path(tempfile.gettempdir()) / f"oss-pytest-{os.getpid()}"
 
 os.environ["OSS_DATA_DIR"] = str(TEST_DATA_DIR)
 os.environ["OSS_MAX_UPLOAD_SIZE_MB"] = "1"  # keep the size-limit test cheap
@@ -29,6 +33,8 @@ os.environ["OSS_SIGNED_URL_TTL_SECONDS"] = "86400"
 # dedicated tests monkeypatch individual limits down.
 os.environ["OSS_LOGIN_RATE_LIMIT_PER_MINUTE"] = "100000"
 os.environ["OSS_LOGIN_RATE_LIMIT_PER_USERNAME"] = "100000"
+os.environ["OSS_REGISTRATION_RATE_LIMIT_PER_MINUTE"] = "100000"
+os.environ["OSS_REGISTRATION_RATE_LIMIT_PER_USERNAME"] = "100000"
 os.environ["OSS_IMAGES_RATE_LIMIT_PER_MINUTE"] = "100000"
 os.environ["OSS_UPLOAD_RATE_LIMIT_PER_MINUTE"] = "100000"
 # Keep resumable-video integration tests small while exercising the exact same

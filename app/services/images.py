@@ -1,6 +1,7 @@
 """Core image handling: type sniffing, size limits and upload orchestration."""
 
 import hashlib
+import errno
 import os
 import re
 from pathlib import Path
@@ -11,8 +12,16 @@ from sqlalchemy.orm import Session
 
 from ..core.config import settings
 from ..models import Image, User
+from .library import (
+    delete_group_items_for_media,
+    fresh_library_user,
+    library_lifecycle_lease,
+    serialized_library_lifecycle,
+    validate_team_scope,
+)
 from .shortcode import generate_short_code
 from .teams import get_membership
+from .videos import reserve_write_space
 
 # ---------------------------------------------------------------------------
 # Content sniffing — never trust user filenames or claimed MIME types.
@@ -44,6 +53,37 @@ _FTYP_BRANDS = {
 }
 
 _SUPPORTED = ", ".join(sorted({mime for _, mime, _ in SIGNATURES} | {"image/svg+xml", "image/avif", "image/heic"}))
+_STORAGE_FULL_ERRNOS = {errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC)}
+
+
+def _is_storage_full_error(exc: BaseException) -> bool:
+    """Recognize filesystem and SQLite disk/quota exhaustion errors."""
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if getattr(current, "errno", None) in _STORAGE_FULL_ERRNOS:
+            return True
+        message = str(current).lower()
+        if "database or disk is full" in message or "disk quota exceeded" in message:
+            return True
+        current = getattr(current, "orig", None) or getattr(current, "__cause__", None)
+    return False
+
+
+def _unlink_quietly(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        # Cleanup is compensating/best-effort and must never hide the original
+        # write or database error.
+        pass
+
+
+def _raise_storage_error(exc: BaseException) -> None:
+    if _is_storage_full_error(exc):
+        raise HTTPException(status_code=507, detail="insufficient storage space") from exc
+    raise exc
 
 
 def detect_content_type(data: bytes) -> tuple[str, str] | None:
@@ -132,42 +172,79 @@ async def store_upload(
 
     mime, ext = detected
     digest = hashlib.sha256(data).hexdigest()
-    code = _unique_code(db)
+    original_filename = file.filename or "image"
 
-    rel_path = _stored_path(code, ext)
-    abs_path = settings.data_dir / rel_path
-    abs_path.parent.mkdir(parents=True, exist_ok=True)
+    # Reading and validating the potentially large request body deliberately
+    # happens above, outside the global lifecycle lease. Only the final
+    # authorization, durable file publication and owner/team-scoped DB commit
+    # are serialized with user/member/team deletion.
+    with library_lifecycle_lease():
+        db.rollback()
+        if owner is not None:
+            owner = fresh_library_user(db, owner)
+        if team_id is not None:
+            if owner is None:
+                raise HTTPException(status_code=401, detail="an owner is required for team media")
+            validate_team_scope(db, team_id, owner)
 
-    # Write to a temp file then rename, so a crash mid-write never leaves a
-    # half-written image behind.
-    tmp_path = abs_path.with_suffix(".tmp")
-    tmp_path.write_bytes(data)
-    os.replace(tmp_path, abs_path)
+        code = _unique_code(db)
+        rel_path = _stored_path(code, ext)
+        abs_path = settings.data_dir / rel_path
+        tmp_path = abs_path.with_suffix(".tmp")
+        with reserve_write_space(len(data)):
+            # Write to a temp file then rename, so a crash mid-write never
+            # leaves a half-written image behind.
+            try:
+                abs_path.parent.mkdir(parents=True, exist_ok=True)
+                tmp_path.write_bytes(data)
+                os.replace(tmp_path, abs_path)
+            except OSError as exc:
+                _unlink_quietly(tmp_path)
+                _raise_storage_error(exc)
 
-    original_filename = file.filename or abs_path.name
-    image = Image(
-        code=code,
-        original_filename=original_filename,
-        name=name or original_filename,
-        stored_path=str(rel_path),
-        content_type=mime,
-        size=len(data),
-        sha256=digest,
-        media_kind="image",
-        owner_id=owner.id if owner else None,
-        visibility=visibility,
-        team_id=team_id,
-    )
-    db.add(image)
-    db.commit()
-    db.refresh(image)
-    return image
+            image = Image(
+                code=code,
+                original_filename=original_filename,
+                name=name or original_filename,
+                stored_path=str(rel_path),
+                content_type=mime,
+                size=len(data),
+                sha256=digest,
+                media_kind="image",
+                owner_id=owner.id if owner else None,
+                visibility=visibility,
+                team_id=team_id,
+            )
+            try:
+                db.add(image)
+                db.commit()
+            except Exception as exc:
+                try:
+                    db.rollback()
+                finally:
+                    # The formal file has already been atomically published.
+                    # Compensate even if rollback itself encounters a disk error.
+                    _unlink_quietly(abs_path)
+                _raise_storage_error(exc)
+        db.refresh(image)
+        return image
 
 
-def delete_image(db: Session, image: Image) -> None:
+@serialized_library_lifecycle
+def delete_image(db: Session, image: Image, actor: User | None = None) -> None:
     """Remove an image row and its file from disk."""
-    path = settings.data_dir / image.stored_path
-    db.delete(image)
+    image_id = image.id
+    db.rollback()
+    current = db.get(Image, image_id)
+    if current is None:
+        return
+    if actor is not None:
+        actor = fresh_library_user(db, actor)
+        if not can_manage_image(db, actor, current):
+            raise HTTPException(status_code=403, detail="media management privileges required")
+    path = settings.data_dir / current.stored_path
+    delete_group_items_for_media(db, current.id)
+    db.delete(current)
     db.commit()
     try:
         path.unlink(missing_ok=True)
