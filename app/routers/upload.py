@@ -3,11 +3,13 @@
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..database import get_db
 from ..models import User
 from ..schemas import UploadResponse
 from ..security import get_current_user
 from ..services.images import store_upload
+from ..services.ratelimit import check_rate_limit
 from ..urls import build_image_url
 
 router = APIRouter(prefix="/api", tags=["upload"])
@@ -27,9 +29,11 @@ async def upload_image(
     current_user: User = Depends(get_current_user),
     file: UploadFile = File(..., description="Image file (jpeg/png/gif/webp/svg/bmp/ico/avif/tiff)"),
     name: str = Form("", description="Optional display name; falls back to the filename"),
-    visibility: str = Form("public", description="public (anyone) or private (owner + admins only)"),
+    visibility: str = Form(settings.default_visibility, description="public (anyone) or private (owner + admins + signed links only)"),
     db: Session = Depends(get_db),
 ) -> UploadResponse:
+    check_rate_limit(f"upload:{current_user.id}", settings.upload_rate_limit_per_minute, 60)
+
     if visibility not in _VISIBILITIES:
         raise HTTPException(status_code=422, detail="visibility must be 'public' or 'private'")
 

@@ -347,6 +347,11 @@ button.primary:disabled {
   display: block;
 }
 
+.link-hint {
+  color: #c9a94e;
+  font-size: 11px;
+}
+
 .copy {
   border: 1px solid var(--border);
   background: transparent;

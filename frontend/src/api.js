@@ -58,3 +58,10 @@ export function listImages({ limit = 100, q = '' } = {}) {
   if (q) params.set('q', q)
   return request(`/api/images?${params}`)
 }
+
+export function getSignedLink(code, ttl) {
+  const params = new URLSearchParams()
+  if (ttl) params.set('ttl', String(ttl))
+  const qs = params.toString()
+  return request(`/api/images/${code}/link${qs ? `?${qs}` : ''}`)
+}

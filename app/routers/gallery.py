@@ -1,14 +1,17 @@
-"""Gallery API: list images with per-user isolation, search and pagination."""
+"""Gallery API: list images with per-user isolation, search, pagination, signed links."""
 
-from fastapi import APIRouter, Depends, Query, Request
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..database import get_db
 from ..models import Image, User
-from ..schemas import ImageInfo, ImageListResponse
+from ..schemas import ImageInfo, ImageListResponse, SignedLinkResponse
 from ..security import get_current_user
-from ..urls import build_image_url
+from ..urls import build_image_url, build_signed_image_url
 
 router = APIRouter(prefix="/api", tags=["gallery"])
 
@@ -70,3 +73,31 @@ def list_images(
         for img in rows
     ]
     return ImageListResponse(items=items, total=total)
+
+
+@router.get(
+    "/images/{code}/link",
+    response_model=SignedLinkResponse,
+    summary="Get an expiring signed URL (owner or admin)",
+    description="Returns a time-limited signed URL for an image. Required to view "
+    "private images outside the browser session (e.g. <img> tags or sharing).",
+)
+def get_signed_link(
+    code: str,
+    request: Request,
+    ttl: int = Query(settings.signed_url_ttl_seconds, ge=60, le=7 * 86400, description="TTL in seconds"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> SignedLinkResponse:
+    image = db.execute(select(Image).where(Image.code == code)).scalar_one_or_none()
+    if image is None:
+        raise HTTPException(status_code=404, detail="image not found")
+
+    is_owner = image.owner_id == current_user.id
+    is_admin = current_user.role == "admin"
+    if not (is_owner or is_admin):
+        # 404 (not 403): don't reveal that the image exists.
+        raise HTTPException(status_code=404, detail="image not found")
+
+    url, expires = build_signed_image_url(request, image.code, ttl_seconds=ttl)
+    return SignedLinkResponse(url=url, expires_at=datetime.fromtimestamp(expires, tz=timezone.utc))

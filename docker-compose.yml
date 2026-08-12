@@ -16,6 +16,8 @@ services:
       OSS_ALLOW_REGISTRATION: "${ALLOW_REGISTRATION:-open}"
       OSS_INVITE_CODE: "${INVITE_CODE:-}"
       OSS_JWT_SECRET: "${JWT_SECRET:-}"
+      OSS_DEFAULT_VISIBILITY: "${DEFAULT_VISIBILITY:-public}"
+      OSS_SIGNED_URL_TTL_SECONDS: "${SIGNED_URL_TTL_SECONDS:-86400}"
     volumes:
       # 图片文件和 SQLite 数据库都持久化在这个目录
       - ./data:/data

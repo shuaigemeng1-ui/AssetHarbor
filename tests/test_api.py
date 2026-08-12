@@ -1,6 +1,7 @@
-"""API tests: auth, RBAC, user isolation, naming, search."""
+"""API tests: auth, RBAC, user isolation, naming, search, security."""
 
 import itertools
+import re
 
 import pytest
 
@@ -270,6 +271,134 @@ def test_admin_users_endpoint(client):
 
     assert client.get("/api/users", headers=auth(utoken)).status_code == 403
     assert client.get("/api/users").status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Security: signed URLs for private images
+# ---------------------------------------------------------------------------
+
+
+def _link(client, token, code, ttl=None):
+    url = f"/api/images/{code}/link"
+    if ttl:
+        url += f"?ttl={ttl}"
+    resp = client.get(url, headers=auth(token))
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+def _url_path(url):
+    """Extract the path+query from an absolute URL: /i/CODE?expires=..&sig=.."""
+    return url.split("://", 1)[-1].split("/", 1)[-1]
+
+
+def test_signed_link_owner_can_generate(client):
+    _, token = new_user(client)
+    code = upload(client, token, data={"visibility": "private"}).json()["code"]
+    body = _link(client, token, code)
+    assert body["url"].startswith("http")
+    assert "expires=" in body["url"] and "sig=" in body["url"]
+    assert body["expires_at"]
+
+
+def test_signed_link_denied_for_others(client):
+    _, t1 = new_user(client)
+    _, t2 = new_user(client)
+    code = upload(client, t1, data={"visibility": "private"}).json()["code"]
+    assert client.get(f"/api/images/{code}/link", headers=auth(t2)).status_code == 404
+    assert client.get(f"/api/images/{code}/link").status_code == 401
+
+
+def test_private_image_accessible_via_signed_url(client):
+    _, token = new_user(client)
+    code = upload(client, token, data={"visibility": "private"}).json()["code"]
+    path = _url_path(_link(client, token, code)["url"])
+    resp = client.get(f"/{path}")
+    assert resp.status_code == 200
+    assert resp.content == FAKE_PNG
+
+
+def test_forged_signature_rejected(client):
+    _, token = new_user(client)
+    code = upload(client, token, data={"visibility": "private"}).json()["code"]
+    path = _url_path(_link(client, token, code)["url"])
+    forged = path.replace("sig=", "sig=AAAA")
+    assert client.get(f"/{forged}").status_code == 404
+
+
+def test_expired_signature_rejected(client):
+    _, token = new_user(client)
+    code = upload(client, token, data={"visibility": "private"}).json()["code"]
+    path = _url_path(_link(client, token, code)["url"])
+    # expires 改为过去的时间戳，sig 不变 → 必须拒绝
+    path = re.sub(r"expires=\d+", "expires=1", path)
+    assert client.get(f"/{path}").status_code == 404
+
+
+def test_signature_bound_to_one_code(client):
+    _, token = new_user(client)
+    code1 = upload(client, token, data={"visibility": "private"}).json()["code"]
+    code2 = upload(client, token, data={"visibility": "private", "name": "second"}).json()["code"]
+    path = _url_path(_link(client, token, code1)["url"])
+    swapped = path.replace(code1, code2, 1)  # sig 属于 code1，换到 code2 → 拒绝
+    assert client.get(f"/{swapped}").status_code == 404
+
+
+def test_admin_signed_link_for_others(client):
+    atoken = login(client, "admin", "admin-pass")
+    _, token = new_user(client)
+    code = upload(client, token, data={"visibility": "private"}).json()["code"]
+    body = _link(client, atoken, code)
+    path = _url_path(body["url"])
+    assert client.get(f"/{path}").status_code == 200
+
+
+def test_public_image_needs_no_signed_url(client):
+    """公开图仍保持"任何人可访问"的语义，不被签名机制误伤。"""
+    _, token = new_user(client)
+    code = upload(client, token, data={"visibility": "public"}).json()["code"]
+    assert client.get(f"/i/{code}").status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Security: rate limiting
+# ---------------------------------------------------------------------------
+
+
+def test_login_rate_limited_per_username(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "login_rate_limit_per_username", 3)
+    name = _uname()
+    register(client, name)
+    statuses = [
+        client.post("/api/auth/login", data={"username": name, "password": "wrong-pass"}).status_code
+        for _ in range(5)
+    ]
+    assert 401 in statuses          # 前几次是正常报错
+    assert statuses[-1] == 429      # 超限后限速
+    assert "retry-after" in client.post(
+        "/api/auth/login", data={"username": name, "password": "wrong-pass"}
+    ).headers
+
+
+def test_image_fetch_rate_limited(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "images_rate_limit_per_minute", 5)
+    _, token = new_user(client)
+    code = upload(client, token).json()["code"]
+    statuses = [client.get(f"/i/{code}").status_code for _ in range(8)]
+    assert statuses[-1] == 429
+
+
+def test_upload_rate_limited_per_user(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "upload_rate_limit_per_minute", 2)
+    _, token = new_user(client)
+    statuses = [upload(client, token).status_code for _ in range(4)]
+    assert statuses[-1] == 429
 
 
 # ---------------------------------------------------------------------------

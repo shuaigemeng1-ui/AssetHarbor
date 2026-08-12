@@ -19,6 +19,14 @@ os.environ["OSS_SHORT_CODE_LENGTH"] = "8"
 os.environ["OSS_ADMIN_PASSWORD"] = "admin-pass"
 os.environ["OSS_ALLOW_REGISTRATION"] = "open"
 os.environ["OSS_JWT_SECRET"] = "test-secret-0123456789abcdef0123456789abcdef"
+os.environ["OSS_DEFAULT_VISIBILITY"] = "public"
+os.environ["OSS_SIGNED_URL_TTL_SECONDS"] = "86400"
+# Rate limits defaulted very high so unrelated tests never trip them;
+# dedicated tests monkeypatch individual limits down.
+os.environ["OSS_LOGIN_RATE_LIMIT_PER_MINUTE"] = "100000"
+os.environ["OSS_LOGIN_RATE_LIMIT_PER_USERNAME"] = "100000"
+os.environ["OSS_IMAGES_RATE_LIMIT_PER_MINUTE"] = "100000"
+os.environ["OSS_UPLOAD_RATE_LIMIT_PER_MINUTE"] = "100000"
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 

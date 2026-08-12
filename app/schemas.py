@@ -48,6 +48,11 @@ class ImageListResponse(BaseModel):
     total: int
 
 
+class SignedLinkResponse(BaseModel):
+    url: str
+    expires_at: datetime
+
+
 class HealthResponse(BaseModel):
     status: str
     version: str
