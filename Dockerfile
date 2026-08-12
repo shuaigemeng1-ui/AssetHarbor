@@ -35,7 +35,9 @@ COPY --from=frontend --chown=oss:oss /build/frontend/dist /app/app/static
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD python -c "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2).status==200 else 1)"
+    CMD python -c "import os,sys,urllib.request; port=os.environ.get('OSS_APP_PORT','8080'); sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:'+port+'/healthz', timeout=2).status==200 else 1)"
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# 监听端口由环境变量 OSS_APP_PORT 控制（默认 8080）：
+# bridge 网络模式由 compose 端口映射转发；host 网络模式下直接监听宿主机端口。
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${OSS_APP_PORT:-8080}"]

@@ -67,6 +67,10 @@ docker compose up -d
 #    (registration policy defaults to open)
 ```
 
+**Network mode**: the default `bridge` mode maps the host port (`PORT`) to the container. If you need the container to bind directly to the host network (e.g. bind a specific host IP), set `NETWORK_MODE=host` in `.env` — `PORT` then becomes the host port the app listens on directly.
+
+> Compose prints "Published ports are discarded when using host network mode" — that's expected in host mode.
+
 Images and the SQLite database persist in `./data` — container rebuilds never lose data.
 
 > **Upgrade note (v0.2+)**: this version added user/visibility columns. If you upgrade from v0.1 with existing data, back up and clear `data/` (`mv data data.bak`) first.
@@ -88,7 +92,8 @@ curl -X POST http://<server-ip>:8080/api/upload \
 
 | Env var | Default | Description |
 |---|---|---|
-| `PORT` | `8080` | Host port mapped to the container (container always listens on 8080) |
+| `PORT` | `8080` | Service port. In `bridge` mode: the host-mapped port; in `host` mode: the port the container listens on directly |
+| `NETWORK_MODE` | `bridge` | Network mode: `bridge` (default, port mapping) or `host` (bind directly to the host network) |
 | `MAX_UPLOAD_SIZE_MB` | `10` | Per-file upload size limit (MB) |
 | `SHORT_CODE_LENGTH` | `10` | Short-code length (base62 chars; longer = harder to enumerate) |
 | `PUBLIC_URL` | *(empty)* | Base prefix for returned links, e.g. `https://img.example.com`; leave empty to auto-derive from the request |

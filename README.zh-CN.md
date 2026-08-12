@@ -66,6 +66,10 @@ docker compose up -d
 #    用 admin / $ADMIN_PASSWORD 登录，或注册新账号（默认开放注册）
 ```
 
+**网络模式**：默认 `bridge` 模式将宿主机端口（`PORT`）映射进容器。若需要容器直接绑定宿主机网络（如绑定指定宿主机 IP），在 `.env` 设置 `NETWORK_MODE=host`——此时 `PORT` 即容器直接监听的宿主机端口。
+
+> host 模式下 Compose 会提示 "Published ports are discarded when using host network mode"，属正常现象。
+
 图片数据和 SQLite 数据库都持久化在 `./data` 目录，容器重建不丢数据。
 
 > **升级注意（v0.2+）**：本版本新增了用户/可见性等字段，若从 v0.1 升级且 `data/` 里有旧数据，请先备份并清空 `data/`（`mv data data.bak`）再启动。
@@ -87,7 +91,8 @@ curl -X POST http://服务器IP:8080/api/upload \
 
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
-| `PORT` | `8080` | 宿主机映射端口（容器内固定 8080） |
+| `PORT` | `8080` | 服务端口。`bridge` 模式下为宿主机映射端口；`host` 模式下为容器直接监听的宿主机端口 |
+| `NETWORK_MODE` | `bridge` | 网络模式：`bridge`（默认，端口映射）或 `host`（直接使用宿主机网络） |
 | `MAX_UPLOAD_SIZE_MB` | `10` | 单文件上传大小上限（MB） |
 | `SHORT_CODE_LENGTH` | `10` | 短码长度（base62 字符，越长越难枚举） |
 | `PUBLIC_URL` | *(空)* | 返回链接的前缀，如 `https://img.example.com`；留空则按请求自动推断 |
