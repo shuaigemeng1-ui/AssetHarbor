@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import init_db
-from .routers import images, upload
+from .routers import gallery, images, upload
 from .schemas import HealthResponse
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -34,6 +34,7 @@ app = FastAPI(
 )
 
 app.include_router(upload.router)
+app.include_router(gallery.router)
 app.include_router(images.router)
 
 if STATIC_DIR.is_dir():

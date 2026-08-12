@@ -7,9 +7,9 @@ const props = defineProps({
 
 const copied = ref(false)
 
-const previewUrl = computed(() =>
-  props.item.result ? `/i/${props.item.result.code}` : null,
-)
+// 预览/复制一律使用后端返回的绝对 URL（受 OSS_PUBLIC_URL 环境变量控制），
+// 前端不自行拼 base，保证 PUBLIC_URL 配置的域名全局生效。
+const previewUrl = computed(() => props.item.result?.url ?? null)
 
 const infoText = computed(() => {
   if (props.item.status === 'uploading') return '上传中…'
@@ -50,8 +50,8 @@ async function copyUrl() {
         <span class="info">{{ infoText }}</span>
       </div>
 
-      <button v-if="item.result" class="copy" :disabled="copied" @click="copyUrl">
-        {{ copied ? '已复制 ✓' : '复制' }}
+      <button v-if="item.result" class="copy" :disabled="copied" :title="item.result.url" @click="copyUrl">
+        {{ copied ? '已复制 ✓' : '复制链接' }}
       </button>
     </template>
   </div>

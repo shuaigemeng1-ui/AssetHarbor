@@ -1,11 +1,29 @@
 <script setup>
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import UploadDropzone from './components/UploadDropzone.vue'
 import ImageResult from './components/ImageResult.vue'
-import { uploadFile } from './api'
+import { listImages, uploadFile } from './api'
 
 const items = ref([])
+const loading = ref(true)
+const loadError = ref('')
 let nextId = 1
+
+onMounted(async () => {
+  try {
+    const { items: existing } = await listImages()
+    items.value = existing.map(info => ({
+      id: nextId++,
+      status: 'done',
+      result: info,
+      file: null,
+    }))
+  } catch (err) {
+    loadError.value = err.message
+  } finally {
+    loading.value = false
+  }
+})
 
 async function handleFiles(files) {
   const list = Array.from(files)
@@ -34,11 +52,20 @@ async function handleFiles(files) {
 
     <UploadDropzone @files="handleFiles" />
 
-    <ul class="results">
-      <li v-for="item in items" :key="item.id">
-        <ImageResult :item="item" />
-      </li>
-    </ul>
+    <p v-if="loading" class="status">加载已上传图片…</p>
+    <p v-else-if="loadError" class="status error">加载失败：{{ loadError }}</p>
+    <template v-else>
+      <h2 class="section-title">
+        已上传图片
+        <span class="count">{{ items.length }}</span>
+      </h2>
+      <p v-if="!items.length" class="status">还没有图片，拖拽上传第一张吧</p>
+      <ul class="results">
+        <li v-for="item in items" :key="item.id">
+          <ImageResult :item="item" />
+        </li>
+      </ul>
+    </template>
 
     <footer>
       API 文档见 <a href="/docs">/docs</a> · 健康检查 <a href="/healthz">/healthz</a>

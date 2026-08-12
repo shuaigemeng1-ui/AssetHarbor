@@ -44,6 +44,34 @@ h1 span {
   margin: 6px 0 28px;
 }
 
+.section-title {
+  margin: 24px 0 0;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.section-title .count {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  vertical-align: middle;
+}
+
+.status {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 16px 0 0;
+}
+
+.status.error {
+  color: var(--danger-text);
+}
+
 .drop {
   border: 2px dashed var(--border);
   border-radius: 14px;

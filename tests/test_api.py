@@ -87,3 +87,40 @@ def test_unknown_api_route_returns_json_404(client):
     resp = client.get("/api/nope")
     assert resp.status_code == 404
     assert resp.headers["content-type"].startswith("application/json")
+
+
+def test_gallery_lists_uploaded_images(client):
+    up = client.post("/api/upload", files={"file": ("a.png", FAKE_PNG, "image/png")})
+    assert up.status_code == 201
+    code = up.json()["code"]
+
+    resp = client.get("/api/images")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    codes = [i["code"] for i in body["items"]]
+    assert code in codes
+    assert body["total"] >= 1
+
+    info = next(i for i in body["items"] if i["code"] == code)
+    assert info["url"].startswith("http")
+    assert info["content_type"] == "image/png"
+    assert info["original_filename"] == "a.png"
+    assert info["sha256"]
+
+
+def test_gallery_pagination_params(client):
+    assert client.get("/api/images?limit=0").status_code == 422
+    assert client.get("/api/images?limit=101").status_code == 422
+    assert client.get("/api/images?offset=-1").status_code == 422
+    resp = client.get("/api/images?limit=1&offset=0")
+    assert resp.status_code == 200
+    assert len(resp.json()["items"]) <= 1
+
+
+def test_gallery_newest_first(client):
+    first = client.post("/api/upload", files={"file": ("a.png", FAKE_PNG, "image/png")}).json()["code"]
+    second = client.post("/api/upload", files={"file": ("b.png", FAKE_PNG, "image/png")}).json()["code"]
+    body = client.get("/api/images?limit=2").json()
+    assert body["items"][0]["code"] == second
+    assert body["items"][1]["code"] == first

@@ -14,6 +14,17 @@ class UploadResponse(BaseModel):
     created_at: datetime
 
 
+class ImageInfo(UploadResponse):
+    """Image metadata as returned by the gallery list endpoint."""
+
+    original_filename: str
+
+
+class ImageListResponse(BaseModel):
+    items: list[ImageInfo]
+    total: int
+
+
 class HealthResponse(BaseModel):
     status: str
     version: str

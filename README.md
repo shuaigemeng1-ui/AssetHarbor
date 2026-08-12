@@ -80,6 +80,38 @@ GET /i/{code}
 
 返回图片本体，带 `Cache-Control: public, max-age=31536000, immutable`。SVG 以附件形式下发（`Content-Disposition: attachment` + `nosniff`），避免脚本注入。
 
+### 列出已上传图片
+
+```
+GET /api/images?limit=20&offset=0
+```
+
+返回图片元数据列表（**最新优先**），每条包含短码、完整 URL、大小、类型、sha256、上传时间、原始文件名：
+
+```json
+{
+  "items": [
+    {
+      "code": "Ab3xYz9Kq1",
+      "url": "https://img.example.com/i/Ab3xYz9Kq1",
+      "size": 123456,
+      "content_type": "image/png",
+      "sha256": "9f86d0...",
+      "created_at": "2026-08-12T12:00:00Z",
+      "original_filename": "截图.png"
+    }
+  ],
+  "total": 42
+}
+```
+
+| 参数 | 默认 | 范围 | 说明 |
+|---|---|---|---|
+| `limit` | `20` | 1–100 | 返回条数 |
+| `offset` | `0` | ≥0 | 分页偏移 |
+
+> `url` 字段由 `PUBLIC_URL` 环境变量控制（见下表）；留空则按请求自动推断。
+
 完整交互式文档见 `/docs`（Swagger UI）。
 
 ## 🛠️ 本地开发
