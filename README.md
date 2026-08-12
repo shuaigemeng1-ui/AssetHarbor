@@ -101,7 +101,7 @@ curl -X POST http://<server-ip>:8080/api/upload \
 
 ## 🔌 API Overview
 
-Interactive documentation: `GET /docs` (Swagger UI — use the **Authorize** button to debug with a token).
+Interactive documentation: a readable bilingual (中文/English) page at `GET /docs` — endpoint tables, curl examples with one-click copy, and a language toggle.
 
 All endpoints except register / login / public image fetch / health require `Authorization: Bearer <token>` (JWT or API key). API keys are also accepted via the `X-API-Key` header.
 

@@ -100,7 +100,7 @@ curl -X POST http://服务器IP:8080/api/upload \
 
 ## 🔌 API 概览
 
-交互式文档：`GET /docs`（Swagger UI，右上角 **Authorize** 填入 token 可直接调试）。
+交互式文档：`GET /docs` —— 自建**双语（中文/English）可读文档页**，含端点表、可一键复制的 curl 示例与语言切换。
 
 除 `注册/登录/获取公开图片/健康检查` 外，所有接口都需要携带 `Authorization: Bearer <token>`（JWT 或 API Key）。API Key 也支持 `X-API-Key` 请求头。
 

@@ -41,6 +41,8 @@ app = FastAPI(
     "isolation and role-based access control. Upload via POST /api/upload, "
     "fetch via GET /i/{code}.",
     lifespan=lifespan,
+    docs_url=None,  # replaced by the custom bilingual docs page at /docs
+    redoc_url=None,
 )
 
 app.include_router(auth.router)
@@ -70,6 +72,15 @@ def _serve_index() -> FileResponse:
 @app.get("/healthz", response_model=HealthResponse, tags=["meta"])
 def healthz() -> HealthResponse:
     return HealthResponse(status="ok", version=settings.version)
+
+
+# Custom bilingual (中文/English) API documentation — replaces the built-in Swagger UI.
+@app.get("/docs", include_in_schema=False, tags=["meta"])
+def docs_page() -> FileResponse:
+    page = STATIC_DIR / "docs.html"
+    if page.is_file():
+        return FileResponse(page)
+    raise HTTPException(status_code=404, detail="docs page not built")
 
 
 # SPA fallback: every non-API GET path serves the built frontend, enabling

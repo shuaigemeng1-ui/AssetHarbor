@@ -92,3 +92,14 @@ def test_spa_fallback_serves_index_for_unknown_paths(client):
     resp = client.get("/some/client/route")
     assert resp.status_code == 200
     assert "oss" in resp.text
+
+
+def test_custom_docs_page_served(client):
+    from app.main import STATIC_DIR
+
+    if not (STATIC_DIR / "docs.html").is_file():
+        pytest.skip("docs page not built")
+    resp = client.get("/docs")
+    assert resp.status_code == 200
+    assert "API" in resp.text
+    assert "openapi" in resp.text.lower() or "Authorization" in resp.text
