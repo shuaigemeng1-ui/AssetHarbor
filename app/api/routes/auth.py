@@ -1,21 +1,20 @@
-"""Authentication: register, login, current user."""
+"""Authentication: register, login, current user, change password."""
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..config import settings
-from ..database import get_db
-from ..models import User
-from ..schemas import ChangePasswordRequest, RegisterRequest, TokenResponse, UserOut
-from ..security import (
+from ...core.config import settings
+from ...core.security import (
     create_access_token,
-    get_current_user,
     hash_password,
     verify_password,
 )
-from ..services.ratelimit import check_rate_limit, client_ip
+from ...models import User
+from ...schemas import ChangePasswordRequest, RegisterRequest, TokenResponse, UserOut
+from ...services.ratelimit import check_rate_limit, client_ip
+from ..deps import get_current_user, get_db
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 

@@ -6,13 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from ..config import settings
-from ..database import get_db
-from ..models import Image, User
-from ..schemas import ImageInfo, ImageListResponse, SignedLinkResponse
-from ..security import get_current_user
-from ..services.images import can_manage_image, delete_image
-from ..urls import build_image_url, build_signed_image_url
+from ...core.config import settings
+from ...models import Image, User
+from ...schemas import ImageInfo, ImageListResponse, SignedLinkResponse
+from ...services.images import can_manage_image, delete_image
+from ...services.signing import build_image_url, build_signed_image_url
+from ...services.teams import is_team_member
+from ..deps import get_current_user, get_db
 
 router = APIRouter(prefix="/api", tags=["gallery"])
 
@@ -97,7 +97,7 @@ def delete_image_endpoint(
 @router.get(
     "/images/{code}/link",
     response_model=SignedLinkResponse,
-    summary="Get an expiring signed URL (owner or admin)",
+    summary="Get an expiring signed URL (owner/admin/team-member)",
     description="Returns a time-limited signed URL for an image. Required to view "
     "private images outside the browser session (e.g. <img> tags or sharing).",
 )
@@ -114,7 +114,10 @@ def get_signed_link(
 
     is_owner = image.owner_id == current_user.id
     is_admin = current_user.role == "admin"
-    if not (is_owner or is_admin):
+    in_team = bool(
+        image.team_id is not None and is_team_member(db, image.team_id, current_user.id)
+    )
+    if not (is_owner or is_admin or in_team):
         # 404 (not 403): don't reveal that the image exists.
         raise HTTPException(status_code=404, detail="image not found")
 

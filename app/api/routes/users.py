@@ -1,13 +1,12 @@
-"""Admin-only endpoints (RBAC)."""
+"""Admin-only user listing (RBAC)."""
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..database import get_db
-from ..models import User
-from ..schemas import UserOut
-from ..security import require_admin
+from ...models import User
+from ...schemas import UserOut
+from ..deps import get_db, require_admin
 
 router = APIRouter(prefix="/api", tags=["users"])
 

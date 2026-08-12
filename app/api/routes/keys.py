@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..database import get_db
-from ..models import ApiKey, User
-from ..schemas import ApiKeyCreate, ApiKeyCreated, ApiKeyOut
-from ..security import generate_api_key, get_current_user, hash_api_key
+from ...models import ApiKey, User
+from ...schemas import ApiKeyCreate, ApiKeyCreated, ApiKeyOut
+from ...core.security import generate_api_key, hash_api_key
+from ..deps import get_current_user, get_db
 
 router = APIRouter(prefix="/api", tags=["keys"])
 

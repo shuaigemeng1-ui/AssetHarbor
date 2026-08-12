@@ -1,13 +1,13 @@
-"""Admin-only endpoints: stats, user role management, team overview."""
+"""Admin-only endpoints: stats, user role & password management, team overview."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..database import get_db
-from ..models import Image, Team, TeamMember, User
-from ..schemas import AdminStats, ResetPasswordRequest, RoleUpdate, TeamAdminOut, UserOut
-from ..security import hash_password, require_admin
+from ...models import Image, Team, TeamMember, User
+from ...schemas import AdminStats, ResetPasswordRequest, RoleUpdate, TeamAdminOut, UserOut
+from ...core.security import hash_password
+from ..deps import get_db, require_admin
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 

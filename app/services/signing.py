@@ -14,7 +14,7 @@ import time
 
 from fastapi import Request
 
-from .config import settings
+from ..core.config import settings
 
 # HMAC key derived from the JWT secret (or ephemeral). With OSS_JWT_SECRET
 # configured, signed links survive restarts.

@@ -5,13 +5,12 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..config import settings
-from ..database import get_db
-from ..models import Image, User
-from ..security import get_optional_user
-from ..services.ratelimit import check_rate_limit, client_ip
-from ..services.teams import is_team_member
-from ..urls import verify_image_signature
+from ...core.config import settings
+from ...models import Image, User
+from ...services.ratelimit import check_rate_limit, client_ip
+from ...services.signing import verify_image_signature
+from ...services.teams import is_team_member
+from ..deps import get_db, get_optional_user
 
 router = APIRouter(tags=["images"])
 

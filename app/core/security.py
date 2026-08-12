@@ -17,9 +17,9 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..models import ApiKey, User
 from .config import settings
 from .database import SessionLocal, get_db
-from .models import ApiKey, User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 

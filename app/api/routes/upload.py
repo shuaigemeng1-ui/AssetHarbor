@@ -3,15 +3,14 @@
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.orm import Session
 
-from ..config import settings
-from ..database import get_db
-from ..models import Team, User
-from ..schemas import UploadResponse
-from ..security import get_current_user
-from ..services.images import store_upload
-from ..services.ratelimit import check_rate_limit
-from ..services.teams import get_membership
-from ..urls import build_image_url
+from ...core.config import settings
+from ...models import Team, User
+from ...schemas import UploadResponse
+from ...services.images import store_upload
+from ...services.ratelimit import check_rate_limit
+from ...services.signing import build_image_url
+from ...services.teams import get_membership
+from ..deps import get_current_user, get_db
 
 router = APIRouter(prefix="/api", tags=["upload"])
 

@@ -282,36 +282,44 @@ pytest
 
 ## 📁 项目结构
 
+现代分层布局（core → models → schemas → services → api），按域拆分文件，避免单文件过大：
+
 ```
 oss/
-├── app/                     # Python 后端（FastAPI）
-│   ├── main.py              # 应用入口 + SPA 托管
-│   ├── config.py            # 环境变量配置（OSS_* 前缀）
-│   ├── database.py          # SQLAlchemy engine / session
-│   ├── models.py            # User / Image 模型
-│   ├── schemas.py           # Pydantic 响应模型
-│   ├── security.py          # bcrypt 密码、JWT、认证依赖（RBAC）
-│   ├── urls.py              # 短码 URL 构建
-│   ├── routers/
-│   │   ├── auth.py          # 注册 / 登录 / me
-│   │   ├── upload.py        # POST /api/upload（需登录、命名、可见性）
-│   │   ├── gallery.py       # GET /api/images（隔离 + 搜索）
-│   │   ├── images.py        # GET /i/{code}（可见性控制）
-│   │   └── users.py         # GET /api/users（仅 admin）
-│   ├── services/
-│   │   ├── shortcode.py     # 密码学随机 base62 短码
-│   │   └── images.py        # 魔数嗅探 + 上传落盘
-│   └── static/              # 前端构建产物（Docker 多阶段注入）
-├── frontend/                # Vue 3 + Vite 前端源码
+├── app/
+│   ├── main.py                 # 应用入口：装配路由 + SPA 托管 + 生命周期
+│   ├── core/                   # 基础设施层（无 HTTP 路由）
+│   │   ├── config.py           # 环境变量配置（OSS_* 前缀）
+│   │   ├── database.py         # SQLAlchemy engine/session/Base/迁移
+│   │   └── security.py         # bcrypt 密码、JWT、API Key 认证、RBAC 依赖
+│   ├── models/                 # ORM 模型，按域拆分
+│   │   ├── user.py  api_key.py  team.py  image.py
+│   ├── schemas/                # Pydantic 模型，按域拆分
+│   │   ├── auth.py  image.py  team.py  key.py  admin.py  meta.py
+│   ├── services/               # 业务逻辑
+│   │   ├── images.py           # 魔数嗅探 + 上传/删除
+│   │   ├── signing.py          # 短码 URL + 限时签名链接
+│   │   ├── teams.py            # 团队成员判定
+│   │   ├── shortcode.py        # 密码学随机 base62 短码
+│   │   └── ratelimit.py        # 内存限速器
+│   ├── api/                    # HTTP 层
+│   │   ├── deps.py             # 统一依赖出口（get_db / 认证依赖）
+│   │   └── routes/             # 按资源拆分的路由
+│   │       ├── auth.py  users.py  upload.py  gallery.py
+│   │       ├── images.py  keys.py  admin.py
+│   │       └── teams/          # 团队路由包
+│   │           ├── team.py  members.py  space.py
+│   └── static/                 # 前端构建产物（Docker 多阶段注入）
+├── frontend/                   # Vue 3 + Vite 前端源码
 │   ├── src/
-│   │   ├── App.vue          # 登录态 / 搜索 / 上传 / 画廊
-│   │   ├── components/      # AuthView / UploadDropzone / ImageResult
-│   │   ├── api.js           # fetch 封装 + token 管理
+│   │   ├── App.vue             # 导航壳 + 视图切换
+│   │   ├── components/         # 按视图拆分的组件
+│   │   ├── api.js              # fetch 封装 + token 管理
 │   │   └── style.css
-│   ├── vite.config.js       # 含 dev 代理到后端 8080
+│   ├── vite.config.js          # 含 dev 代理到后端 8080
 │   └── package.json
-├── tests/                   # pytest + TestClient（27 用例）
-├── Dockerfile               # 多阶段：node 构建前端 → python 运行时
+├── tests/                      # pytest，按域拆分（7 个模块 + conftest 共享助手）
+├── Dockerfile                  # 多阶段：node 构建前端 → python 运行时
 ├── docker-compose.yml
 └── .env.example
 ```

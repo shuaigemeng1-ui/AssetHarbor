@@ -42,7 +42,7 @@ def _migrate() -> None:
 
 def init_db() -> None:
     """Create tables if they do not exist yet, then apply migrations."""
-    from . import models  # noqa: F401  (register the models on Base.metadata)
+    from .. import models  # noqa: F401  (register the models on Base.metadata)
 
     Base.metadata.create_all(bind=engine)
     _migrate()

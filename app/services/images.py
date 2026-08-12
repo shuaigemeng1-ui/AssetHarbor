@@ -9,7 +9,7 @@ from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..config import settings
+from ..core.config import settings
 from ..models import Image, User
 from .shortcode import generate_short_code
 from .teams import get_membership

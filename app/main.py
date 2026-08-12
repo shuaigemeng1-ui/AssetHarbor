@@ -2,6 +2,13 @@
 
 Serves both the API and the built Vue 3 SPA from ``app/static`` (populated by
 the Docker multi-stage build, or by `npm --prefix frontend run build` + copy).
+
+Layered layout:
+    core/      — config, database, security (no HTTP routes)
+    models/    — ORM models (one module per domain)
+    schemas/   — Pydantic models (one module per domain)
+    services/  — business logic (upload, teams, signing, rate limit)
+    api/       — HTTP layer: deps.py + routes (teams split into a package)
 """
 
 from contextlib import asynccontextmanager
@@ -11,11 +18,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .config import settings
-from .database import init_db
-from .routers import admin, auth, gallery, images, keys, teams, upload, users
+from .api.routes import admin, auth, gallery, images, keys, teams, upload, users
+from .core.config import settings
+from .core.database import init_db
+from .core.security import ensure_admin
 from .schemas import HealthResponse
-from .security import ensure_admin
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
