@@ -1,256 +1,172 @@
-# oss · 自托管图床
+# oss · Self-hosted Image Hosting
 
-一个开箱即用、Docker 一键部署的**自托管图片托管服务**：上传图片，立即得到一条短码 URL。支持**用户隔离、角色权限（RBAC）**，后端 Python (FastAPI)。
+**English** | [简体中文](./README.zh-CN.md)
 
-> **Status: v0.5** — 上传 + 短码链接 + 认证/RBAC + 用户隔离 + 团队与团队空间 + 管理员界面 + **API Key 鉴权与改密** + 签名链接/限速 + Docker 部署可用。
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.12-blue.svg)]()
+[![Vue](https://img.shields.io/badge/Vue-3.x-42b883.svg)]()
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ed.svg)]()
 
-## ✨ 特性
+A self-hosted image hosting service that deploys with a single command. Upload an image, get a short-code URL instantly. Built with **FastAPI + Vue 3 + SQLite**, featuring user isolation, role-based access control (RBAC), teams & team spaces, an admin dashboard, API-key auth, and expiring signed links for private images.
 
-- 🚀 **一键部署**：`docker compose up -d`，端口、管理员密码、上传上限等全部环境变量可配
-- 🔗 **短码 URL**：上传即返回 `https://你的域名/i/Ab3xYz9Kq1`，密码学随机、不可预测
-- 🖼️ **多格式支持**：jpg / png / gif / webp / svg / bmp / ico / avif / tiff，**按魔数嗅探真实类型**，不信任文件名
-- 🔐 **认证与 RBAC**：JWT 登录、admin/user 双角色、管理员密码环境变量引导、注册策略可配（开放/邀请码/关闭）
-- 🔑 **API Key 鉴权**：为脚本/命令行生成鉴权 Key，可上传/下载/删除图片；**明文只显示一次**（数据库仅存 SHA-256 哈希）、支持**轮换**（旧 Key 立即失效）与撤销
-- 🔏 **改密**：用户自助改密（校验旧密码）；管理员可重置任意用户密码
-- 👥 **用户隔离**：每个人只能看到自己的图片；图片可分**公开/私密**，私密图仅本人与管理员可见
-- 🏢 **团队与团队空间**：建团队、按用户名邀请成员、成员角色（拥有者/管理员/成员）、团队空间专属图片库、团队内共享私密图
-- 🛠️ **管理员界面**：系统统计（用户/图片/团队/存储）、用户角色与密码管理、团队总览与解散、全量图片管理
-- 🗑️ **图片删除**：属主/管理员/团队管理员可删除图片
-- ⏳ **私密图签名链接**：私密图只能通过**限时签名链接**（默认 24h，HMAC 防篡改/防伪造/防重放）或本人/团队/管理员访问——随手输入短码无法看到任何私密内容
-- 🛡️ **速率限制**：登录接口按 IP+账号限速（防暴力破解）、图片接口按 IP 限速（防短码枚举）、上传按用户限速
-- 🏷️ **上传命名**：上传时可给图片自定义名称，支持中文；未命名则回退为文件名
-- 🔍 **搜索**：按名称/文件名/短码实时搜索（个人空间与团队空间均支持）
-- 🔒 **安全默认值**：非 root 运行、SVG 附件式下发（防存储型 XSS）、bcrypt 密码哈希、上传大小限制
-- 📦 **API 优先**：完整 REST API（后续兼容 PicGo / ShareX / uPic 客户端）
-- 🖥️ **Vue 3 前端**：SPA 多视图（我的图片 / 我的团队 / 管理 / 账户），与后端同容器交付（多阶段构建）
+> **Status: v0.5** — upload + short URLs + auth/RBAC + user isolation + teams & team spaces + admin interface + API keys & password management + signed links/rate limiting. Docker deployment ready.
 
-## 🚀 快速开始
+---
+
+## ✨ Features
+
+- 🚀 **One-command deploy**: `docker compose up -d`; port, admin password, upload limits and more are configurable via environment variables
+- 🔗 **Short-code URLs**: uploads return `https://your.domain/i/Ab3xYz9Kq1`, cryptographically random and unguessable
+- 🖼️ **Multi-format**: jpg / png / gif / webp / svg / bmp / ico / avif / tiff, with **magic-byte sniffing** — filenames are never trusted
+- 🔐 **Auth & RBAC**: JWT login, `admin`/`user` roles, admin bootstrapped from an env variable, configurable registration policy (open / invite / closed)
+- 🔑 **API keys**: for scripts & CLIs — upload / download / delete images; **plaintext shown exactly once** (DB stores only SHA-256 hashes), with **rotation** (old key dies instantly) and revocation
+- 🔏 **Password management**: self-service password change (verifies the old password); admins can reset any user's password
+- 👥 **User isolation**: everyone sees only their own images; images are `public` or `private`, and private ones are invisible to everyone but the owner and admins
+- 🏢 **Teams & team spaces**: create teams, invite members by username, member roles (owner / admin / member), a dedicated team image space, private images shared within the team
+- 🛠️ **Admin dashboard**: system stats (users / images / teams / storage), user role & password management, team overview & disbanding, full image management
+- 🗑️ **Image deletion**: owners, admins and team managers can delete images
+- ⏳ **Signed links for private images**: private images are only reachable through **time-limited signed links** (default 24h, HMAC anti-tamper/anti-forgery/anti-replay) or by the owner/team/admin — guessing short codes or replaying old links gets nothing
+- 🛡️ **Rate limiting**: login throttled per IP + per account (anti brute-force), image fetch per IP (anti enumeration), upload per user
+- 🏷️ **Upload naming**: give images custom names (Chinese supported); falls back to the filename
+- 🔍 **Search**: real-time search by name / filename / short code (personal space and team spaces)
+- 🔒 **Secure by default**: non-root container, SVG served as attachment (stored-XSS protection), bcrypt password hashing, upload size limits
+- 📦 **API-first**: complete REST API (PicGo / ShareX / uPic compatibility planned)
+- 🖥️ **Vue 3 SPA**: multi-view UI (My Images / My Teams / Admin / Account), delivered in the same container via multi-stage build
+
+## 📚 Table of Contents
+
+- [Quick Start](#-quick-start)
+- [Configuration](#-configuration)
+- [API Overview](#-api-overview)
+- [Local Development](#-local-development)
+- [Project Structure](#-project-structure)
+- [Security Design](#-security-design)
+- [Roadmap](#-roadmap)
+- [Contributing](#-contributing)
+- [License](#-license)
+
+## 🚀 Quick Start
+
+**Requirements**: Docker and Docker Compose.
 
 ```bash
-# 1. 克隆或复制本项目
-git clone <你的仓库地址> && cd oss
+# 1. Clone
+git clone http://www.genkinet.net:10004/it_group/oss.git && cd oss
 
-# 2. 按需调整配置（管理员密码必填建议）
+# 2. Configure (set an admin password — recommended)
 cp .env.example .env
-# 编辑 .env：ADMIN_PASSWORD=你的管理员密码（必填建议）
-#            PORT / MAX_UPLOAD_SIZE_MB / PUBLIC_URL 等按需调整
+#   Edit .env:  ADMIN_PASSWORD=your-admin-password
+#               PORT / MAX_UPLOAD_SIZE_MB / PUBLIC_URL ... as needed
 
-# 3. 启动
+# 3. Start
 docker compose up -d
 
-# 4. 打开上传页，注册账号或直接用 admin 登录
-#    http://服务器IP:8080
+# 4. Open the web UI
+#    http://<server-ip>:8080
+#    Sign in with admin / $ADMIN_PASSWORD, or register a new account
+#    (registration policy defaults to open)
 ```
 
-图片数据和 SQLite 数据库都持久化在 `./data` 目录，容器重建不丢数据。
+Images and the SQLite database persist in `./data` — container rebuilds never lose data.
 
-> **v0.2 升级注意**：本版本新增了用户/可见性等字段，若从 v0.1 升级且 `data/` 里有旧数据，请先备份并清空 `data/`（`mv data data.bak`）再启动。
+> **Upgrade note (v0.2+)**: this version added user/visibility columns. If you upgrade from v0.1 with existing data, back up and clear `data/` (`mv data data.bak`) first.
 
-### 配置项
-
-| 环境变量 | 默认值 | 说明 |
-|---|---|---|
-| `PORT` | `8080` | 宿主机映射端口（容器内固定 8080） |
-| `MAX_UPLOAD_SIZE_MB` | `10` | 单文件上传大小上限（MB） |
-| `SHORT_CODE_LENGTH` | `10` | 短码长度（base62 字符，越长越难枚举） |
-| `PUBLIC_URL` | *(空)* | 返回链接的前缀，如 `https://img.example.com`；留空则按请求自动推断 |
-| `ADMIN_PASSWORD` | *(空)* | 首次启动自动创建/刷新 `admin` 管理员账号；留空则不创建 |
-| `ALLOW_REGISTRATION` | `open` | 注册策略：`open` 开放 / `invite` 邀请码 / `closed` 关闭 |
-| `INVITE_CODE` | *(空)* | `ALLOW_REGISTRATION=invite` 时的注册邀请码 |
-| `JWT_SECRET` | *(空)* | JWT 签名密钥；留空则每次重启登录态失效（建议 `openssl rand -hex 32` 生成） |
-| `DEFAULT_VISIBILITY` | `public` | 新上传图片的默认可见性：`public` / `private` |
-| `SIGNED_URL_TTL_SECONDS` | `86400` | 私密图签名链接有效期（秒） |
-
-## 🔌 API
-
-> 除 `注册/登录/获取公开图片/健康检查` 外，所有接口都需要携带登录令牌：
-> `Authorization: Bearer <access_token>`
-
-### 认证
-
-```
-POST /api/auth/register          # JSON: {"username", "password", "invite_code"?} → 201 UserOut
-POST /api/auth/login             # 表单: username & password → {access_token, user}
-GET  /api/auth/me                # 当前用户信息（校验令牌是否有效）
-POST /api/auth/change-password   # 修改自己的密码 {old_password, new_password}（需登录）
-```
-
-命令行示例：
+### One-liner upload
 
 ```bash
-# 注册
-curl -X POST http://你的服务器:8080/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"username":"alice","password":"pass123"}'
+TOKEN=$(curl -X POST http://<server-ip>:8080/api/auth/login \
+  -d "username=admin&password=your-admin-password" \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
 
-# 登录，拿到 token
-TOKEN=$(curl -X POST http://你的服务器:8080/api/auth/login \
-  -d "username=alice&password=pass123" | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
-```
-
-### API Key 鉴权（脚本/命令行）
-
-```
-GET    /api/keys                        # 我的 Key 列表（仅前缀，不含完整 Key）
-POST   /api/keys                        # 生成 Key {name?} → 完整 Key 仅返回这一次
-POST   /api/keys/{id}/rotate            # 轮换：旧 Key 立即失效，返回新 Key（仅一次）
-DELETE /api/keys/{id}                   # 撤销 Key
-```
-
-> **安全设计**：数据库只存 SHA-256 哈希，**明文生成后无法再次查看**，只能轮换/撤销重建；Key 为 256 位密码学随机，哈希唯一约束。带 Key 调用任意需要登录的接口（上传/下载/删除/列表/团队/管理）：
-
-```bash
-# 上传（Authorization: Bearer 或 X-API-Key 均可）
-curl -X POST http://你的服务器:8080/api/upload \
-  -H "Authorization: Bearer <key>" -F "file=@a.png" -F "name=测试"
-
-# 下载（私密图：属主 Key 可访问）
-curl -o a.png "http://你的服务器:8080/i/<code>" -H "Authorization: Bearer <key>"
-
-# 删除
-curl -X DELETE "http://你的服务器:8080/api/images/<code>" -H "Authorization: Bearer <key>"
-```
-
-### 团队（Teams）
-
-```
-POST   /api/teams                           # 创建团队 {name, description?} → 创建者为 owner
-GET    /api/teams                           # 我加入的团队（含我的角色、成员数）
-GET    /api/teams/{id}                      # 团队详情 + 成员列表
-POST   /api/teams/{id}/members              # 邀请成员 {username}（owner/团队 admin/全局 admin）
-PATCH  /api/teams/{id}/members/{member_id}  # 改角色 {role: admin|member}（owner/全局 admin）
-DELETE /api/teams/{id}/members/{member_id}  # 移除成员（owner/团队 admin/全局 admin）
-DELETE /api/teams/{id}                      # 解散团队（owner/全局 admin；图片回到上传者个人空间）
-GET    /api/teams/{id}/images?q=&limit=&offset=  # 团队空间图片（成员/管理员）
-```
-
-> 团队内角色：`owner`（拥有者，管理一切）> `admin`（可管理成员）> `member`（可查看/上传）。团队私密图对**团队成员**可见，对团队外返回 404。
-
-### 管理员（Admin，需全局 admin 角色）
-
-```
-GET   /api/admin/stats               # 系统统计 {users, images, teams, storage_bytes}
-GET   /api/admin/teams               # 全部团队（含拥有者、成员数）
-GET   /api/users                     # 全部用户
-PATCH /api/admin/users/{user_id}/role     # 设置角色 {role: admin|user}（不能改自己）
-PATCH /api/admin/users/{user_id}/password # 重置密码 {new_password}
-DELETE /api/images/{code}            # 删除图片（属主/管理员/团队管理员）
-```
-
-### 上传图片（需登录）
-
-```
-POST /api/upload
-Authorization: Bearer <token>
-Content-Type: multipart/form-data
-  file:       <图片文件>          （必填）
-  name:       <显示名称>          （可选，支持中文；缺省用文件名）
-  visibility: public | private    （可选，默认 public）
-  team_id:    <团队ID>            （可选，上传到团队空间，需为团队成员）
-```
-
-成功响应 `201`：
-
-```json
-{
-  "code": "Ab3xYz9Kq1",
-  "url": "http://192.168.1.10:8080/i/Ab3xYz9Kq1",
-  "size": 123456,
-  "content_type": "image/png",
-  "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-  "created_at": "2026-08-12T12:00:00Z",
-  "name": "我的封面",
-  "visibility": "private",
-  "owner_id": 3
-}
-```
-
-错误码：`401` 未登录 · `400` 空文件 · `413` 超过大小上限 · `415` 非受支持图片类型 · `422` visibility 非法。
-
-```bash
-curl -X POST http://你的服务器:8080/api/upload \
+curl -X POST http://<server-ip>:8080/api/upload \
   -H "Authorization: Bearer $TOKEN" \
-  -F "file=@截图.png" -F "name=我的封面" -F "visibility=public"
+  -F "file=@screenshot.png" -F "name=My Cover" -F "visibility=public"
+# → {"code":"Ab3xYz9Kq1","url":"http://<server-ip>:8080/i/Ab3xYz9Kq1",...}
 ```
 
-### 获取图片
+## ⚙️ Configuration
 
-```
-GET /i/{code}[?expires=...&sig=...]
-```
+| Env var | Default | Description |
+|---|---|---|
+| `PORT` | `8080` | Host port mapped to the container (container always listens on 8080) |
+| `MAX_UPLOAD_SIZE_MB` | `10` | Per-file upload size limit (MB) |
+| `SHORT_CODE_LENGTH` | `10` | Short-code length (base62 chars; longer = harder to enumerate) |
+| `PUBLIC_URL` | *(empty)* | Base prefix for returned links, e.g. `https://img.example.com`; leave empty to auto-derive from the request |
+| `ADMIN_PASSWORD` | *(empty)* | Creates/refreshes the `admin` account on startup; empty = no admin bootstrapped |
+| `ALLOW_REGISTRATION` | `open` | Registration policy: `open` / `invite` / `closed` |
+| `INVITE_CODE` | *(empty)* | Invite code required when `ALLOW_REGISTRATION=invite` |
+| `JWT_SECRET` | *(empty)* | JWT signing secret; empty = ephemeral (all sessions reset on restart). Use `openssl rand -hex 32` |
+| `DEFAULT_VISIBILITY` | `public` | Default visibility for new uploads: `public` / `private` |
+| `SIGNED_URL_TTL_SECONDS` | `86400` | TTL of expiring signed links for private images (seconds) |
 
-返回图片本体，带 `Cache-Control: public, max-age=31536000, immutable`。
+## 🔌 API Overview
 
-- **公开**图片：任何人可访问
-- **私密**图片：仅属主/管理员（带登录令牌）或**持有有效签名链接**者可访问；其他人一律 404（不暴露存在性）
-- 签名链接由 `GET /api/images/{code}/link` 生成（见下），限时有效、绑定单张图片、防伪造防重放
-- 本接口按 IP 限速（默认 240 次/分钟，防短码枚举）
+Interactive documentation: `GET /docs` (Swagger UI — use the **Authorize** button to debug with a token).
 
-### 生成签名链接（私密图分享/预览）
+All endpoints except register / login / public image fetch / health require `Authorization: Bearer <token>` (JWT or API key). API keys are also accepted via the `X-API-Key` header.
 
-```
-GET /api/images/{code}/link?ttl=86400        # 需登录，属主或管理员
-```
+### Auth
 
-```json
-{
-  "url": "http://192.168.1.10:8080/i/Ab3xYz9Kq1?expires=1767...&sig=xxxx",
-  "expires_at": "2026-08-13T12:00:00Z"
-}
-```
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/auth/register` | `{"username","password","invite_code"?}` → user |
+| POST | `/api/auth/login` | form `username` & `password` → `{access_token, user}` |
+| GET | `/api/auth/me` | current user |
+| POST | `/api/auth/change-password` | `{old_password, new_password}` |
 
-| 参数 | 默认 | 范围 | 说明 |
-|---|---|---|---|
-| `ttl` | `86400` | 60–604800 | 链接有效期（秒） |
+### Images
 
-其他人访问该链接同样有效，**到期自动失效**——适合分享给他人预览私密图，或前端 `<img>` 标签加载私密图（img 标签无法携带登录头）。
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/upload` | multipart `file`, optional `name`, `visibility`, `team_id` |
+| GET | `/i/{code}` | fetch image (public: anyone; private: owner/team/admin/signed link) |
+| GET | `/api/images?limit&offset&q` | list my images (admins see all), search by name/filename/code |
+| DELETE | `/api/images/{code}` | delete (owner/admin/team-manager) |
+| GET | `/api/images/{code}/link?ttl` | expiring signed link (owner/admin/team-member) |
 
-SVG 类图片一律以附件形式下发（`Content-Disposition: attachment` + `X-Content-Type-Options: nosniff`），浏览器不会内联渲染，防止脚本注入。
+### API keys
 
-### 列出图片（需登录，按用户隔离）
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/keys` | my keys (prefix only — never the full key) |
+| POST | `/api/keys` | create key — **full key returned exactly once** |
+| POST | `/api/keys/{id}/rotate` | rotate: old key revoked instantly, new key shown once |
+| DELETE | `/api/keys/{id}` | revoke |
 
-```
-GET /api/images?limit=20&offset=0&q=
-```
-
-- **普通用户**：只返回自己的图片；**管理员**：返回全部（含 `owner_username` 属主信息）
-- `q`：按名称 / 文件名 / 短码模糊搜索
-- 最新优先
-
-```json
-{
-  "items": [
-    {
-      "code": "Ab3xYz9Kq1",
-      "url": "https://img.example.com/i/Ab3xYz9Kq1",
-      "size": 123456,
-      "content_type": "image/png",
-      "sha256": "9f86d0...",
-      "created_at": "2026-08-12T12:00:00Z",
-      "name": "我的封面",
-      "visibility": "private",
-      "owner_id": 3,
-      "original_filename": "截图.png",
-      "owner_username": "alice"
-    }
-  ],
-  "total": 42
-}
+```bash
+# Upload / download / delete with an API key
+curl -X POST http://<server-ip>:8080/api/upload \
+  -H "Authorization: Bearer <key>" -F "file=@a.png" -F "name=test"
+curl -o a.png "http://<server-ip>:8080/i/<code>" -H "Authorization: Bearer <key>"
+curl -X DELETE "http://<server-ip>:8080/api/images/<code>" -H "Authorization: Bearer <key>"
 ```
 
-| 参数 | 默认 | 范围 | 说明 |
-|---|---|---|---|
-| `limit` | `20` | 1–100 | 返回条数 |
-| `offset` | `0` | ≥0 | 分页偏移 |
-| `q` | *(空)* | ≤100 字符 | 搜索名称/文件名/短码 |
+### Teams
 
-> `url` 字段由 `PUBLIC_URL` 环境变量控制；留空则按请求自动推断。
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/teams` | create team (creator becomes owner) |
+| GET | `/api/teams` | my teams |
+| GET | `/api/teams/{id}` | team detail + members |
+| POST | `/api/teams/{id}/members` | invite member `{username}` |
+| PATCH | `/api/teams/{id}/members/{member_id}` | change role `{role: admin\|member}` (owner only) |
+| DELETE | `/api/teams/{id}/members/{member_id}` | remove member |
+| DELETE | `/api/teams/{id}` | disband team (images return to their uploaders) |
+| GET | `/api/teams/{id}/images?q` | team space images (members/admins) |
 
-完整交互式文档见 `/docs`（Swagger UI，右上角 Authorize 可填入 token 直接调试）。
+### Admin (global `admin` role)
 
-## 🛠️ 本地开发
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/admin/stats` | `{users, images, teams, storage_bytes}` |
+| GET | `/api/admin/teams` | all teams with member counts |
+| GET | `/api/users` | all users |
+| PATCH | `/api/admin/users/{id}/role` | set role `{role: admin\|user}` (cannot change self) |
+| PATCH | `/api/admin/users/{id}/password` | reset password `{new_password}` |
 
-后端（数据落在 `./data`）：
+## 🛠️ Local Development
+
+Backend (data lands in `./data`):
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
@@ -258,106 +174,105 @@ pip install -r requirements-dev.txt
 uvicorn app.main:app --reload     # http://localhost:8080
 ```
 
-前端（Vite 热更新，已配置代理到 8080）：
+Frontend (Vite HMR, proxied to the backend):
 
 ```bash
 cd frontend && npm install && npm run dev   # http://localhost:5173
 ```
 
-构建前端产物（供后端/镜像托管，产物在 `frontend/dist`）：
+Build the frontend (outputs to `frontend/dist`; copy into `app/static` to serve from the backend locally):
 
 ```bash
 cd frontend && npm run build
-# 本地直接让后端托管时：
 mkdir -p ../app/static && cp -r dist/* ../app/static/
 ```
 
-跑测试：
+Tests:
 
 ```bash
 pytest
 ```
 
-> 前端未构建时，访问 `/` 会得到 404 提示（镜像内已内置构建产物，只有本地裸跑后端会触发）。
+> Visiting `/` before the frontend is built returns a 404 hint (the Docker image ships with the built frontend; only bare-backend local runs are affected).
 
-## 📁 项目结构
+## 📁 Project Structure
 
-现代分层布局（core → models → schemas → services → api），按域拆分文件，避免单文件过大：
+A layered, domain-split layout (largest file ≈ 185 lines):
 
 ```
 oss/
 ├── app/
-│   ├── main.py                 # 应用入口：装配路由 + SPA 托管 + 生命周期
-│   ├── core/                   # 基础设施层（无 HTTP 路由）
-│   │   ├── config.py           # 环境变量配置（OSS_* 前缀）
-│   │   ├── database.py         # SQLAlchemy engine/session/Base/迁移
-│   │   └── security.py         # bcrypt 密码、JWT、API Key 认证、RBAC 依赖
-│   ├── models/                 # ORM 模型，按域拆分
+│   ├── main.py                 # app assembly: routes + SPA hosting + lifespan
+│   ├── core/                   # infrastructure (no HTTP routes)
+│   │   ├── config.py           # settings (OSS_* env vars)
+│   │   ├── database.py         # SQLAlchemy engine/session/Base/migrations
+│   │   └── security.py         # bcrypt, JWT, API-key auth, RBAC deps
+│   ├── models/                 # ORM models, one module per domain
 │   │   ├── user.py  api_key.py  team.py  image.py
-│   ├── schemas/                # Pydantic 模型，按域拆分
+│   ├── schemas/                # Pydantic schemas, one module per domain
 │   │   ├── auth.py  image.py  team.py  key.py  admin.py  meta.py
-│   ├── services/               # 业务逻辑
-│   │   ├── images.py           # 魔数嗅探 + 上传/删除
-│   │   ├── signing.py          # 短码 URL + 限时签名链接
-│   │   ├── teams.py            # 团队成员判定
-│   │   ├── shortcode.py        # 密码学随机 base62 短码
-│   │   └── ratelimit.py        # 内存限速器
-│   ├── api/                    # HTTP 层
-│   │   ├── deps.py             # 统一依赖出口（get_db / 认证依赖）
-│   │   └── routes/             # 按资源拆分的路由
+│   ├── services/               # business logic
+│   │   ├── images.py           # magic-byte sniffing + upload/delete
+│   │   ├── signing.py          # short-code URLs + signed links
+│   │   ├── teams.py  shortcode.py  ratelimit.py
+│   ├── api/                    # HTTP layer
+│   │   ├── deps.py             # unified dependency surface
+│   │   └── routes/             # routes by resource
 │   │       ├── auth.py  users.py  upload.py  gallery.py
 │   │       ├── images.py  keys.py  admin.py
-│   │       └── teams/          # 团队路由包
-│   │           ├── team.py  members.py  space.py
-│   └── static/                 # 前端构建产物（Docker 多阶段注入）
-├── frontend/                   # Vue 3 + Vite 前端源码
+│   │       └── teams/          # team.py  members.py  space.py
+│   └── static/                 # built frontend (injected by Docker)
+├── frontend/                   # Vue 3 + Vite source
 │   ├── src/
-│   │   ├── App.vue             # 导航壳 + 视图切换
-│   │   ├── components/         # 按视图拆分的组件
-│   │   ├── api.js              # fetch 封装 + token 管理
+│   │   ├── App.vue             # nav shell + views
+│   │   ├── components/         # view components
+│   │   ├── api.js              # fetch wrapper + token management
 │   │   └── style.css
-│   ├── vite.config.js          # 含 dev 代理到后端 8080
-│   └── package.json
-├── tests/                      # pytest，按域拆分（7 个模块 + conftest 共享助手）
-├── Dockerfile                  # 多阶段：node 构建前端 → python 运行时
+│   ├── vite.config.js  package.json
+├── tests/                      # pytest, split by domain
+├── Dockerfile                  # multi-stage: node build → python runtime
 ├── docker-compose.yml
 └── .env.example
 ```
 
-## 🔐 安全设计
+## 🔐 Security Design
 
-- **不信任任何客户端输入**：文件类型一律按魔数（magic bytes）嗅探，文件名只作展示
-- **SVG = 潜在 XSS**：始终以附件下发，禁止内联渲染；后续接入净化器后可放开
-- **认证**：密码 bcrypt 哈希存储；JWT 签名（HS256）；`JWT_SECRET` 建议显式配置
-- **用户隔离**：列表接口强制按属主过滤；私密图对他人返回 404（不暴露存在性）
-- **私密图访问控制**：只能通过（a）属主/管理员登录态，或（b）**限时签名链接**访问。签名 = HMAC-SHA256(code:expires)，绑定单图、防伪造、防重放、到期失效——猜测短码或截获旧链接都无法访问
-- **速率限制**（内存固定窗口，单容器适用；多副本需换共享存储）：
-  - 登录：每 IP 20 次/分 + 每账号 5 次/分（防暴力破解）
-  - 取图 `GET /i/{code}`：每 IP 240 次/分（防短码枚举）
-  - 上传：每用户 60 次/分
-- **注册策略**：默认开放，可切换邀请码/关闭模式；管理员账号由环境变量引导创建
-- **随机短码**：`secrets.randbelow` 均匀采样 base62（默认 10 位 ≈ 8.4×10¹⁷），防顺序枚举
-- **最小权限**：容器内以非 root 用户运行，数据卷权限由 entrypoint 自动修复
-- 上传有大小上限，按块读取，超限即断
+- **Never trust client input**: file types are sniffed from magic bytes; filenames are display-only
+- **SVG = potential stored XSS**: always served as an attachment, never rendered inline
+- **Auth**: bcrypt password hashes; HS256 JWT; set `JWT_SECRET` explicitly
+- **User isolation**: list endpoints filter by owner; private images return 404 to others (existence is not disclosed)
+- **Private-image access**: owner/team/admin login, or a **time-limited signed link** (HMAC-SHA256 over `code:expires`, bound to one image, anti-forgery/anti-replay, expires) — guessing codes or replaying old links fails
+- **Rate limiting** (in-process fixed window; swap for a shared store when scaling out):
+  - Login: 20/min per IP + 5/min per account (anti brute-force)
+  - `GET /i/{code}`: 240/min per IP (anti enumeration)
+  - Upload: 60/min per user
+- **Registration policy**: open by default, switchable to invite-only or closed; admin bootstrapped from env
+- **Short codes**: `secrets.randbelow` uniform base62 sampling (10 chars ≈ 8.4×10¹⁷), no sequential enumeration
+- **Least privilege**: container runs as a non-root user; data-volume permissions fixed by the entrypoint
+- Uploads are read in chunks and aborted past the size limit
 
-## 🗺️ 路线图
+## 🗺️ Roadmap
 
-- [x] MVP：上传 API、短码 URL、SQLite、Docker 部署
-- [x] 前端升级：Vue 3 + Vite SPA，多阶段构建单容器交付
-- [x] 认证与角色：JWT 登录、admin/user、注册策略（开放/邀请码）、管理员密码环境变量
-- [x] 多租户隔离：用户独立命名空间，图片 private/public，私有图仅本人可见
-- [x] 上传命名 + 画廊搜索
-- [x] 鉴权增强：私密图限时签名链接（HMAC 防伪造/重放）、登录/取图/上传速率限制
-- [x] 团队与团队空间：建队、邀请成员、角色管理、团队共享图片库
-- [x] 管理员界面：统计、用户角色管理、团队总览、图片删除
-- [x] API Key 鉴权（明文仅显示一次、哈希存储、轮换/撤销）与密码管理
-- [ ] 群组邀请码 / 公开团队加入
-- [ ] 图片管理增强：批量操作、按可见性筛选
-- [ ] S3 兼容 API（对接 PicGo / ShareX / uPic 截图客户端）
-- [ ] S3/MinIO 存储后端适配层
-- [ ] HTTPS：Caddy 反代一键启用（自动续期证书）
-- [ ] CI：GitHub Actions 自动构建并推送 GHCR / Docker Hub
+- [x] MVP: upload API, short URLs, SQLite, Docker deploy
+- [x] Vue 3 SPA, multi-stage single-container build
+- [x] Auth & roles: JWT, admin/user, registration policy, admin password env
+- [x] Multi-tenant isolation: per-user namespaces, public/private images
+- [x] Upload naming + gallery search
+- [x] Security hardening: signed links, rate limiting
+- [x] Teams & team spaces
+- [x] Admin interface + image deletion
+- [x] API keys (shown once, hashed, rotate/revoke) + password management
+- [ ] Team invite codes / public team joining
+- [ ] Image management enhancements: batch ops, visibility filter
+- [ ] S3-compatible API (PicGo / ShareX / uPic clients)
+- [ ] S3/MinIO storage backend
+- [ ] HTTPS: one-click Caddy reverse proxy (auto TLS)
+- [ ] CI: GitHub Actions build → GHCR / Docker Hub
+
+## 🤝 Contributing
+
+Pull requests are welcome. Please keep tests green (`pytest`) and the frontend buildable (`npm --prefix frontend run build`). For significant changes, open an issue first to discuss.
 
 ## 📄 License
 
-[MIT](./LICENSE)
+[MIT](./LICENSE) © 2026 oss contributors
