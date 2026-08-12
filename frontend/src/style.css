@@ -621,6 +621,99 @@ button.ghost.danger:hover {
   color: var(--muted);
 }
 
+/* --- account --- */
+
+.account-form {
+  max-width: 380px;
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 28px;
+}
+
+.account-form input {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  outline: none;
+}
+
+.account-form input:focus {
+  border-color: var(--accent);
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ok-msg {
+  color: #7fd97a;
+  font-size: 13px;
+}
+
+.hint {
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.hint code,
+.key-value,
+.prefix {
+  font-family: ui-monospace, monospace;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-size: 12px;
+}
+
+.key-create {
+  margin-top: 10px;
+  align-items: center;
+}
+
+.key-reveal {
+  background: #1a2233;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  padding: 14px;
+  margin: 12px 0;
+}
+
+.key-reveal .warn {
+  color: #e0b06a;
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+
+.key-line {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.key-value {
+  flex: 1;
+  min-width: 0;
+  word-break: break-all;
+  background: #0d1117;
+  border-color: #30363d;
+  color: #7ee787;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.user-actions,
+.key-actions {
+  display: flex;
+  gap: 6px;
+}
+
 @media (max-width: 720px) {
   .teams-layout {
     grid-template-columns: 1fr;

@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import AccountView from './components/AccountView.vue'
 import AdminView from './components/AdminView.vue'
 import AuthView from './components/AuthView.vue'
 import GalleryView from './components/GalleryView.vue'
@@ -63,11 +64,13 @@ function logout() {
         <button :class="{ active: view === 'gallery' }" @click="view = 'gallery'">我的图片</button>
         <button :class="{ active: view === 'teams' }" @click="view = 'teams'">我的团队</button>
         <button v-if="isAdmin" :class="{ active: view === 'admin' }" @click="view = 'admin'">管理</button>
+        <button :class="{ active: view === 'account' }" @click="view = 'account'">账户</button>
       </nav>
 
       <GalleryView v-if="view === 'gallery'" :user="user" />
       <TeamsView v-else-if="view === 'teams'" :user="user" />
       <AdminView v-else-if="view === 'admin'" :user="user" />
+      <AccountView v-else-if="view === 'account'" />
 
       <footer>
         API 文档见 <a href="/docs">/docs</a> · 健康检查 <a href="/healthz">/healthz</a>

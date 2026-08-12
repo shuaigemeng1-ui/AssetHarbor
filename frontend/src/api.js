@@ -47,6 +47,36 @@ export function fetchMe() {
   return request('/api/auth/me')
 }
 
+export function changePassword(oldPassword, newPassword) {
+  return request('/api/auth/change-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+  })
+}
+
+// --- API keys ---------------------------------------------------------------
+
+export function listApiKeys() {
+  return request('/api/keys')
+}
+
+export function createApiKey(name = '') {
+  return request('/api/keys', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+}
+
+export function rotateApiKey(id) {
+  return request(`/api/keys/${id}/rotate`, { method: 'POST' })
+}
+
+export function deleteApiKey(id) {
+  return request(`/api/keys/${id}`, { method: 'DELETE' })
+}
+
 // --- images ---------------------------------------------------------------
 
 export function uploadFile(file, { name = '', visibility = 'public', teamId = null } = {}) {
@@ -142,5 +172,13 @@ export function setUserRole(userId, role) {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ role }),
+  })
+}
+
+export function resetUserPassword(userId, newPassword) {
+  return request(`/api/admin/users/${userId}/password`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ new_password: newPassword }),
   })
 }

@@ -2,7 +2,7 @@
 
 一个开箱即用、Docker 一键部署的**自托管图片托管服务**：上传图片，立即得到一条短码 URL。支持**用户隔离、角色权限（RBAC）**，后端 Python (FastAPI)。
 
-> **Status: v0.4** — 上传 + 短码链接 + 认证/RBAC + 用户隔离 + **团队与团队空间** + **管理员界面** + 签名链接/限速 + Docker 部署可用。
+> **Status: v0.5** — 上传 + 短码链接 + 认证/RBAC + 用户隔离 + 团队与团队空间 + 管理员界面 + **API Key 鉴权与改密** + 签名链接/限速 + Docker 部署可用。
 
 ## ✨ 特性
 
@@ -10,9 +10,11 @@
 - 🔗 **短码 URL**：上传即返回 `https://你的域名/i/Ab3xYz9Kq1`，密码学随机、不可预测
 - 🖼️ **多格式支持**：jpg / png / gif / webp / svg / bmp / ico / avif / tiff，**按魔数嗅探真实类型**，不信任文件名
 - 🔐 **认证与 RBAC**：JWT 登录、admin/user 双角色、管理员密码环境变量引导、注册策略可配（开放/邀请码/关闭）
+- 🔑 **API Key 鉴权**：为脚本/命令行生成鉴权 Key，可上传/下载/删除图片；**明文只显示一次**（数据库仅存 SHA-256 哈希）、支持**轮换**（旧 Key 立即失效）与撤销
+- 🔏 **改密**：用户自助改密（校验旧密码）；管理员可重置任意用户密码
 - 👥 **用户隔离**：每个人只能看到自己的图片；图片可分**公开/私密**，私密图仅本人与管理员可见
 - 🏢 **团队与团队空间**：建团队、按用户名邀请成员、成员角色（拥有者/管理员/成员）、团队空间专属图片库、团队内共享私密图
-- 🛠️ **管理员界面**：系统统计（用户/图片/团队/存储）、用户角色管理（升/降管理员）、团队总览与解散、全量图片管理
+- 🛠️ **管理员界面**：系统统计（用户/图片/团队/存储）、用户角色与密码管理、团队总览与解散、全量图片管理
 - 🗑️ **图片删除**：属主/管理员/团队管理员可删除图片
 - ⏳ **私密图签名链接**：私密图只能通过**限时签名链接**（默认 24h，HMAC 防篡改/防伪造/防重放）或本人/团队/管理员访问——随手输入短码无法看到任何私密内容
 - 🛡️ **速率限制**：登录接口按 IP+账号限速（防暴力破解）、图片接口按 IP 限速（防短码枚举）、上传按用户限速
@@ -20,7 +22,7 @@
 - 🔍 **搜索**：按名称/文件名/短码实时搜索（个人空间与团队空间均支持）
 - 🔒 **安全默认值**：非 root 运行、SVG 附件式下发（防存储型 XSS）、bcrypt 密码哈希、上传大小限制
 - 📦 **API 优先**：完整 REST API（后续兼容 PicGo / ShareX / uPic 客户端）
-- 🖥️ **Vue 3 前端**：SPA 多视图（我的图片 / 我的团队 / 管理），与后端同容器交付（多阶段构建）
+- 🖥️ **Vue 3 前端**：SPA 多视图（我的图片 / 我的团队 / 管理 / 账户），与后端同容器交付（多阶段构建）
 
 ## 🚀 快速开始
 
@@ -70,7 +72,7 @@ docker compose up -d
 POST /api/auth/register          # JSON: {"username", "password", "invite_code"?} → 201 UserOut
 POST /api/auth/login             # 表单: username & password → {access_token, user}
 GET  /api/auth/me                # 当前用户信息（校验令牌是否有效）
-GET  /api/users                  # 用户列表（仅 admin）
+POST /api/auth/change-password   # 修改自己的密码 {old_password, new_password}（需登录）
 ```
 
 命令行示例：
@@ -84,6 +86,29 @@ curl -X POST http://你的服务器:8080/api/auth/register \
 # 登录，拿到 token
 TOKEN=$(curl -X POST http://你的服务器:8080/api/auth/login \
   -d "username=alice&password=pass123" | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+```
+
+### API Key 鉴权（脚本/命令行）
+
+```
+GET    /api/keys                        # 我的 Key 列表（仅前缀，不含完整 Key）
+POST   /api/keys                        # 生成 Key {name?} → 完整 Key 仅返回这一次
+POST   /api/keys/{id}/rotate            # 轮换：旧 Key 立即失效，返回新 Key（仅一次）
+DELETE /api/keys/{id}                   # 撤销 Key
+```
+
+> **安全设计**：数据库只存 SHA-256 哈希，**明文生成后无法再次查看**，只能轮换/撤销重建；Key 为 256 位密码学随机，哈希唯一约束。带 Key 调用任意需要登录的接口（上传/下载/删除/列表/团队/管理）：
+
+```bash
+# 上传（Authorization: Bearer 或 X-API-Key 均可）
+curl -X POST http://你的服务器:8080/api/upload \
+  -H "Authorization: Bearer <key>" -F "file=@a.png" -F "name=测试"
+
+# 下载（私密图：属主 Key 可访问）
+curl -o a.png "http://你的服务器:8080/i/<code>" -H "Authorization: Bearer <key>"
+
+# 删除
+curl -X DELETE "http://你的服务器:8080/api/images/<code>" -H "Authorization: Bearer <key>"
 ```
 
 ### 团队（Teams）
@@ -107,7 +132,8 @@ GET    /api/teams/{id}/images?q=&limit=&offset=  # 团队空间图片（成员/�
 GET   /api/admin/stats               # 系统统计 {users, images, teams, storage_bytes}
 GET   /api/admin/teams               # 全部团队（含拥有者、成员数）
 GET   /api/users                     # 全部用户
-PATCH /api/admin/users/{user_id}/role  # 设置角色 {role: admin|user}（不能改自己）
+PATCH /api/admin/users/{user_id}/role     # 设置角色 {role: admin|user}（不能改自己）
+PATCH /api/admin/users/{user_id}/password # 重置密码 {new_password}
 DELETE /api/images/{code}            # 删除图片（属主/管理员/团队管理员）
 ```
 
@@ -316,6 +342,7 @@ oss/
 - [x] 鉴权增强：私密图限时签名链接（HMAC 防伪造/重放）、登录/取图/上传速率限制
 - [x] 团队与团队空间：建队、邀请成员、角色管理、团队共享图片库
 - [x] 管理员界面：统计、用户角色管理、团队总览、图片删除
+- [x] API Key 鉴权（明文仅显示一次、哈希存储、轮换/撤销）与密码管理
 - [ ] 群组邀请码 / 公开团队加入
 - [ ] 图片管理增强：批量操作、按可见性筛选
 - [ ] S3 兼容 API（对接 PicGo / ShareX / uPic 截图客户端）

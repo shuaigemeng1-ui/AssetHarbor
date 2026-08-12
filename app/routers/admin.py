@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Image, Team, TeamMember, User
-from ..schemas import AdminStats, RoleUpdate, TeamAdminOut, UserOut
-from ..security import require_admin
+from ..schemas import AdminStats, ResetPasswordRequest, RoleUpdate, TeamAdminOut, UserOut
+from ..security import hash_password, require_admin
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -72,3 +72,17 @@ def set_user_role(
     db.commit()
     db.refresh(target)
     return _user_out(target)
+
+
+@router.patch("/users/{user_id}/password", status_code=204, summary="Reset a user's password (admin)")
+def reset_password(
+    user_id: int,
+    payload: ResetPasswordRequest,
+    _: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> None:
+    target = db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    target.password_hash = hash_password(payload.new_password)
+    db.commit()

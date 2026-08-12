@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import { deleteTeam, getAdminStats, listAdminTeams, listUsers, setUserRole } from '../api'
+import { deleteTeam, getAdminStats, listAdminTeams, listUsers, resetUserPassword, setUserRole } from '../api'
 
 const props = defineProps({ user: { type: Object, required: true } })
 
@@ -36,6 +36,21 @@ async function toggleRole(u) {
   try {
     await setUserRole(u.id, next)
     users.value = await listUsers()
+  } catch (err) {
+    window.alert(err.message)
+  }
+}
+
+async function doResetPassword(u) {
+  const np = window.prompt(`为 ${u.username} 设置新密码（至少 6 位）：`)
+  if (!np) return
+  if (np.length < 6) {
+    window.alert('密码至少 6 位')
+    return
+  }
+  try {
+    await resetUserPassword(u.id, np)
+    window.alert(`已重置 ${u.username} 的密码`)
   } catch (err) {
     window.alert(err.message)
   }
@@ -89,10 +104,11 @@ async function doDeleteTeam(t) {
             </span>
           </td>
           <td class="muted">{{ fmtDate(u.created_at) }}</td>
-          <td>
+          <td class="user-actions">
             <button v-if="u.id !== user.id" class="ghost" @click="toggleRole(u)">
               {{ u.role === 'admin' ? '降为用户' : '设为管理员' }}
             </button>
+            <button v-if="u.id !== user.id" class="ghost" title="重置密码" @click="doResetPassword(u)">重置密码</button>
           </td>
         </tr>
       </tbody>

@@ -1,21 +1,27 @@
-"""Password hashing, JWT issuing/validation and auth dependencies."""
+"""Password hashing, JWT + API-key authentication and auth dependencies.
 
+Authentication accepts either a JWT access token or a per-user API key,
+sent as ``Authorization: Bearer <token>`` or (for API keys) ``X-API-Key: <key>``.
+API keys are stored only as SHA-256 hashes — the plaintext is shown exactly
+once at creation and cannot be recovered afterwards.
+"""
+
+import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .config import settings
 from .database import SessionLocal, get_db
-from .models import User
+from .models import ApiKey, User
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
-oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 # Ephemeral secret when the operator did not configure OSS_JWT_SECRET
 # (tokens are then invalidated on every restart — see README).
@@ -46,17 +52,6 @@ def create_access_token(user: User) -> str:
     return jwt.encode(payload, _JWT_SECRET, algorithm=_ALGORITHM)
 
 
-def _decode_token(token: str) -> dict:
-    try:
-        return jwt.decode(token, _JWT_SECRET, algorithms=[_ALGORITHM])
-    except jwt.PyJWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-
 def _user_from_payload(payload: dict, db: Session) -> User | None:
     user_id = payload.get("sub")
     if user_id is None:
@@ -67,11 +62,71 @@ def _user_from_payload(payload: dict, db: Session) -> User | None:
         return None
 
 
+# ---------------------------------------------------------------------------
+# API keys
+# ---------------------------------------------------------------------------
+
+
+def generate_api_key() -> str:
+    """256-bit random, URL-safe — collision-free in practice."""
+    return secrets.token_urlsafe(32)
+
+
+def hash_api_key(key: str) -> str:
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+
+def _authenticate(request: Request, bearer: str | None, db: Session) -> User | None:
+    """Resolve a request to a user via JWT or API key.
+
+    Order: Authorization: Bearer is tried as JWT first, then as an API key;
+    a separate ``X-API-Key`` header is accepted as an API key too.
+    """
+    candidates: list[str] = []
+    if bearer:
+        candidates.append(bearer)
+    xkey = request.headers.get("X-API-Key")
+    if xkey:
+        candidates.append(xkey)
+
+    for token in candidates:
+        # 1) JWT
+        try:
+            payload = jwt.decode(token, _JWT_SECRET, algorithms=[_ALGORITHM])
+        except jwt.PyJWTError:
+            payload = None
+        if payload:
+            user = _user_from_payload(payload, db)
+            if user is not None:
+                return user
+
+        # 2) API key (hashed lookup)
+        api_key = db.execute(
+            select(ApiKey).where(ApiKey.key_hash == hash_api_key(token))
+        ).scalar_one_or_none()
+        if api_key is not None:
+            user = db.get(User, api_key.user_id)
+            if user is not None:
+                _touch_api_key(api_key, db)
+                return user
+    return None
+
+
+def _touch_api_key(api_key: ApiKey, db: Session) -> None:
+    """Track last usage, but write at most once per hour to keep hot paths cheap."""
+    # SQLite stores naive UTC; keep comparisons in the same space.
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if api_key.last_used_at is None or (now - api_key.last_used_at).total_seconds() > 3600:
+        api_key.last_used_at = now
+        db.commit()
+
+
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
+    token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
-    user = _user_from_payload(_decode_token(token), db)
+    user = _authenticate(request, token, db)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -82,21 +137,16 @@ def get_current_user(
 
 
 def get_optional_user(
-    token: str | None = Depends(oauth2_scheme_optional),
+    request: Request,
+    token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User | None:
     """Like get_current_user but returns None instead of raising.
 
-    Used by public routes (e.g. GET /i/{code}) that want to check
-    ownership when a valid token happens to be present.
+    Used by public routes (e.g. GET /i/{code}) that check ownership when a
+    valid credential happens to be present.
     """
-    if not token:
-        return None
-    try:
-        payload = jwt.decode(token, _JWT_SECRET, algorithms=[_ALGORITHM])
-    except jwt.PyJWTError:
-        return None
-    return _user_from_payload(payload, db)
+    return _authenticate(request, token, db)
 
 
 def require_admin(current_user: User = Depends(get_current_user)) -> User:

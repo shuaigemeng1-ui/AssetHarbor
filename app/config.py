@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="OSS_", env_file=".env", extra="ignore")
 
     app_name: str = "oss"
-    version: str = "0.4.0"
+    version: str = "0.5.0"
 
     # --- storage -----------------------------------------------------------
     # Base directory for the SQLite database and uploaded files.

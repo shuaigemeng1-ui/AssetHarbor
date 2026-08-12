@@ -8,8 +8,13 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..database import get_db
 from ..models import User
-from ..schemas import RegisterRequest, TokenResponse, UserOut
-from ..security import create_access_token, get_current_user, hash_password, verify_password
+from ..schemas import ChangePasswordRequest, RegisterRequest, TokenResponse, UserOut
+from ..security import (
+    create_access_token,
+    get_current_user,
+    hash_password,
+    verify_password,
+)
 from ..services.ratelimit import check_rate_limit, client_ip
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -58,3 +63,17 @@ def login(
 @router.get("/me", response_model=UserOut, summary="Get the current user")
 def me(current_user: User = Depends(get_current_user)) -> UserOut:
     return _user_out(current_user)
+
+
+@router.post("/change-password", status_code=204, summary="Change your password")
+def change_password(
+    payload: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    if not verify_password(payload.old_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="current password is incorrect")
+    if payload.new_password == payload.old_password:
+        raise HTTPException(status_code=400, detail="new password must differ from the current one")
+    current_user.password_hash = hash_password(payload.new_password)
+    db.commit()

@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import init_db
-from .routers import admin, auth, gallery, images, teams, upload, users
+from .routers import admin, auth, gallery, images, keys, teams, upload, users
 from .schemas import HealthResponse
 from .security import ensure_admin
 
@@ -43,6 +43,7 @@ app.include_router(images.router)
 app.include_router(users.router)
 app.include_router(teams.router)
 app.include_router(admin.router)
+app.include_router(keys.router)
 
 if STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

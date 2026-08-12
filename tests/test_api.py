@@ -627,6 +627,141 @@ def test_admin_set_user_role(client):
 
 
 # ---------------------------------------------------------------------------
+# Password change & API keys
+# ---------------------------------------------------------------------------
+
+
+def test_change_password_flow(client):
+    name, token = new_user(client)
+    h = auth(token)
+
+    # 旧密码错误 → 400
+    assert client.post("/api/auth/change-password", headers=h,
+                       json={"old_password": "wrong1", "new_password": "newpass1"}).status_code == 400
+
+    # 成功修改
+    assert client.post("/api/auth/change-password", headers=h,
+                       json={"old_password": "pass123", "new_password": "newpass1"}).status_code == 204
+
+    # 旧密码登录失败，新密码成功
+    assert client.post("/api/auth/login", data={"username": name, "password": "pass123"}).status_code == 401
+    assert client.post("/api/auth/login", data={"username": name, "password": "newpass1"}).status_code == 200
+
+
+def test_admin_reset_password(client):
+    atoken = login(client, "admin", "admin-pass")
+    name, token = new_user(client)
+    uid = client.get("/api/auth/me", headers=auth(token)).json()["id"]
+
+    assert client.patch(f"/api/admin/users/{uid}/password", headers=auth(atoken),
+                        json={"new_password": "reset123"}).status_code == 204
+    assert client.post("/api/auth/login", data={"username": name, "password": "pass123"}).status_code == 401
+    assert client.post("/api/auth/login", data={"username": name, "password": "reset123"}).status_code == 200
+
+    # 普通用户不能重置他人密码
+    _, t2 = new_user(client)
+    me2 = client.get("/api/auth/me", headers=auth(t2)).json()
+    assert client.patch(f"/api/admin/users/{me2['id']}/password", headers=auth(t2),
+                        json={"new_password": "x12345"}).status_code == 403
+
+
+def test_api_key_created_once_and_listed_by_prefix(client):
+    _, token = new_user(client)
+    h = auth(token)
+
+    created = client.post("/api/keys", headers=h, json={"name": "我的脚本"}).json()
+    assert created["name"] == "我的脚本"
+    assert len(created["key"]) > 30
+    assert created["key"].startswith(created["key_prefix"])
+
+    # 列表只含前缀，绝不含完整 key
+    keys = client.get("/api/keys", headers=h).json()
+    assert len(keys) == 1
+    assert keys[0]["key_prefix"] == created["key_prefix"]
+    assert "key" not in keys[0]
+    assert all(created["key"] not in str(k) for k in keys)
+
+
+def test_api_key_can_upload_list_and_delete(client):
+    _, token = new_user(client)
+    key = client.post("/api/keys", headers=auth(token)).json()["key"]
+    kh = {"X-API-Key": key}
+
+    # 上传
+    up = client.post("/api/upload", headers=kh, files={"file": ("a.png", FAKE_PNG, "image/png")})
+    assert up.status_code == 201
+    code = up.json()["code"]
+
+    # 列表
+    assert client.get("/api/images", headers=kh).status_code == 200
+
+    # 下载
+    resp = client.get(f"/i/{code}", headers=kh)
+    assert resp.status_code == 200
+    assert resp.content == FAKE_PNG
+
+    # 删除
+    assert client.delete(f"/api/images/{code}", headers=kh).status_code == 204
+    assert client.get(f"/api/images", headers=kh).json()["total"] == 0
+
+
+def test_api_key_bearer_auth_also_works(client):
+    _, token = new_user(client)
+    key = client.post("/api/keys", headers=auth(token)).json()["key"]
+    # Authorization: Bearer <key> 同样被识别
+    resp = client.get("/api/auth/me", headers={"Authorization": f"Bearer {key}"})
+    assert resp.status_code == 200
+
+
+def test_api_key_rotate_revokes_old(client):
+    _, token = new_user(client)
+    h = auth(token)
+    old_key = client.post("/api/keys", headers=h, json={"name": "rot"}).json()["key"]
+    kid = client.get("/api/keys", headers=h).json()[0]["id"]
+
+    new = client.post(f"/api/keys/{kid}/rotate", headers=h).json()
+    assert new["key"] != old_key
+
+    # 旧 key 立即失效
+    assert client.get("/api/auth/me", headers={"X-API-Key": old_key}).status_code == 401
+    # 新 key 生效
+    assert client.get("/api/auth/me", headers={"X-API-Key": new["key"]}).status_code == 200
+
+
+def test_api_key_revoke(client):
+    _, token = new_user(client)
+    h = auth(token)
+    key = client.post("/api/keys", headers=h).json()["key"]
+    kid = client.get("/api/keys", headers=h).json()[0]["id"]
+
+    assert client.delete(f"/api/keys/{kid}", headers=h).status_code == 204
+    assert client.get("/api/auth/me", headers={"X-API-Key": key}).status_code == 401
+
+
+def test_api_keys_are_unique(client):
+    _, token = new_user(client)
+    h = auth(token)
+    k1 = client.post("/api/keys", headers=h).json()["key"]
+    k2 = client.post("/api/keys", headers=h).json()["key"]
+    assert k1 != k2
+    keys = client.get("/api/keys", headers=h).json()
+    prefixes = [k["key_prefix"] for k in keys]
+    assert len(prefixes) == len(set(prefixes))
+
+
+def test_api_key_cannot_access_others_resources(client):
+    _, t1 = new_user(client)
+    _, t2 = new_user(client)
+    key1 = client.post("/api/keys", headers=auth(t1)).json()["key"]
+    code = upload(client, t2, data={"visibility": "private"}).json()["code"]
+
+    # key1 访问 t2 的私密图 → 404
+    assert client.get(f"/i/{code}", headers={"X-API-Key": key1}).status_code == 404
+    # key1 删 t2 的图 → 403
+    assert client.delete(f"/api/images/{code}", headers={"X-API-Key": key1}).status_code == 403
+
+
+# ---------------------------------------------------------------------------
 # Misc
 # ---------------------------------------------------------------------------
 

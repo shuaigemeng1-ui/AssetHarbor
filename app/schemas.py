@@ -24,6 +24,42 @@ class RegisterRequest(BaseModel):
     invite_code: str | None = None
 
 
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str = Field(min_length=6, max_length=128)
+
+
+class ResetPasswordRequest(BaseModel):
+    new_password: str = Field(min_length=6, max_length=128)
+
+
+# --- API keys ---------------------------------------------------------------
+
+
+class ApiKeyCreate(BaseModel):
+    name: str = Field(default="", max_length=64)
+
+
+class ApiKeyOut(BaseModel):
+    """Key metadata only — the full key is never returned again."""
+
+    id: int
+    name: str
+    key_prefix: str
+    created_at: datetime
+    last_used_at: datetime | None
+
+
+class ApiKeyCreated(BaseModel):
+    """Returned exactly once (create/rotate); carries the plaintext key."""
+
+    id: int
+    name: str
+    key: str
+    key_prefix: str
+    created_at: datetime
+
+
 class UploadResponse(BaseModel):
     code: str
     url: str
