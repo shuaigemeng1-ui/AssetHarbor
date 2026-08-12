@@ -1,17 +1,32 @@
 """Image storage compensation and operational readiness checks."""
 
 import errno
+import sqlite3
+import threading
 import uuid
 from pathlib import Path
 
-from sqlalchemy import func, select
+import pytest
+from sqlalchemy import create_engine, event, func, select, text
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import sessionmaker
 
 from app.core import database
+import app.main as app_main
 from app.core.config import settings
 from app.models import Image
 from app.services import images, videos
 from conftest import login, register, upload
+
+
+@pytest.fixture(autouse=True)
+def _clear_readyz_cache():
+    """No readiness result may leak into a test that patches a probe."""
+    app_main._reset_readiness_cache()
+    try:
+        yield
+    finally:
+        app_main._reset_readiness_cache()
 
 
 def _image_count() -> int:
@@ -95,10 +110,105 @@ def test_image_database_commit_failure_removes_published_file(client, monkeypatc
 
 
 def test_readyz_checks_database_storage_and_leaves_no_probe(client):
+    with database.SessionLocal() as db:
+        before_users = db.execute(text("SELECT COUNT(*) FROM users")).scalar_one()
+
     response = client.get("/readyz")
 
     assert response.status_code == 200
     assert response.json()["status"] == "ready"
+    assert _readiness_probes() == []
+    with database.SessionLocal() as db:
+        assert db.execute(text("SELECT COUNT(*) FROM users")).scalar_one() == before_users
+        db.execute(text("BEGIN IMMEDIATE"))
+        db.rollback()
+
+
+def test_readyz_concurrent_requests_share_one_successful_probe(monkeypatch):
+    workers = 8
+    start = threading.Barrier(workers)
+    database_calls = 0
+    storage_calls = 0
+    counter_lock = threading.Lock()
+
+    def database_probe():
+        nonlocal database_calls
+        with counter_lock:
+            database_calls += 1
+
+    def storage_probe():
+        nonlocal storage_calls
+        with counter_lock:
+            storage_calls += 1
+
+    monkeypatch.setattr(app_main, "_probe_database_write", database_probe)
+    monkeypatch.setattr(app_main, "_probe_data_directory", storage_probe)
+    monkeypatch.setattr(app_main, "ensure_free_space", lambda: None)
+
+    results = []
+
+    def worker():
+        start.wait()
+        results.append(app_main.readyz())
+
+    threads = [threading.Thread(target=worker) for _ in range(workers)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=3)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert len(results) == workers
+    assert all(result.status == "ready" for result in results)
+    assert database_calls == 1
+    assert storage_calls == 1
+
+
+def test_readyz_caches_failure_without_repeating_probe(client, monkeypatch):
+    calls = 0
+
+    def fail_database_probe():
+        nonlocal calls
+        calls += 1
+        raise OperationalError("BEGIN IMMEDIATE", {}, Exception("database unavailable"))
+
+    monkeypatch.setattr(app_main, "_probe_database_write", fail_database_probe)
+
+    first = client.get("/readyz")
+    second = client.get("/readyz")
+
+    assert first.status_code == second.status_code == 503
+    assert first.json()["detail"] == second.json()["detail"] == "database is not ready"
+    assert calls == 1
+
+
+def test_readyz_rejects_sqlite_query_only_mode(client, monkeypatch, tmp_path):
+    db_path = tmp_path / "query-only.db"
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute("CREATE TABLE users (id INTEGER PRIMARY KEY)")
+        connection.commit()
+    finally:
+        connection.close()
+
+    query_only_engine = create_engine(
+        f"sqlite:///{db_path}",
+        connect_args={"check_same_thread": False},
+    )
+
+    @event.listens_for(query_only_engine, "connect")
+    def _enable_query_only(dbapi_connection, _connection_record):
+        dbapi_connection.execute("PRAGMA query_only=ON")
+
+    query_only_sessions = sessionmaker(bind=query_only_engine)
+    monkeypatch.setattr("app.main.SessionLocal", query_only_sessions)
+    try:
+        response = client.get("/readyz")
+    finally:
+        query_only_engine.dispose()
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "database is not ready"
     assert _readiness_probes() == []
 
 

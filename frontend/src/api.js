@@ -9,21 +9,61 @@ export function setToken(token) {
   else localStorage.removeItem(TOKEN_KEY)
 }
 
+function expireCurrentToken(requestToken) {
+  // A response can arrive after the user has logged out and authenticated as
+  // somebody else. Only the credential that actually produced this 401 may
+  // invalidate the current browser session.
+  if (!requestToken || getToken() !== requestToken) return false
+  setToken(null)
+  window.dispatchEvent(new Event('oss:unauthorized'))
+  return true
+}
+
+export function formatApiErrorDetail(detail, status) {
+  if (typeof detail === 'string' && detail.trim()) {
+    const localized = {
+      'user storage quota exceeded': '用户累计存储额度不足',
+      'team storage quota exceeded': '团队累计存储额度不足',
+      'insufficient storage space': '服务器可用存储空间不足',
+    }
+    return localized[detail.trim()] || detail
+  }
+  if (Array.isArray(detail)) {
+    const messages = detail.map(item => {
+      if (typeof item === 'string') return item
+      if (!item || typeof item !== 'object') return ''
+      const location = Array.isArray(item.loc)
+        ? item.loc.filter(part => !['body', 'query', 'path'].includes(String(part))).join('.')
+        : ''
+      const message = item.msg || item.message || ''
+      return [location, message].filter(Boolean).join('：')
+    }).filter(Boolean)
+    if (messages.length) return messages.join('；')
+  }
+  if (detail && typeof detail === 'object') {
+    const message = detail.message || detail.msg
+    if (message) return String(message)
+  }
+  return `HTTP ${status}`
+}
+
 export async function request(path, options = {}) {
   const { suppressUnauthorized = false, ...fetchOptions } = options
   const headers = { ...(fetchOptions.headers || {}) }
-  const token = getToken()
-  if (token && !headers.Authorization) headers.Authorization = `Bearer ${token}`
+  const storedToken = getToken()
+  if (storedToken && !headers.Authorization) headers.Authorization = `Bearer ${storedToken}`
+  const requestToken = typeof headers.Authorization === 'string' && headers.Authorization.startsWith('Bearer ')
+    ? headers.Authorization.slice(7)
+    : null
 
   const resp = await fetch(path, { ...fetchOptions, headers })
   if (resp.status === 401 && !path.startsWith('/api/auth/') && !suppressUnauthorized) {
-    setToken(null)
-    window.dispatchEvent(new Event('oss:unauthorized'))
+    expireCurrentToken(requestToken)
     throw new Error('登录已过期，请重新登录')
   }
   const body = await resp.json().catch(() => ({}))
   if (!resp.ok) {
-    const error = new Error(body.detail || `HTTP ${resp.status}`)
+    const error = new Error(formatApiErrorDetail(body.detail, resp.status))
     error.status = resp.status
     error.body = body
     throw error
@@ -53,8 +93,8 @@ export function register(username, password, inviteCode = '') {
   })
 }
 
-export function fetchPublicConfig() {
-  return request('/api/auth/config', { suppressUnauthorized: true })
+export function fetchPublicConfig({ signal } = {}) {
+  return request('/api/auth/config', { suppressUnauthorized: true, signal })
 }
 
 export function fetchMe() {
@@ -141,8 +181,16 @@ export function createVideoUpload(payload, { signal, token, suppressUnauthorized
   })
 }
 
-export function getVideoUpload(uploadId) {
-  return request(`/api/video-uploads/${uploadId}`)
+export function getVideoUpload(uploadId, { token, suppressUnauthorized = false } = {}) {
+  const headers = {}
+  if (token) headers.Authorization = `Bearer ${token}`
+  return request(`/api/video-uploads/${uploadId}`, { headers, suppressUnauthorized })
+}
+
+export function listVideoUploads({ token, suppressUnauthorized = false } = {}) {
+  const headers = {}
+  if (token) headers.Authorization = `Bearer ${token}`
+  return request('/api/video-uploads', { headers, suppressUnauthorized })
 }
 
 export function cancelVideoUpload(uploadId, { token, suppressUnauthorized = false } = {}) {
@@ -155,8 +203,14 @@ export function cancelVideoUpload(uploadId, { token, suppressUnauthorized = fals
   })
 }
 
-export function completeVideoUpload(uploadId) {
-  return request(`/api/video-uploads/${uploadId}/complete`, { method: 'POST' })
+export function completeVideoUpload(uploadId, { token, suppressUnauthorized = false } = {}) {
+  const headers = {}
+  if (token) headers.Authorization = `Bearer ${token}`
+  return request(`/api/video-uploads/${uploadId}/complete`, {
+    method: 'POST',
+    headers,
+    suppressUnauthorized,
+  })
 }
 
 export function uploadVideoPart(uploadId, partNumber, blob, {
@@ -166,10 +220,10 @@ export function uploadVideoPart(uploadId, partNumber, blob, {
   onProgress,
 } = {}) {
   const xhr = new XMLHttpRequest()
+  const requestToken = getToken()
   const promise = new Promise((resolve, reject) => {
     xhr.open('PUT', `/api/video-uploads/${uploadId}/parts/${partNumber}`)
-    const token = getToken()
-    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    if (requestToken) xhr.setRequestHeader('Authorization', `Bearer ${requestToken}`)
     xhr.setRequestHeader('Content-Type', 'application/octet-stream')
     xhr.setRequestHeader('Content-Range', `bytes ${start}-${start + blob.size - 1}/${total}`)
     xhr.setRequestHeader('X-Chunk-SHA256', sha256)
@@ -188,10 +242,9 @@ export function uploadVideoPart(uploadId, partNumber, blob, {
         return
       }
       if (xhr.status === 401) {
-        setToken(null)
-        window.dispatchEvent(new Event('oss:unauthorized'))
+        expireCurrentToken(requestToken)
       }
-      reject(Object.assign(new Error(body.detail || `HTTP ${xhr.status}`), {
+      reject(Object.assign(new Error(formatApiErrorDetail(body.detail, xhr.status)), {
         status: xhr.status,
         body,
       }))

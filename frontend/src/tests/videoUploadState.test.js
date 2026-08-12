@@ -41,4 +41,24 @@ describe('video upload presentation state', () => {
 
     expect(task.teamId).toBeNull()
   })
+
+  it('uses server metadata instead of stale IndexedDB context', () => {
+    const task = {
+      uploadId: 'upload-1', filename: 'old.mp4', size: 1, name: '旧名称',
+      visibility: 'public', fingerprint: 'old', teamId: null,
+      chunkSize: 8, totalParts: 2, uploadedParts: [],
+    }
+
+    applySession(task, {
+      upload_id: 'upload-1', filename: 'server.mp4', size: 99, name: '',
+      visibility: 'private', fingerprint: 'server-fingerprint', team_id: 42,
+      chunk_size: 16, total_parts: 7, uploaded_parts: [2],
+    })
+
+    expect(task).toMatchObject({
+      filename: 'server.mp4', size: 99, name: '', visibility: 'private',
+      fingerprint: 'server-fingerprint', teamId: 42, chunkSize: 16,
+      totalParts: 7, uploadedParts: [2],
+    })
+  })
 })

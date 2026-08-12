@@ -13,7 +13,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ...core.config import settings
-from ...models import Image, Team, UploadSession, User
+from ...models import Image, Team, UploadPart, UploadSession, User
 from ...schemas import (
     SignedLinkResponse,
     VideoInfo,
@@ -21,9 +21,10 @@ from ...schemas import (
     VideoPartResponse,
     VideoUpdate,
     VideoUploadCreate,
+    VideoUploadListResponse,
     VideoUploadStatus,
 )
-from ...services.images import can_manage_image, delete_image
+from ...services.images import can_manage_image, delete_image, update_media_metadata
 from ...services.ratelimit import check_rate_limit, client_ip
 from ...services.signing import (
     build_signed_video_url,
@@ -63,7 +64,12 @@ def _video_info(request: Request, video: Image, owner_username: str | None = Non
     )
 
 
-def _status_response(request: Request, db: Session, upload: UploadSession) -> VideoUploadStatus:
+def _status_response(
+    request: Request,
+    db: Session,
+    upload: UploadSession,
+    uploaded_parts: list[int] | None = None,
+) -> VideoUploadStatus:
     video = None
     if upload.status == "completed" and upload.final_code:
         row = db.execute(
@@ -74,11 +80,20 @@ def _status_response(request: Request, db: Session, upload: UploadSession) -> Vi
             video = _video_info(request, row, owner.username if owner else None)
     return VideoUploadStatus(
         upload_id=upload.upload_id,
+        filename=upload.original_filename,
+        size=upload.size,
+        name=upload.name,
+        visibility=upload.visibility,
+        fingerprint=upload.fingerprint,
         team_id=upload.team_id,
         chunk_size=upload.chunk_size,
         total_parts=upload.total_parts,
         status=upload.status,
-        uploaded_parts=uploaded_part_numbers(db, upload.upload_id),
+        uploaded_parts=(
+            uploaded_part_numbers(db, upload.upload_id)
+            if uploaded_parts is None
+            else uploaded_parts
+        ),
         expires_at=upload.expires_at,
         video=video,
     )
@@ -108,6 +123,50 @@ def initialize_video_upload(
         fingerprint=payload.fingerprint,
     )
     return _status_response(request, db, upload)
+
+
+@router.get(
+    "/api/video-uploads",
+    response_model=VideoUploadListResponse,
+    summary="List my unfinished resumable video uploads",
+)
+def list_video_uploads(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> VideoUploadListResponse:
+    """Discover resumable work even when browser-side IndexedDB was lost."""
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    filters = (
+        UploadSession.owner_id == current_user.id,
+        UploadSession.status.in_(("active", "verifying", "finalizing", "failed")),
+        UploadSession.expires_at > now,
+    )
+    total = db.scalar(select(func.count()).select_from(UploadSession).where(*filters)) or 0
+    uploads = db.execute(
+        select(UploadSession)
+        .where(*filters)
+        .order_by(UploadSession.updated_at.desc(), UploadSession.created_at.desc())
+    ).scalars().all()
+    part_map: dict[str, list[int]] = {upload.upload_id: [] for upload in uploads}
+    if part_map:
+        # One query avoids an N+1 when operators raise the session limit.
+        rows = db.execute(
+            select(UploadPart.upload_id, UploadPart.part_number)
+            .where(UploadPart.upload_id.in_(part_map))
+            .order_by(UploadPart.upload_id, UploadPart.part_number)
+        ).all()
+        for upload_id, part_number in rows:
+            part_map[upload_id].append(part_number)
+    return VideoUploadListResponse(
+        items=[
+            _status_response(request, db, upload, part_map.get(upload.upload_id, []))
+            for upload in uploads
+        ],
+        total=total,
+        max_active=settings.max_active_video_uploads,
+        part_concurrency=settings.video_chunk_concurrency,
+    )
 
 
 @router.get(
@@ -143,7 +202,7 @@ async def upload_video_part(
         db, upload_id, current_user, cleanup_expired=False
     )
     part = await store_upload_part(
-        db, upload, part_number, request, content_range, chunk_sha256
+        db, upload, current_user, part_number, request, content_range, chunk_sha256
     )
     return VideoPartResponse(part_number=part.part_number, size=part.size, sha256=part.sha256)
 
@@ -176,7 +235,7 @@ def cancel_video_upload(
     db: Session = Depends(get_db),
 ) -> None:
     upload = get_upload_for_user(db, upload_id, current_user)
-    cancel_upload_session(db, upload)
+    cancel_upload_session(db, upload, current_user)
 
 
 def _list_videos(
@@ -267,19 +326,14 @@ def update_video(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> VideoInfo:
-    video = _managed_video(db, code, current_user)
-    was_private = video.visibility == "private"
-    if payload.visibility is not None:
-        if payload.visibility not in ("public", "private"):
-            raise HTTPException(status_code=422, detail="visibility must be 'public' or 'private'")
-        if payload.visibility != video.visibility:
-            video.visibility = payload.visibility
-            if payload.visibility == "private" and not was_private:
-                video.signing_version += 1
-    if payload.name is not None:
-        video.name = payload.name.strip() or video.name
-    db.commit()
-    db.refresh(video)
+    video = update_media_metadata(
+        db,
+        code=code,
+        media_kind="video",
+        actor=current_user,
+        name=payload.name,
+        visibility=payload.visibility,
+    )
     owner = db.get(User, video.owner_id) if video.owner_id is not None else None
     return _video_info(request, video, owner.username if owner else None)
 
@@ -406,7 +460,7 @@ def get_video(
         "Cache-Control": (
             "private, no-store, max-age=0"
             if video.visibility == "private"
-            else "public, max-age=31536000, immutable"
+            else "public, max-age=0, must-revalidate"
         ),
     }
     if download:

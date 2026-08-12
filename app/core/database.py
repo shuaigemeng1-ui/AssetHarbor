@@ -47,6 +47,17 @@ def get_db():
 def _migrate() -> None:
     """Idempotent schema migrations for SQLite (create_all does not ALTER)."""
     with engine.begin() as conn:
+        user_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(users)"))}
+        if user_cols and "auth_version" not in user_cols:
+            conn.execute(
+                text(
+                    """
+                    -- 认证版本：递增后撤销此前签发的 JWT；不使用外键
+                    ALTER TABLE users ADD COLUMN auth_version INTEGER NOT NULL DEFAULT 1
+                    """
+                )
+            )
+
         cols = {row[1] for row in conn.execute(text("PRAGMA table_info(images)"))}
         if "team_id" not in cols:
             conn.execute(

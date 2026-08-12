@@ -4,7 +4,7 @@ import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,8 @@ from ...core.config import settings
 from ...core.security import (
     create_access_token,
     hash_password,
+    password_hash_needs_upgrade,
+    verify_login_password,
     verify_password,
 )
 from ...models import User
@@ -34,6 +36,10 @@ def public_config() -> PublicConfig:
         max_upload_size_mb=settings.max_upload_size_mb,
         max_video_size_mb=settings.max_video_size_mb,
         video_chunk_size_mb=settings.video_chunk_size_mb,
+        max_active_video_uploads=settings.max_active_video_uploads,
+        video_chunk_concurrency=settings.video_chunk_concurrency,
+        user_storage_quota_bytes=settings.user_storage_quota_bytes,
+        team_storage_quota_bytes=settings.team_storage_quota_bytes,
         default_visibility=settings.default_visibility,
     )
 
@@ -92,8 +98,31 @@ def login(
     check_rate_limit(f"login-user:{form.username}", settings.login_rate_limit_per_username, 60)
 
     user = db.execute(select(User).where(User.username == form.username)).scalar_one_or_none()
-    if user is None or not verify_password(form.password, user.password_hash):
+    original_hash = user.password_hash if user is not None else None
+    if not verify_login_password(form.password, original_hash):
         raise HTTPException(status_code=401, detail="incorrect username or password")
+
+    # Transparently migrate pre bcrypt-SHA256 accounts after their first
+    # successful login. The compare-and-swap is essential: if an administrator
+    # or the user changes the password after verification, an old-password
+    # login must never overwrite the newer credential or receive a token.
+    if password_hash_needs_upgrade(original_hash):
+        original_version = user.auth_version
+        result = db.execute(
+            update(User)
+            .where(
+                User.id == user.id,
+                User.password_hash == original_hash,
+                User.auth_version == original_version,
+            )
+            .values(password_hash=hash_password(form.password))
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount != 1:
+            db.rollback()
+            raise HTTPException(status_code=401, detail="incorrect username or password")
+        db.commit()
+        db.refresh(user)
     return TokenResponse(access_token=create_access_token(user), user=_user_out(user))
 
 
@@ -108,9 +137,33 @@ def change_password(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
-    if not verify_password(payload.old_password, current_user.password_hash):
+    original_hash = current_user.password_hash
+    original_version = current_user.auth_version
+    if not verify_password(payload.old_password, original_hash):
         raise HTTPException(status_code=400, detail="current password is incorrect")
     if payload.new_password == payload.old_password:
         raise HTTPException(status_code=400, detail="new password must differ from the current one")
-    current_user.password_hash = hash_password(payload.new_password)
+
+    # Password and revocation version change in one conditional UPDATE. A
+    # concurrent admin reset, role change, or second password change makes the
+    # stale request fail instead of overwriting the winning credential.
+    result = db.execute(
+        update(User)
+        .where(
+            User.id == current_user.id,
+            User.password_hash == original_hash,
+            User.auth_version == original_version,
+        )
+        .values(
+            password_hash=hash_password(payload.new_password),
+            auth_version=User.auth_version + 1,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="credentials changed concurrently; sign in again",
+        )
     db.commit()

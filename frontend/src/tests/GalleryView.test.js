@@ -53,6 +53,12 @@ describe('GalleryView image uploads', () => {
     await input.trigger('change')
   }
 
+  async function selectFiles(wrapper, files) {
+    const input = wrapper.get('input[type="file"]')
+    Object.defineProperty(input.element, 'files', { value: files, configurable: true })
+    await input.trigger('change')
+  }
+
   it('reactively removes the temporary card when the upload completes', async () => {
     let finishUpload
     api.uploadFile.mockImplementation(() => new Promise(resolve => { finishUpload = resolve }))
@@ -136,5 +142,129 @@ describe('GalleryView image uploads', () => {
     await cards[2].get('.group-trigger').trigger('click')
     expect(wrapper.get('.picker-stub').attributes('data-code')).toBe('team-media')
     expect(wrapper.get('.picker-stub').attributes('data-team-id')).toBe('42')
+  })
+
+  it('rejects an oversized image before making an upload request', async () => {
+    const wrapper = mountGallery()
+    await flushPromises()
+    const file = new File(['x'], 'oversized.png', { type: 'image/png' })
+    Object.defineProperty(file, 'size', { value: 11 * 1024 * 1024 })
+
+    await selectFiles(wrapper, [file])
+    await flushPromises()
+
+    expect(api.uploadFile).not.toHaveBeenCalled()
+    expect(wrapper.get('.image-result-stub').attributes('data-status')).toBe('error')
+    expect(wrapper.get('.image-result-stub').text()).toContain('10 MB')
+    await wrapper.get('.image-result-stub').trigger('click')
+    expect(api.uploadFile).not.toHaveBeenCalled()
+  })
+
+  it('shows every selected file immediately and uploads with at most three workers', async () => {
+    let active = 0
+    let maximum = 0
+    const resolvers = []
+    api.uploadFile.mockImplementation(file => new Promise(resolve => {
+      active++
+      maximum = Math.max(maximum, active)
+      resolvers.push(() => {
+        active--
+        resolve({
+          code: file.name, name: file.name, original_filename: file.name,
+          visibility: 'private', content_type: 'image/png', size: file.size,
+          url: `/i/${file.name}`, owner_id: 1,
+        })
+      })
+    }))
+    const wrapper = mountGallery()
+    await flushPromises()
+    const files = Array.from({ length: 5 }, (_, index) => (
+      new File([String(index)], `image-${index}.png`, { type: 'image/png' })
+    ))
+
+    await selectFiles(wrapper, files)
+    await vi.waitFor(() => expect(api.uploadFile).toHaveBeenCalledTimes(3))
+    expect(wrapper.findAll('.image-result-stub')).toHaveLength(5)
+
+    for (let index = 0; index < files.length; index++) {
+      await vi.waitFor(() => expect(resolvers[index]).toBeTypeOf('function'))
+      resolvers[index]()
+      await flushPromises()
+    }
+
+    expect(maximum).toBe(3)
+    expect(api.uploadFile).toHaveBeenCalledTimes(5)
+    expect(wrapper.find('.pending-grid').exists()).toBe(false)
+  })
+
+  it('keeps the three-upload ceiling across overlapping file selections', async () => {
+    let active = 0
+    let maximum = 0
+    const resolvers = []
+    api.uploadFile.mockImplementation(file => new Promise(resolve => {
+      active++
+      maximum = Math.max(maximum, active)
+      resolvers.push(() => {
+        active--
+        resolve({
+          code: file.name, name: file.name, original_filename: file.name,
+          visibility: 'private', content_type: 'image/png', size: file.size,
+          url: `/i/${file.name}`, owner_id: 1,
+        })
+      })
+    }))
+    const wrapper = mountGallery()
+    await flushPromises()
+    const first = Array.from({ length: 4 }, (_, index) => (
+      new File([`a${index}`], `first-${index}.png`, { type: 'image/png' })
+    ))
+    const second = Array.from({ length: 4 }, (_, index) => (
+      new File([`b${index}`], `second-${index}.png`, { type: 'image/png' })
+    ))
+
+    await selectFiles(wrapper, first)
+    await vi.waitFor(() => expect(api.uploadFile).toHaveBeenCalledTimes(3))
+    await selectFiles(wrapper, second)
+    await flushPromises()
+    expect(api.uploadFile).toHaveBeenCalledTimes(3)
+
+    for (let index = 0; index < 8; index++) {
+      await vi.waitFor(() => expect(resolvers[index]).toBeTypeOf('function'))
+      resolvers[index]()
+      await flushPromises()
+    }
+
+    expect(maximum).toBe(3)
+    expect(api.uploadFile).toHaveBeenCalledTimes(8)
+  })
+
+  it('routes retries through the same component-level concurrency queue', async () => {
+    const resolvers = []
+    api.uploadFile
+      .mockRejectedValueOnce(new Error('temporary failure'))
+      .mockImplementation(file => new Promise(resolve => {
+        resolvers.push(() => resolve({
+          code: file.name, name: file.name, original_filename: file.name,
+          visibility: 'private', content_type: 'image/png', size: file.size,
+          url: `/i/${file.name}`, owner_id: 1,
+        }))
+      }))
+    const wrapper = mountGallery()
+    await flushPromises()
+    await selectFile(wrapper, 'retry-me.png')
+    await vi.waitFor(() => expect(wrapper.get('[data-status="error"]')).toBeTruthy())
+
+    const activeFiles = Array.from({ length: 3 }, (_, index) => (
+      new File([String(index)], `active-${index}.png`, { type: 'image/png' })
+    ))
+    await selectFiles(wrapper, activeFiles)
+    await vi.waitFor(() => expect(api.uploadFile).toHaveBeenCalledTimes(4))
+
+    await wrapper.get('[data-status="error"]').trigger('click')
+    await flushPromises()
+    expect(api.uploadFile).toHaveBeenCalledTimes(4)
+
+    resolvers[0]()
+    await vi.waitFor(() => expect(api.uploadFile).toHaveBeenCalledTimes(5))
   })
 })

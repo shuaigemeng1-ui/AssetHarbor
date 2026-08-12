@@ -44,7 +44,7 @@ def test_finalizing_recovery_is_idempotent_before_and_after_atomic_move(
     upload_id = initialized["upload_id"]
     assert put_video_part(client, token, upload_id, 0, data, 0, len(data)).status_code == 200
 
-    code = f"rv{uuid.uuid4().hex[:14]}"
+    code = f"r{uuid.uuid4().hex[: settings.short_code_length - 1]}"
     relative_path = Path("files") / code[:2] / code[2:4] / f"{code}.mp4"
     destination = settings.data_dir / relative_path
     source = session_file(upload_id)
@@ -91,6 +91,151 @@ def test_finalizing_recovery_is_idempotent_before_and_after_atomic_move(
     response = client.get(f"/v/{code}")
     assert response.status_code == 200
     assert response.content == data
+
+
+def test_interrupted_verifying_session_returns_to_active(client):
+    from app.core.database import SessionLocal
+    from app.models import UploadSession
+    from app.services.videos import recover_finalizing_uploads
+
+    data = _sample(300)
+    _, token = new_user(client)
+    initialized = init_video(client, token, data).json()
+    upload_id = initialized["upload_id"]
+    assert put_video_part(client, token, upload_id, 0, data, 0, len(data)).status_code == 200
+    with SessionLocal() as db:
+        session = db.get(UploadSession, upload_id)
+        session.status = "verifying"
+        session.resume_info = json.dumps({"verification_nonce": uuid.uuid4().hex})
+        db.commit()
+
+    assert recover_finalizing_uploads() >= 1
+    with SessionLocal() as db:
+        session = db.get(UploadSession, upload_id)
+        assert session.status == "active"
+        assert session.resume_info == ""
+    assert recover_finalizing_uploads() == 0
+
+
+def test_finalizing_recovery_rejects_escaped_path_without_touching_sentinel(client):
+    from app.core.config import settings
+    from app.core.database import SessionLocal
+    from app.models import UploadSession
+    from app.services.videos import recover_finalizing_uploads, session_file
+
+    data = _sample(320)
+    _, token = new_user(client)
+    initialized = init_video(client, token, data).json()
+    upload_id = initialized["upload_id"]
+    assert put_video_part(client, token, upload_id, 0, data, 0, len(data)).status_code == 200
+    source = session_file(upload_id)
+    sentinel = settings.data_dir.parent / f"sentinel-{uuid.uuid4().hex}.mp4"
+    sentinel.write_bytes(b"do-not-touch")
+    code = f"x{uuid.uuid4().hex[: settings.short_code_length - 1]}"
+    try:
+        with SessionLocal() as db:
+            session = db.get(UploadSession, upload_id)
+            session.status = "finalizing"
+            session.resume_info = json.dumps(
+                {
+                    "code": code,
+                    "stored_path": str(Path("..") / sentinel.name),
+                    "content_type": "video/mp4",
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                }
+            )
+            db.commit()
+
+        assert recover_finalizing_uploads() == 1
+        assert sentinel.read_bytes() == b"do-not-touch"
+        assert source.is_file()
+        with SessionLocal() as db:
+            session = db.get(UploadSession, upload_id)
+            assert session.status == "active"
+            assert session.resume_info == ""
+    finally:
+        sentinel.unlink(missing_ok=True)
+
+
+def test_destination_prepare_error_restores_verifying_session_for_retry(
+    client, monkeypatch
+):
+    import errno
+
+    from app.core.config import settings
+    from app.core.database import SessionLocal
+    from app.models import UploadSession
+    from app.services import videos
+
+    data = _sample(336)
+    _, token = new_user(client)
+    initialized = init_video(client, token, data).json()
+    upload_id = initialized["upload_id"]
+    assert put_video_part(client, token, upload_id, 0, data, 0, len(data)).status_code == 200
+    real_mkdir = Path.mkdir
+
+    def fail_media_destination(path, *args, **kwargs):
+        if settings.files_dir == path or settings.files_dir in path.parents:
+            raise PermissionError(errno.EACCES, "destination denied", str(path))
+        return real_mkdir(path, *args, **kwargs)
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(Path, "mkdir", fail_media_destination)
+        failed = client.post(
+            f"/api/video-uploads/{upload_id}/complete", headers=auth(token)
+        )
+    assert failed.status_code == 500, failed.text
+    assert failed.json()["detail"] == "could not prepare video storage"
+    with SessionLocal() as db:
+        session = db.get(UploadSession, upload_id)
+        assert session.status == "active"
+        assert session.resume_info == ""
+    assert videos.session_file(upload_id).is_file()
+
+    retried = client.post(
+        f"/api/video-uploads/{upload_id}/complete", headers=auth(token)
+    )
+    assert retried.status_code == 200, retried.text
+
+
+def test_cancel_finalizing_session_removes_already_moved_destination(
+    client, monkeypatch
+):
+    from app.core.config import settings
+    from app.core.database import SessionLocal
+    from app.models import UploadSession
+    from app.services import videos
+
+    data = _sample(352)
+    _, token = new_user(client)
+    initialized = init_video(client, token, data).json()
+    upload_id = initialized["upload_id"]
+    assert put_video_part(client, token, upload_id, 0, data, 0, len(data)).status_code == 200
+
+    def fail_after_move(*_args, **_kwargs):
+        raise RuntimeError("simulated metadata commit failure")
+
+    monkeypatch.setattr(videos, "_create_final_image", fail_after_move)
+    with pytest.raises(RuntimeError, match="metadata commit failure"):
+        client.post(
+            f"/api/video-uploads/{upload_id}/complete", headers=auth(token)
+        )
+
+    with SessionLocal() as db:
+        session = db.get(UploadSession, upload_id)
+        assert session.status == "finalizing"
+        info = json.loads(session.resume_info)
+        destination = settings.data_dir / info["stored_path"]
+        assert destination.is_file()
+        assert not videos.session_file(upload_id).exists()
+
+    canceled = client.delete(
+        f"/api/video-uploads/{upload_id}", headers=auth(token)
+    )
+    assert canceled.status_code == 204, canceled.text
+    assert not destination.exists()
+    with SessionLocal() as db:
+        assert db.get(UploadSession, upload_id) is None
 
 
 def test_part_disk_shortage_leaves_no_artifacts_and_can_retry(client, monkeypatch):
@@ -186,7 +331,7 @@ def _assert_partial_headers(response, start: int, end: int, total: int, visibili
     if visibility == "private":
         assert "no-store" in cache_control
     else:
-        assert "public" in cache_control and "immutable" in cache_control
+        assert cache_control == "public, max-age=0, must-revalidate"
 
 
 def _assert_invalid_range_headers(response, total: int, visibility: str) -> None:
@@ -198,7 +343,7 @@ def _assert_invalid_range_headers(response, total: int, visibility: str) -> None
     if visibility == "private":
         assert "no-store" in cache_control
     else:
-        assert "public" in cache_control and "immutable" in cache_control
+        assert cache_control == "public, max-age=0, must-revalidate"
 
 
 def test_video_range_boundaries_and_error_responses_keep_security_headers(client):

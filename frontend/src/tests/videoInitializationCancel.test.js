@@ -5,6 +5,7 @@ const api = vi.hoisted(() => ({
   createVideoUpload: vi.fn(),
   cancelVideoUpload: vi.fn(),
   getToken: vi.fn(() => 'original-user-token'),
+  listVideoUploads: vi.fn(async () => ({ items: [], total: 0 })),
 }))
 
 vi.mock('../api', () => ({

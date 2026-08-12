@@ -10,12 +10,15 @@ import HomeView from './components/HomeView.vue'
 import TeamsView from './components/TeamsView.vue'
 import UiFeedback from './components/UiFeedback.vue'
 import VideoView from './components/VideoView.vue'
+import VideoUploadQueue from './components/VideoUploadQueue.vue'
+import BaseModal from './components/BaseModal.vue'
 import { fetchMe, getToken, setToken } from './api'
 import { activeVideoUploadCount, initializeVideoUploads, resetVideoUploads } from './stores/videoUploads'
 
 const user = ref(null)
 const view = ref('overview')
 const authLoading = ref(Boolean(getToken()))
+const uploadCenterOpen = ref(false)
 const isAdmin = computed(() => user.value?.role === 'admin')
 
 const viewMeta = {
@@ -42,6 +45,7 @@ function startUserSession(value) {
 
 function onUnauthorized() {
   resetVideoUploads()
+  uploadCenterOpen.value = false
   user.value = null
   view.value = 'overview'
 }
@@ -90,6 +94,7 @@ function handleAuthed(value) {
 function logout() {
   setToken(null)
   resetVideoUploads()
+  uploadCenterOpen.value = false
   user.value = null
   navigate('overview', { replace: true })
 }
@@ -124,10 +129,20 @@ function logout() {
               <button :class="{ active: view === 'images' }" :aria-current="view === 'images' ? 'page' : undefined" @click="navigate('images')">
                 <AppIcon name="image" /><span>图片</span>
               </button>
-              <button :class="{ active: view === 'videos' }" :aria-current="view === 'videos' ? 'page' : undefined" @click="navigate('videos')">
-                <AppIcon name="video" /><span>视频</span>
-                <span v-if="activeVideoUploadCount" class="nav-count">{{ activeVideoUploadCount }}</span>
-              </button>
+              <div class="nav-video-row">
+                <button :class="{ active: view === 'videos' }" :aria-current="view === 'videos' ? 'page' : undefined" @click="navigate('videos')">
+                  <AppIcon name="video" /><span>视频</span>
+                </button>
+                <button
+                  class="nav-upload-center"
+                  :aria-label="activeVideoUploadCount ? `打开全局上传中心，${activeVideoUploadCount} 个进行中任务` : '打开全局上传中心'"
+                  title="全局上传中心"
+                  @click="uploadCenterOpen = true"
+                >
+                  <AppIcon name="upload" size="14" />
+                  <span v-if="activeVideoUploadCount" class="nav-upload-count">{{ activeVideoUploadCount }}</span>
+                </button>
+              </div>
               <button :class="{ active: view === 'groups' }" :aria-current="view === 'groups' ? 'page' : undefined" @click="navigate('groups')">
                 <AppIcon name="collection" /><span>分组</span>
               </button>
@@ -200,6 +215,10 @@ function logout() {
         </footer>
       </div>
     </div>
+
+    <BaseModal v-if="uploadCenterOpen" title="全局上传中心" description="管理所有个人与团队空间的视频上传任务。" labelled-by="global-upload-center-title" wide @close="uploadCenterOpen = false">
+      <VideoUploadQueue all-scopes />
+    </BaseModal>
   </div>
 </template>
 

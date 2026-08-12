@@ -1,11 +1,12 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   changePassword,
   createApiKey,
   deleteApiKey,
   listApiKeys,
   rotateApiKey,
+  setToken,
 } from '../api'
 import { confirmAction, toast } from '../stores/feedback'
 import { copyText } from '../utils/clipboard'
@@ -23,6 +24,7 @@ const keyName = ref('')
 const newKey = ref(null)
 const keyError = ref('')
 const creatingKey = ref(false)
+let copiedTimer = null
 
 async function loadKeys() {
   try {
@@ -55,8 +57,13 @@ async function doChangePassword() {
     oldPassword.value = ''
     newPassword.value = ''
     confirmPassword.value = ''
-    pwdMsg.value = '密码已修改'
-    toast('密码已安全更新', 'success')
+    pwdMsg.value = '密码已修改，请重新登录'
+    toast('密码已安全更新，请使用新密码重新登录', 'success')
+    // The backend revokes every previously issued JWT, including this tab's
+    // token. Reuse the app-wide unauthorized cleanup so active upload state and
+    // account-scoped views cannot linger with a guaranteed-invalid credential.
+    setToken(null)
+    window.dispatchEvent(new Event('oss:unauthorized'))
   } catch (err) {
     pwdError.value = err.message
   } finally {
@@ -116,15 +123,22 @@ async function doDeleteKey(key) {
 }
 
 async function copyKey() {
-  const ok = await copyText(newKey.value.key)
+  const copiedKey = newKey.value
+  if (!copiedKey) return
+  const ok = await copyText(copiedKey.key)
   if (!ok) {
     toast('复制失败，请手动选中复制', 'error')
     return
   }
-  newKey.value.copied = true
+  copiedKey.copied = true
   toast('完整 API Key 已复制', 'success')
-  window.setTimeout(() => (newKey.value.copied = false), 1500)
+  clearTimeout(copiedTimer)
+  copiedTimer = window.setTimeout(() => {
+    if (copiedKey) copiedKey.copied = false
+  }, 1500)
 }
+
+onBeforeUnmount(() => clearTimeout(copiedTimer))
 </script>
 
 <template>

@@ -14,11 +14,12 @@ from ..deps import get_db, get_optional_user
 
 router = APIRouter(tags=["images"])
 
-_IMMUTABLE_CACHE = {"Cache-Control": "public, max-age=31536000, immutable"}
+_PUBLIC_REVALIDATE_CACHE = {"Cache-Control": "public, max-age=0, must-revalidate"}
 _SVG_HEADERS = {
     # SVG can embed scripts — never render it inline in the MVP.
     "Content-Disposition": 'attachment; filename="image.svg"',
     "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": "sandbox; default-src 'none'",
 }
 
 
@@ -66,7 +67,7 @@ def get_image(
         # a browser would keep showing them even after they are revoked.
         headers = {"Cache-Control": "private, no-store, max-age=0"}
     else:
-        headers = dict(_IMMUTABLE_CACHE)
+        headers = dict(_PUBLIC_REVALIDATE_CACHE)
     if image.content_type == "image/svg+xml":
         headers.update(_SVG_HEADERS)
 

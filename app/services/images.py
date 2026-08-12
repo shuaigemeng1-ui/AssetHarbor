@@ -20,6 +20,7 @@ from .library import (
     validate_team_scope,
 )
 from .shortcode import generate_short_code
+from .storage_quota import enforce_storage_quota
 from .teams import get_membership
 from .videos import reserve_write_space
 
@@ -186,6 +187,13 @@ async def store_upload(
             if owner is None:
                 raise HTTPException(status_code=401, detail="an owner is required for team media")
             validate_team_scope(db, team_id, owner)
+        if owner is not None:
+            enforce_storage_quota(
+                db,
+                owner_id=owner.id,
+                team_id=team_id,
+                additional_bytes=len(data),
+            )
 
         code = _unique_code(db)
         rel_path = _stored_path(code, ext)
@@ -261,3 +269,53 @@ def can_manage_image(db: Session, user: User, image: Image) -> bool:
         if member is not None and member.role in ("owner", "admin"):
             return True
     return False
+
+
+@serialized_library_lifecycle
+def update_media_metadata(
+    db: Session,
+    *,
+    code: str,
+    media_kind: str,
+    actor: User,
+    name: str | None = None,
+    visibility: str | None = None,
+) -> Image:
+    """Freshly authorize and update one image/video under the lifecycle lease.
+
+    Route-level ORM rows and membership checks may be stale by the time a
+    request reaches its commit.  Reopening the transaction after entering the
+    shared lease makes member removal, role changes and user/media deletion win
+    deterministically when they committed first.
+    """
+    db.rollback()
+    actor = fresh_library_user(db, actor)
+    media = db.execute(
+        select(Image).where(Image.code == code, Image.media_kind == media_kind)
+    ).scalar_one_or_none()
+    if media is None:
+        raise HTTPException(status_code=404, detail=f"{media_kind} not found")
+    if not can_manage_image(db, actor, media):
+        raise HTTPException(
+            status_code=403,
+            detail=f"you can only modify {media_kind}s you manage",
+        )
+
+    if visibility is not None:
+        if visibility not in ("public", "private"):
+            raise HTTPException(
+                status_code=422,
+                detail="visibility must be 'public' or 'private'",
+            )
+        was_private = media.visibility == "private"
+        if visibility != media.visibility:
+            media.visibility = visibility
+            if visibility == "private" and not was_private:
+                # Revoke every previously issued signed link for this asset.
+                media.signing_version += 1
+    if name is not None:
+        media.name = name.strip() or media.name
+
+    db.commit()
+    db.refresh(media)
+    return media

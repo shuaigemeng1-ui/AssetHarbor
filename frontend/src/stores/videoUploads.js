@@ -5,6 +5,7 @@ import {
   createVideoUpload,
   getToken,
   getVideoUpload,
+  listVideoUploads,
   uploadVideoPart,
 } from '../api'
 import { sha256Blob, videoFingerprint } from '../utils/videoFingerprint'
@@ -24,11 +25,17 @@ let sessionGeneration = 0
 const activeJobs = new Map()
 const retryTimers = new Map()
 const fingerprintJobs = new Map()
+const admissionBatches = new Map()
+let openAdmissionBatch = null
+let nextAdmissionId = 1
+let admissionTail = Promise.resolve()
 
 export const videoUploadState = reactive({
   tasks: [],
   restored: false,
   online: typeof navigator === 'undefined' ? true : navigator.onLine,
+  maxActiveSessions: 3,
+  maxConcurrentParts: MAX_CONCURRENT_PARTS,
 })
 
 export const activeVideoUploadCount = computed(() => videoUploadState.tasks.filter(task => (
@@ -66,6 +73,8 @@ function makeTask(values) {
     visibility: 'private',
     teamId: null,
     fingerprint: '',
+    serverStatus: '',
+    admissionId: null,
     chunkSize: 0,
     totalParts: 0,
     uploadedParts: [],
@@ -90,22 +99,32 @@ function normalizeTeamId(value) {
   return value === null || value === undefined || value === '' ? null : String(value)
 }
 
+function normalizeFilename(value) {
+  const tail = String(value || '').replaceAll('\\', '/').split('/').at(-1) || ''
+  return tail.replaceAll('\0', '').trim().slice(0, 255) || 'video'
+}
+
+function normalizeDisplayName(name, filename) {
+  return String(name || '').trim().slice(0, 255) || normalizeFilename(filename)
+}
+
 function isUnfinishedLocalTask(task) {
   return !['completed', 'cancelled', 'cancelling'].includes(task.status)
 }
 
-function sameUploadContext(task, { name, visibility, teamId }) {
+function sameUploadContext(task, { name, visibility, teamId, filename }) {
   return isUnfinishedLocalTask(task)
-    && task.name === name
+    && normalizeFilename(task.filename) === normalizeFilename(filename)
+    && normalizeDisplayName(task.name, task.filename) === normalizeDisplayName(name, filename)
     && task.visibility === visibility
     && normalizeTeamId(task.teamId) === normalizeTeamId(teamId)
 }
 
 function sameFileObjectUpload(task, file, context) {
-  return sameUploadContext(task, context) && task.file === file
+  return sameUploadContext(task, { ...context, filename: file.name }) && task.file === file
 }
 
-function sameFingerprintUpload(task, candidate) {
+function sameFingerprintIdentity(task, candidate) {
   return task !== candidate
     && sameUploadContext(task, candidate)
     && task.ownerId === candidate.ownerId
@@ -161,10 +180,16 @@ function normalizeUploadedParts(value) {
 
 export function applySession(task, session) {
   task.uploadId = session.upload_id || task.uploadId
+  if (Object.prototype.hasOwnProperty.call(session, 'filename')) task.filename = session.filename
+  if (Object.prototype.hasOwnProperty.call(session, 'size')) task.size = Number(session.size)
+  if (Object.prototype.hasOwnProperty.call(session, 'name')) task.name = session.name
+  if (Object.prototype.hasOwnProperty.call(session, 'visibility')) task.visibility = session.visibility
+  if (Object.prototype.hasOwnProperty.call(session, 'fingerprint')) task.fingerprint = session.fingerprint
   task.chunkSize = Number(session.chunk_size || task.chunkSize)
   task.totalParts = Number(session.total_parts || task.totalParts)
   task.uploadedParts = normalizeUploadedParts(session.uploaded_parts)
   task.expiresAt = session.expires_at || task.expiresAt
+  task.serverStatus = session.status || task.serverStatus
   if (Object.prototype.hasOwnProperty.call(session, 'team_id')) task.teamId = session.team_id
 }
 
@@ -249,11 +274,17 @@ export async function initializeVideoUploads(userId) {
   if (initializedOwnerId === userId) return
   resetVideoUploads()
   const generation = sessionGeneration
+  const authToken = getToken()
   ownerId = userId
   initializedOwnerId = userId
-  const records = await listPersistedUploads(userId)
+  const [localResult, serverResult] = await Promise.allSettled([
+    listPersistedUploads(userId),
+    listVideoUploads({ token: authToken, suppressUnauthorized: true }),
+  ])
   if (generation !== sessionGeneration || ownerId !== userId) return
+  const records = localResult.status === 'fulfilled' ? localResult.value : []
   const restoredTasks = []
+  const byUploadId = new Map()
   for (const record of records) {
     const task = makeTask({
       ...record,
@@ -263,8 +294,42 @@ export async function initializeVideoUploads(userId) {
     })
     videoUploadState.tasks.push(task)
     restoredTasks.push(task)
+    if (task.uploadId) byUploadId.set(task.uploadId, task)
   }
-  await Promise.all(restoredTasks.map(task => validateRestoredTask(task, generation)))
+
+  const recoveryJobs = []
+  if (serverResult.status === 'fulfilled') {
+    videoUploadState.maxActiveSessions = Math.max(1, Number(serverResult.value.max_active) || 3)
+    videoUploadState.maxConcurrentParts = Math.min(32, Math.max(1, Number(serverResult.value.part_concurrency) || MAX_CONCURRENT_PARTS))
+    for (const session of serverResult.value.items || []) {
+      let task = byUploadId.get(session.upload_id)
+      if (!task) {
+        task = makeTask({
+          ownerId: userId,
+          uploadId: session.upload_id,
+          filename: session.filename,
+          size: Number(session.size || 0),
+          name: session.name || '',
+          visibility: session.visibility || 'private',
+          teamId: session.team_id,
+          fingerprint: session.fingerprint || '',
+          status: 'waiting_file',
+        })
+        videoUploadState.tasks.push(task)
+        restoredTasks.push(task)
+        byUploadId.set(task.uploadId, task)
+      }
+      recoveryJobs.push(applyRestoredSession(task, session, generation, authToken))
+    }
+    const discovered = new Set((serverResult.value.items || []).map(item => item.upload_id))
+    for (const task of restoredTasks.filter(item => !discovered.has(item.uploadId))) {
+      recoveryJobs.push(validateRestoredTask(task, generation, authToken))
+    }
+  } else {
+    recoveryJobs.push(...restoredTasks.map(task => validateRestoredTask(task, generation, authToken)))
+  }
+
+  await Promise.all(recoveryJobs)
   if (generation !== sessionGeneration || ownerId !== userId) return
   videoUploadState.restored = true
   maybeInitializeTasks()
@@ -281,10 +346,15 @@ export function resetVideoUploads() {
   }
   videoUploadState.tasks.splice(0)
   fingerprintJobs.clear()
+  admissionBatches.clear()
+  openAdmissionBatch = null
+  admissionTail = Promise.resolve()
   ownerId = null
   initializedOwnerId = null
   initializingCount = 0
   videoUploadState.restored = false
+  videoUploadState.maxActiveSessions = 3
+  videoUploadState.maxConcurrentParts = MAX_CONCURRENT_PARTS
 }
 
 function isCurrentTask(task, generation = sessionGeneration) {
@@ -293,16 +363,14 @@ function isCurrentTask(task, generation = sessionGeneration) {
     && videoUploadState.tasks.includes(task)
 }
 
-async function validateRestoredTask(task, generation) {
+async function validateRestoredTask(task, generation, authToken) {
   try {
-    const session = await getVideoUpload(task.uploadId)
+    const session = await getVideoUpload(task.uploadId, {
+      token: authToken,
+      suppressUnauthorized: true,
+    })
     if (!isCurrentTask(task, generation)) return
-    applySession(task, session)
-    if (session.status === 'completed' && session.video) {
-      await markCompleted(task, session.video)
-      return
-    }
-    saveTask(task)
+    await applyRestoredSession(task, session, generation, authToken)
   } catch (error) {
     if (!isCurrentTask(task, generation)) return
     if ([404, 410].includes(error.status)) {
@@ -315,12 +383,106 @@ async function validateRestoredTask(task, generation) {
   }
 }
 
-export function addVideoFiles(files, { name = '', visibility = 'private', teamId = null } = {}) {
+async function applyRestoredSession(task, session, generation, authToken) {
+  if (!isCurrentTask(task, generation)) return
+  applySession(task, session)
+  if (session.status === 'completed' && session.video) {
+    await markCompleted(task, session.video)
+    return
+  }
+  if (['verifying', 'finalizing'].includes(session.status)) {
+    task.status = 'finalizing'
+    task.error = ''
+    saveTask(task)
+    await recoverRemoteFinalization(task, generation, authToken)
+    return
+  }
+  if (session.status === 'active') {
+    task.status = task.file ? 'uploading' : 'waiting_file'
+    task.error = ''
+  } else {
+    task.status = 'failed'
+    task.error = '服务端上传会话处于失败状态，可取消后重新上传'
+  }
+  saveTask(task)
+}
+
+async function recoverRemoteFinalization(task, generation = sessionGeneration, authToken = getToken()) {
+  if (!isCurrentTask(task, generation)) return
+  task.status = 'finalizing'
+  task.error = ''
+  try {
+    const result = await completeVideoUpload(task.uploadId, {
+      token: authToken,
+      suppressUnauthorized: true,
+    })
+    if (!isCurrentTask(task, generation)) return
+    await markCompleted(task, result)
+  } catch (error) {
+    if (!isCurrentTask(task, generation)) return
+    try {
+      const session = await getVideoUpload(task.uploadId, {
+        token: authToken,
+        suppressUnauthorized: true,
+      })
+      if (!isCurrentTask(task, generation)) return
+      applySession(task, session)
+      if (session.status === 'completed' && session.video) {
+        await markCompleted(task, session.video)
+        return
+      }
+      if (session.status === 'active') {
+        task.status = task.file ? 'uploading' : 'waiting_file'
+        task.error = task.file ? '' : '服务端已恢复为可续传状态，请重新选择原文件'
+      } else {
+        task.status = 'failed'
+        task.error = `服务端校验尚未完成：${error.message}`
+      }
+    } catch (reconcileError) {
+      if (!isCurrentTask(task, generation)) return
+      task.status = 'failed'
+      task.error = `恢复服务端校验失败：${reconcileError.message}`
+    }
+    saveTask(task)
+  }
+}
+
+function currentAdmissionBatch() {
+  if (openAdmissionBatch && openAdmissionBatch.generation === sessionGeneration) return openAdmissionBatch
+  const batch = {
+    id: nextAdmissionId++,
+    generation: sessionGeneration,
+    tasks: [],
+    results: new Map(),
+  }
+  openAdmissionBatch = batch
+  admissionBatches.set(batch.id, batch)
+  window.setTimeout(() => {
+    // Fingerprints from separate file-picker/drop events can finish out of
+    // order. Commit batches in creation order so the oldest matching task is
+    // always canonical before a newer batch is admitted.
+    admissionTail = admissionTail
+      .catch(() => {})
+      .then(() => closeAdmissionBatch(batch))
+  }, 0)
+  return batch
+}
+
+export function addVideoFiles(files, {
+  name = '',
+  visibility = 'private',
+  teamId = null,
+  maxSize = Infinity,
+} = {}) {
   const accepted = []
-  const context = { name, visibility, teamId }
+    const context = { name, visibility, teamId }
   for (const file of Array.from(files || [])) {
     if (!VIDEO_EXTENSION_RE.test(file.name) && !file.type.startsWith('video/')) {
       accepted.push({ file, error: '不支持此视频格式' })
+      continue
+    }
+    if (Number.isFinite(maxSize) && file.size > maxSize) {
+      accepted.push({ file, error: `文件大小超过 ${Math.round(maxSize / 1024 / 1024)} MB 限制` })
       continue
     }
     // Object identity is the only safe synchronous shortcut. Browser metadata
@@ -333,56 +495,36 @@ export function addVideoFiles(files, { name = '', visibility = 'private', teamId
       accepted.push({ file, task: existing, duplicate: true })
       continue
     }
+    const batch = currentAdmissionBatch()
+    const filename = normalizeFilename(file.name)
     const task = makeTask({
       ownerId,
       file,
-      filename: file.name,
+      filename,
       size: file.size,
-      name,
+      name: normalizeDisplayName(name, filename),
       visibility,
       teamId,
       status: 'checking',
+      admissionId: batch.id,
     })
     videoUploadState.tasks.unshift(task)
     const result = { file, task }
     accepted.push(result)
-    prepareLocalTask(task, result)
+    batch.tasks.push(task)
+    batch.results.set(task.localId, result)
+    prepareLocalTaskFingerprint(task)
   }
   return accepted
 }
 
-async function prepareLocalTask(task, result) {
+function prepareLocalTaskFingerprint(task) {
   const generation = sessionGeneration
   const job = (async () => {
     try {
       const fingerprint = await videoFingerprint(task.file)
       if (!isCurrentTask(task, generation) || task.status !== 'checking') return
       task.fingerprint = fingerprint
-
-      // Fingerprint continuations run serially on the JS event loop. Whichever
-      // finishes first becomes the canonical local task; every later match is
-      // removed before it can initialize a second server session.
-      const existing = videoUploadState.tasks.find(candidate => sameFingerprintUpload(candidate, task))
-      if (existing) {
-        result.task = existing
-        result.duplicate = true
-        const index = videoUploadState.tasks.indexOf(task)
-        if (index >= 0) videoUploadState.tasks.splice(index, 1)
-
-        // A matching persisted task can adopt the freshly selected file without
-        // hashing it a second time, then continue from its server-side parts.
-        if (!existing.file) {
-          existing.file = task.file
-          existing.filename = task.file.name
-          existing.error = ''
-          resumeVideoTask(existing).catch(() => {})
-        }
-        maybeInitializeTasks()
-        return
-      }
-
-      task.status = 'queued'
-      maybeInitializeTasks()
     } catch (error) {
       if (!isCurrentTask(task, generation) || task.status !== 'checking') return
       task.status = 'failed'
@@ -390,20 +532,60 @@ async function prepareLocalTask(task, result) {
     }
   })()
   fingerprintJobs.set(task.localId, job)
-  try {
-    await job
-  } finally {
+  job.finally(() => {
     if (fingerprintJobs.get(task.localId) === job) fingerprintJobs.delete(task.localId)
+  })
+  return job
+}
+
+async function closeAdmissionBatch(batch) {
+  if (openAdmissionBatch === batch) openAdmissionBatch = null
+  const jobs = batch.tasks.map(task => fingerprintJobs.get(task.localId)).filter(Boolean)
+  await Promise.allSettled(jobs)
+  admissionBatches.delete(batch.id)
+  if (batch.generation !== sessionGeneration) return
+
+  const ready = batch.tasks
+    .filter(task => isCurrentTask(task, batch.generation) && task.status === 'checking' && task.fingerprint)
+    .sort((left, right) => left.localId - right.localId)
+
+  for (const task of ready) {
+    if (!isCurrentTask(task, batch.generation) || task.status !== 'checking') continue
+    const existing = videoUploadState.tasks.find(candidate => (
+      sameFingerprintIdentity(candidate, task)
+      && candidate.localId < task.localId
+      && (isUnfinishedLocalTask(candidate) || candidate.admissionId === batch.id)
+    ))
+    if (existing) {
+      const result = batch.results.get(task.localId)
+      if (result) {
+        result.task = existing
+        result.duplicate = true
+      }
+      const index = videoUploadState.tasks.indexOf(task)
+      if (index >= 0) videoUploadState.tasks.splice(index, 1)
+      if (!existing.file) {
+        existing.file = task.file
+        existing.filename = task.file.name
+        existing.error = ''
+        resumeVideoTask(existing).catch(() => {})
+      }
+      continue
+    }
+    task.status = 'queued'
   }
+  maybeInitializeTasks()
 }
 
 function unfinishedServerSessions() {
-  return videoUploadState.tasks.filter(task => task.uploadId && !['completed', 'cancelled'].includes(task.status)).length
+  return new Set(videoUploadState.tasks
+    .filter(task => task.uploadId && !['completed', 'cancelled'].includes(task.status))
+    .map(task => task.uploadId)).size
 }
 
 function maybeInitializeTasks() {
   if (!videoUploadState.online) return
-  let capacity = 3 - unfinishedServerSessions() - initializingCount
+  let capacity = videoUploadState.maxActiveSessions - unfinishedServerSessions() - initializingCount
   for (const task of videoUploadState.tasks) {
     if (capacity <= 0) break
     if (task.status === 'queued' && task.file && !task.uploadId) {
@@ -416,6 +598,34 @@ function maybeInitializeTasks() {
       })
     }
   }
+}
+
+function taskForUploadId(uploadId, exclude = null) {
+  if (!uploadId) return null
+  return videoUploadState.tasks.find(candidate => (
+    candidate !== exclude
+    && candidate.ownerId === ownerId
+    && candidate.uploadId === uploadId
+    && !['completed', 'cancelled', 'cancelling'].includes(candidate.status)
+  )) || null
+}
+
+function removeLocalTask(task) {
+  task.status = 'cancelled'
+  abortTaskJobs(task)
+  const index = videoUploadState.tasks.indexOf(task)
+  if (index >= 0) videoUploadState.tasks.splice(index, 1)
+}
+
+function mergeIntoCanonicalUpload(task, session) {
+  const canonical = taskForUploadId(session.upload_id, task)
+  if (!canonical) return null
+  applySession(canonical, session)
+  if (!canonical.file && task.file) canonical.file = task.file
+  canonical.error = ''
+  removeLocalTask(task)
+  saveTask(canonical)
+  return canonical
 }
 
 async function initializeTask(task) {
@@ -442,6 +652,15 @@ async function initializeTask(task) {
     }
     const session = await createVideoUpload(payload, { signal: controller.signal, token: authToken })
     if (!isCurrentTask(task, generation) || ['cancelled', 'cancelling'].includes(task.status)) {
+      const sharedTask = generation === sessionGeneration
+        ? taskForUploadId(session.upload_id, task)
+        : null
+      if (sharedTask) {
+        // This POST reused a session already represented by another local task.
+        // Cancelling the duplicate must not delete the canonical task's server data.
+        removeLocalTask(task)
+        return
+      }
       // Active cancellation deliberately waits for this original POST. Deleting
       // the exact returned id avoids racing a second initialization request.
       if (task.status === 'cancelling' && generation === sessionGeneration) {
@@ -451,14 +670,21 @@ async function initializeTask(task) {
       task.uploadId = null
       return
     }
-    applySession(task, session)
+    const canonical = mergeIntoCanonicalUpload(task, session) || task
+    if (canonical === task) applySession(task, session)
     if (session.status === 'completed' && session.video) {
-      await markCompleted(task, session.video)
+      await markCompleted(canonical, session.video)
       return
     }
-    task.status = 'uploading'
-    resetMetrics(task)
-    saveTask(task)
+    if (['verifying', 'finalizing'].includes(session.status)) {
+      canonical.status = 'finalizing'
+      saveTask(canonical)
+      await recoverRemoteFinalization(canonical, generation, authToken)
+      return
+    }
+    canonical.status = 'uploading'
+    resetMetrics(canonical)
+    saveTask(canonical)
     pumpChunks()
   } catch (error) {
     const wasCancelled = ['cancelled', 'cancelling'].includes(task.status)
@@ -520,7 +746,7 @@ function nextChunkCandidate() {
 
 function pumpChunks() {
   if (!videoUploadState.online) return
-  while (activeJobs.size < MAX_CONCURRENT_PARTS) {
+  while (activeJobs.size < videoUploadState.maxConcurrentParts) {
     const candidate = nextChunkCandidate()
     if (!candidate) break
     startChunk(candidate.task, candidate.part)
@@ -732,11 +958,15 @@ export async function attachVideoFile(task, file) {
     throw new Error(task.error)
   }
   task.file = file
-  task.filename = file.name
+  task.filename = normalizeFilename(file.name)
   await resumeVideoTask(task)
 }
 
 export async function retryVideoTask(task) {
+  if (['verifying', 'finalizing'].includes(task.serverStatus) && task.uploadId) {
+    await recoverRemoteFinalization(task)
+    return
+  }
   task.partRetries = {}
   task.retryAt = {}
   await resumeVideoTask(task)

@@ -1,6 +1,6 @@
 fastapi==0.135.2
-# 0.49.1 fixes GHSA-7f5h-v6xp-fcq8 (quadratic Range parsing in FileResponse).
-starlette==1.0.0
+# 1.0.1 includes the earlier FileResponse Range DoS fix and its own malformed-Host fix.
+starlette==1.0.1
 uvicorn[standard]==0.42.0
 sqlalchemy==2.0.48
 pydantic-settings==2.14.1

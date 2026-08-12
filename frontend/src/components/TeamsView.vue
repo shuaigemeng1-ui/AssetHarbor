@@ -23,6 +23,7 @@ const createDesc = ref('')
 const addUsername = ref('')
 const spaceTab = ref('images')
 const loadingTeam = ref(false)
+let openTeamGeneration = 0
 
 const myRole = computed(() => selected.value?.role)
 const canManageMembers = computed(() => (
@@ -44,14 +45,17 @@ async function loadTeams() {
 }
 
 async function openTeam(id) {
+  const generation = ++openTeamGeneration
   loadingTeam.value = true
   try {
-    selected.value = await getTeam(id)
+    const team = await getTeam(id)
+    if (generation !== openTeamGeneration) return
+    selected.value = team
     spaceTab.value = 'images'
   } catch (error) {
-    toast(`团队加载失败：${error.message}`, 'error')
+    if (generation === openTeamGeneration) toast(`团队加载失败：${error.message}`, 'error')
   } finally {
-    loadingTeam.value = false
+    if (generation === openTeamGeneration) loadingTeam.value = false
   }
 }
 
@@ -92,6 +96,7 @@ async function doRemove(member) {
   try {
     await removeTeamMember(selected.value.id, member.id)
     if (removingSelf) {
+      openTeamGeneration++
       selected.value = null
       await loadTeams()
       toast('已退出团队', 'success')
@@ -131,6 +136,7 @@ async function doDeleteTeam() {
   if (!ok) return
   try {
     await deleteTeam(selected.value.id)
+    openTeamGeneration++
     selected.value = null
     await loadTeams()
     toast('团队已解散', 'success')

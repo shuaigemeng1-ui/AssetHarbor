@@ -56,4 +56,19 @@ describe('AuthView registration policy', () => {
     expect(api.register).toHaveBeenCalledWith('tester', 'pass123', 'invite-42')
     expect(api.setToken).toHaveBeenCalledWith('token')
   })
+
+  it('allows login while the optional public config request is still pending', async () => {
+    api.fetchPublicConfig.mockImplementation(() => new Promise(() => {}))
+    const wrapper = mountAuth()
+    const inputs = wrapper.findAll('input')
+    await inputs.find(input => input.attributes('autocomplete') === 'username').setValue('tester')
+    await inputs.find(input => input.attributes('autocomplete') === 'current-password').setValue('pass123')
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(api.login).toHaveBeenCalledWith('tester', 'pass123')
+    expect(api.setToken).toHaveBeenCalledWith('token')
+    expect(wrapper.emitted('authed')?.[0]?.[0]).toEqual({ id: 1, username: 'tester', role: 'user' })
+  })
 })

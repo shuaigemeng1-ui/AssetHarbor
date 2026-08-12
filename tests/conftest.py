@@ -182,7 +182,29 @@ def upload_video(client, token, data=None, **overrides):
 def _fresh_data_dir():
     shutil.rmtree(TEST_DATA_DIR, ignore_errors=True)
     TEST_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    yield
+    try:
+        yield
+    finally:
+        # Release pooled SQLite handles before removing the per-process test
+        # directory (required on Windows, harmless elsewhere).
+        from app.core.database import engine
+
+        engine.dispose()
+        shutil.rmtree(TEST_DATA_DIR, ignore_errors=True)
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limit_windows():
+    """Keep fixed-window limiter state from leaking between tests."""
+    from app.services.ratelimit import _LOCK, _WINDOWS
+
+    with _LOCK:
+        _WINDOWS.clear()
+    try:
+        yield
+    finally:
+        with _LOCK:
+            _WINDOWS.clear()
 
 
 @pytest.fixture()

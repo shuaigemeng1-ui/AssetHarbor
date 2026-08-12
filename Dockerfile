@@ -41,4 +41,4 @@ ENTRYPOINT ["/app/docker-entrypoint.sh"]
 # 监听端口由环境变量 OSS_APP_PORT 控制（默认 8080）：
 # bridge 网络模式由 compose 端口映射转发；host 网络模式下直接监听宿主机端口。
 # Keep a single worker: resumable uploads use local SQLite and filesystem state.
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${OSS_APP_PORT:-8080} --workers 1"]
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${OSS_APP_PORT:-8080} --workers 1 --no-access-log --forwarded-allow-ips \"${OSS_FORWARDED_ALLOW_IPS:-127.0.0.1}\""]

@@ -96,6 +96,54 @@ body {
   gap: 4px;
 }
 
+.nav-video-row {
+  position: relative;
+}
+
+.nav-video-row > button:first-child {
+  padding-right: 42px;
+}
+
+.side-nav .nav-upload-center {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  right: 8px;
+  width: auto;
+  min-width: 28px;
+  min-height: 28px;
+  justify-content: center;
+  border: 0;
+  border-radius: 7px;
+  padding: 4px;
+  background: #ececff;
+  color: #5353c8;
+  font-size: 9px;
+  transform: translateY(-50%);
+}
+
+.side-nav .nav-upload-center:hover {
+  background: #dedfff;
+  color: #4141b7;
+}
+
+.nav-upload-count {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 17px;
+  height: 17px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  padding: 0 3px;
+  background: #5b5bd6;
+  color: #fff;
+  font-size: 8px;
+  line-height: 1;
+}
+
 .side-nav button {
   position: relative;
   width: 100%;

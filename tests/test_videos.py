@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
+from app.core.config import settings
 from conftest import (
     MP4_HEADER,
     auth,
@@ -58,6 +59,11 @@ def test_initialize_status_resume_and_owner_isolation(client):
     assert body["total_parts"] == 1
     assert body["uploaded_parts"] == []
     assert body["expires_at"]
+    assert body["filename"] == "clip.mp4"
+    assert body["size"] == len(data)
+    assert body["name"] == "演示视频"
+    assert body["visibility"] == "private"
+    assert body["fingerprint"] == video_fingerprint(data)
 
     # Re-initializing the same file and immutable metadata returns the durable session.
     resumed = init_video(client, owner, data, name="  演示视频  ", visibility="private")
@@ -65,6 +71,71 @@ def test_initialize_status_resume_and_owner_isolation(client):
     assert resumed.json()["upload_id"] == body["upload_id"]
     assert client.get(f"/api/video-uploads/{body['upload_id']}", headers=auth(owner)).status_code == 200
     assert client.get(f"/api/video-uploads/{body['upload_id']}", headers=auth(other)).status_code == 404
+
+
+def test_list_unfinished_uploads_is_owner_scoped_and_excludes_completed_expired(client):
+    from app.core.database import SessionLocal
+    from app.models import UploadSession
+    from app.services.videos import _now
+    from conftest import login
+
+    data = _sample(96)
+    _, owner = new_user(client)
+    _, other = new_user(client)
+    admin = login(client, "admin", "admin-pass")
+
+    first = init_video(
+        client,
+        owner,
+        data,
+        filename="discover.mp4",
+        name="发现任务",
+        visibility="private",
+    ).json()
+    assert put_video_part(
+        client, owner, first["upload_id"], 0, data, 0, len(data)
+    ).status_code == 200
+    other_id = init_video(client, other, _sample(97), name="other").json()["upload_id"]
+    admin_id = init_video(client, admin, _sample(98), name="admin-own").json()["upload_id"]
+
+    completed = upload_video(client, owner, _sample(99))[0]["upload_id"]
+    expired_id = init_video(client, owner, _sample(100), name="expired").json()["upload_id"]
+    failed_id = init_video(client, owner, _sample(101), name="failed").json()["upload_id"]
+    with SessionLocal() as db:
+        expired = db.get(UploadSession, expired_id)
+        expired.expires_at = _now() - timedelta(seconds=1)
+        failed = db.get(UploadSession, failed_id)
+        failed.status = "failed"
+        failed.updated_at = _now() + timedelta(seconds=1)
+        db.commit()
+
+    listed = client.get("/api/video-uploads", headers=auth(owner))
+    assert listed.status_code == 200, listed.text
+    body = listed.json()
+    assert body["total"] == 2
+    assert body["max_active"] == settings.max_active_video_uploads
+    assert body["part_concurrency"] == settings.video_chunk_concurrency
+    assert [item["upload_id"] for item in body["items"]] == [
+        failed_id,
+        first["upload_id"],
+    ]
+    assert body["items"][0]["status"] == "failed"
+    item = body["items"][1]
+    assert item["filename"] == "discover.mp4"
+    assert item["size"] == len(data)
+    assert item["name"] == "发现任务"
+    assert item["visibility"] == "private"
+    assert item["fingerprint"] == video_fingerprint(data)
+    assert item["uploaded_parts"] == [0]
+    assert completed not in {row["upload_id"] for row in body["items"]}
+    assert expired_id not in {row["upload_id"] for row in body["items"]}
+    assert other_id not in {row["upload_id"] for row in body["items"]}
+
+    admin_list = client.get("/api/video-uploads", headers=auth(admin)).json()
+    admin_ids = {item["upload_id"] for item in admin_list["items"]}
+    assert admin_id in admin_ids
+    assert first["upload_id"] not in admin_ids
+    assert other_id not in admin_ids
 
 
 def test_session_reuse_includes_visibility_name_and_original_filename(client):
@@ -139,6 +210,31 @@ def test_maximum_active_sessions_per_user(client, monkeypatch):
     _, token = new_user(client)
     assert init_video(client, token, _sample(64)).status_code == 201
     assert init_video(client, token, _sample(65)).status_code == 429
+
+
+def test_failed_session_reserves_slot_and_is_in_pending_stats(client, monkeypatch):
+    from app.core.database import SessionLocal
+    from app.models import UploadSession
+    from conftest import login
+
+    monkeypatch.setattr(settings, "max_active_video_uploads", 1)
+    _, token = new_user(client)
+    data = _sample(71)
+    created = init_video(client, token, data)
+    assert created.status_code == 201, created.text
+    with SessionLocal() as db:
+        upload_row = db.get(UploadSession, created.json()["upload_id"])
+        upload_row.status = "failed"
+        db.commit()
+
+    assert init_video(client, token, _sample(72)).status_code == 429
+    library = client.get("/api/library/stats", headers=auth(token))
+    assert library.status_code == 200, library.text
+    assert library.json()["pending_upload_bytes"] >= len(data)
+    admin = login(client, "admin", "admin-pass")
+    system = client.get("/api/admin/stats", headers=auth(admin))
+    assert system.status_code == 200, system.text
+    assert system.json()["pending_upload_bytes"] >= len(data)
 
 
 def test_part_headers_length_hash_and_range_are_enforced(client):
@@ -284,7 +380,7 @@ def test_public_video_range_suffix_unsatisfiable_and_download(client):
     assert full.status_code == 200 and full.content == data
     assert full.headers["accept-ranges"] == "bytes"
     assert full.headers["x-content-type-options"] == "nosniff"
-    assert "immutable" in full.headers["cache-control"]
+    assert full.headers["cache-control"] == "public, max-age=0, must-revalidate"
 
     partial = client.get(url, headers={"Range": "bytes=5-12"})
     assert partial.status_code == 206 and partial.content == data[5:13]

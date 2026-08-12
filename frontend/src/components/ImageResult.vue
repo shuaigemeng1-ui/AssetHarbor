@@ -12,6 +12,7 @@ const props = defineProps({
   editable: { type: Boolean, default: false },
   groupable: { type: Boolean, default: false },
   removable: { type: Boolean, default: false },
+  showScope: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['delete', 'toggle-visibility', 'add-to-group', 'remove', 'retry', 'remove-pending'])
@@ -129,7 +130,7 @@ async function saveName() {
 <template>
   <article class="media-card image-card" :class="{ pending: item.status === 'uploading' }">
     <div class="media-preview image-preview">
-      <img v-if="previewUrl && !linkFailed" :src="previewUrl" :alt="result?.name || result?.original_filename || item.file?.name || '图片预览'" referrerpolicy="no-referrer" @error="onPreviewError" />
+      <img v-if="previewUrl && !linkFailed" :src="previewUrl" :alt="result?.name || result?.original_filename || item.file?.name || '图片预览'" loading="lazy" decoding="async" referrerpolicy="no-referrer" @error="onPreviewError" />
       <div v-else class="preview-placeholder">
         <span>{{ item.status === 'error' ? '!' : linkFailed ? '🔒' : '…' }}</span>
         <small>{{ item.status === 'error' ? '上传失败' : linkFailed ? '预览不可用' : '正在处理' }}</small>
@@ -144,6 +145,8 @@ async function saveName() {
         <div>
           <h3>{{ result?.name || result?.original_filename || item.file?.name || '未命名图片' }}</h3>
           <p v-if="result">{{ formatBytes(result.size) }} · {{ result.content_type }} · {{ result.code }}</p>
+          <p v-if="showScope && result" class="card-scope">{{ result.team_id ? `团队 #${result.team_id}` : '个人空间' }} · {{ result.owner_username || `用户 #${result.owner_id}` }}</p>
+          <p v-else-if="item.status === 'queued'">排队等待上传…</p>
           <p v-else-if="item.status === 'uploading'">正在上传…</p>
           <p v-else class="error-text">{{ item.error }}</p>
         </div>
@@ -163,7 +166,7 @@ async function saveName() {
         <button v-if="deletable" class="ghost danger" @click="emit('delete')">删除</button>
       </div>
       <div v-else-if="item.status === 'error'" class="card-actions">
-        <button class="secondary" @click="emit('retry')">重试上传</button>
+        <button v-if="item.retryable !== false" class="secondary" @click="emit('retry')">重试上传</button>
         <button class="ghost" @click="emit('remove-pending')">移除</button>
       </div>
     </div>

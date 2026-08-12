@@ -56,7 +56,7 @@ def test_admin_teams_overview(client):
 
 def test_admin_set_user_role(client):
     atoken = login(client, "admin", "admin-pass")
-    _, token = new_user(client)
+    name, token = new_user(client)
     uid = client.get("/api/auth/me", headers=auth(token)).json()["id"]
 
     # 提升为 admin
@@ -64,11 +64,15 @@ def test_admin_set_user_role(client):
     assert resp.status_code == 200
     assert resp.json()["role"] == "admin"
 
-    # 现在该用户能访问 admin 接口
+    # 角色变化会撤销旧 JWT；重新登录后才取得新的权限。
+    assert client.get("/api/auth/me", headers=auth(token)).status_code == 401
+    token = login(client, name)
     assert client.get("/api/admin/stats", headers=auth(token)).status_code == 200
 
     # 降回 user
     assert client.patch(f"/api/admin/users/{uid}/role", headers=auth(atoken), json={"role": "user"}).status_code == 200
+    assert client.get("/api/auth/me", headers=auth(token)).status_code == 401
+    token = login(client, name)
     assert client.get("/api/admin/stats", headers=auth(token)).status_code == 403
 
     # 不能改自己的角色

@@ -109,6 +109,9 @@
   </nav>
 
   <p class="note" data-zh="除「注册 / 登录 / 获取公开图片 / 健康检查」外，所有接口都需要请求头 Authorization: Bearer &lt;token&gt;（JWT 或 API Key）。API Key 也支持 X-API-Key 请求头。" data-en="All endpoints except register / login / public image fetch / health require the header Authorization: Bearer &lt;token&gt; (JWT or API key). API keys are also accepted via the X-API-Key header."></p>
+  <p class="note" data-zh="全新安装默认关闭注册，必须设置 ADMIN_PASSWORD；当 users 表为空、注册关闭且未配置管理员密码时，应用会快速失败。数值配置均有边界并在启动导入时校验，非法值会返回明确的 ValidationError。" data-en="Fresh installs default to closed registration and require ADMIN_PASSWORD; the app fails fast when the users table is empty, registration is closed, and no admin password is configured. Numeric configuration is bounded and validated at startup with an explicit ValidationError."></p>
+  <p class="note" data-zh="USER_STORAGE_QUOTA_MB 与 TEAM_STORAGE_QUOTA_MB 默认为 0（不限额）；非零时统计已完成媒体和未完成视频会话预留，团队上传必须同时满足用户和团队额度。VIDEO_CHUNK_CONCURRENCY（默认 3，范围 1..32）控制单 worker 同时接收的分片数。" data-en="USER_STORAGE_QUOTA_MB and TEAM_STORAGE_QUOTA_MB default to 0 (unlimited). Non-zero limits include completed media and unfinished video reservations; team uploads must satisfy both ceilings. VIDEO_CHUNK_CONCURRENCY (default 3, range 1..32) controls simultaneous inbound chunks in the single worker."></p>
+  <p class="note" data-zh="所有响应都包含 X-Request-ID；请求日志仅记录方法、路径、状态和耗时，不记录请求头或 sig/expires 等查询参数。" data-en="Every response includes X-Request-ID. Request logs contain only method, path, status and duration, never request headers or query parameters such as sig/expires."></p>
 
   <!-- ============ Auth ============ -->
   <h2 id="auth">🔐 <span data-zh="认证" data-en="Authentication"></span></h2>
@@ -118,7 +121,7 @@
       <tr><td><span class="method m-post">POST</span></td><td class="path">/api/auth/register</td><td data-zh="注册账号 {username, password, invite_code?}" data-en="Register {username, password, invite_code?}"></td></tr>
       <tr><td><span class="method m-post">POST</span></td><td class="path">/api/auth/login</td><td data-zh="登录（表单 username &amp; password）→ 返回 token" data-en="Login (form username &amp; password) → token"></td></tr>
       <tr><td><span class="method m-get">GET</span></td><td class="path">/api/auth/me</td><td data-zh="当前登录用户信息" data-en="Current user info"></td></tr>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/auth/config</td><td data-zh="公开安全配置：注册模式、图片/视频上传限制" data-en="Public-safe config: registration mode and image/video upload limits"></td></tr>
+      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/auth/config</td><td data-zh="公开安全配置：注册模式、上传/会话/分片并发限制、用户/团队额度上限（字节）" data-en="Public-safe config: registration mode, upload/session/chunk concurrency limits and user/team quota ceilings in bytes"></td></tr>
       <tr><td><span class="method m-post">POST</span></td><td class="path">/api/auth/change-password</td><td data-zh="修改自己的密码 {old_password, new_password}" data-en="Change own password {old_password, new_password}"></td></tr>
     </tbody>
   </table>
@@ -200,6 +203,7 @@ curl "{{BASE}}/api/images?q=%E5%B0%81%E9%9D%A2&amp;limit=20" -H "Authorization: 
     <thead><tr><th data-zh="方法" data-en="Method"></th><th data-zh="路径" data-en="Path"></th><th data-zh="说明" data-en="Description"></th></tr></thead>
     <tbody>
       <tr><td><span class="method m-post">POST</span></td><td class="path">/api/video-uploads</td><td data-zh="初始化 {filename,size,name?,visibility?,team_id?,fingerprint}" data-en="Initialize {filename,size,name?,visibility?,team_id?,fingerprint}"></td></tr>
+      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/video-uploads</td><td data-zh="找回当前用户的可续传会话，并返回动态会话/分片并发上限" data-en="Discover the current user's resumable sessions and dynamic session/part concurrency limits"></td></tr>
       <tr><td><span class="method m-get">GET</span></td><td class="path">/api/video-uploads/{upload_id}</td><td data-zh="查询状态、已上传分片和过期时间" data-en="Status, uploaded parts and expiry"></td></tr>
       <tr><td><span class="method m-put">PUT</span></td><td class="path">/api/video-uploads/{upload_id}/parts/{part_number}</td><td data-zh="写入原始分片，要求 Content-Range 与 X-Chunk-SHA256" data-en="Write raw part; requires Content-Range and X-Chunk-SHA256"></td></tr>
       <tr><td><span class="method m-post">POST</span></td><td class="path">/api/video-uploads/{upload_id}/complete</td><td data-zh="校验完整性并原子发布；重复完成返回同一视频" data-en="Verify and atomically publish; repeated completion returns the same video"></td></tr>
@@ -275,7 +279,7 @@ curl -X POST {{BASE}}/api/video-uploads/$UPLOAD_ID/complete -H "Authorization: B
       <tr><td><span class="method m-delete">DELETE</span></td><td class="path">/api/admin/users/{id}</td><td data-zh="删除账号、个人媒体/分组、未完成上传和 Key；解散其团队并转移或清理共享数据" data-en="Delete account, personal media/groups, pending uploads and keys; dissolve owned teams and transfer or clean shared data"></td></tr>
     </tbody>
   </table>
-  <p class="note" data-zh="部署要求：持久化整个 /data（含 /data/uploads）；只运行一个 Uvicorn worker。Nginx/Caddy 请求体上限必须大于分片大小，且不得移除 Range 相关请求/响应头。备份和恢复必须在维护窗口停止容器后对整个数据目录做同一份快照或归档；单独备份 SQLite 不能保证媒体一致。恢复前应校验备份完整性，且不得混用不同备份集。" data-en="Deployment: persist all of /data (including /data/uploads) and run one Uvicorn worker. The Nginx/Caddy body limit must exceed the part size, and Range-related headers must be preserved. For backup or restore, stop the container during a maintenance window and snapshot or archive the entire data directory as one set; a SQLite-only backup cannot guarantee media consistency. Validate the backup before restoring and never mix backup sets."></p>
+  <p class="note" data-zh="部署要求：持久化整个 /data（含 /data/uploads）；只运行一个 Uvicorn worker。Nginx/Caddy 请求体上限必须大于 max(图片上限, 分片大小) 并保留 multipart 余量（默认建议 12m），且不得移除 Range 相关请求/响应头。FORWARDED_ALLOW_IPS 只填写可信反代 IP/CIDR，避免限流误伤或地址伪造。Compose 使用有界 local 日志轮转（10m × 3）。备份和恢复必须在维护窗口停止容器后对整个数据目录做同一份快照或归档；单独备份 SQLite 不能保证媒体一致。恢复前应校验备份完整性，且不得混用不同备份集。GitLab CI 执行后端测试、前端测试/构建和静态检查，Tag 或显式开关还会真实构建 Docker 镜像。" data-en="Deployment: persist all of /data (including /data/uploads) and run one Uvicorn worker. The Nginx/Caddy body limit must exceed max(image limit, part size) with multipart overhead (12m recommended for defaults), and Range-related headers must be preserved. Set FORWARDED_ALLOW_IPS only to trusted proxy IPs/CIDRs to avoid shared rate limits or address spoofing. Compose uses bounded local log rotation (10m × 3). For backup or restore, stop the container during a maintenance window and snapshot or archive the entire data directory as one set; a SQLite-only backup cannot guarantee media consistency. Validate the backup before restoring and never mix backup sets. GitLab CI runs backend tests, frontend tests/build and static checks; tags or an explicit opt-in also perform a real Docker image build."></p>
 
   <!-- ============ Other ============ -->
   <h2 id="other">🧭 <span data-zh="其他" data-en="Other"></span></h2>
@@ -283,7 +287,7 @@ curl -X POST {{BASE}}/api/video-uploads/$UPLOAD_ID/complete -H "Authorization: B
     <thead><tr><th data-zh="方法" data-en="Method"></th><th data-zh="路径" data-en="Path"></th><th data-zh="说明" data-en="Description"></th></tr></thead>
     <tbody>
       <tr><td><span class="method m-get">GET</span></td><td class="path">/healthz</td><td data-zh="轻量存活检查 {status, version}" data-en="Lightweight liveness check {status, version}"></td></tr>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/readyz</td><td data-zh="就绪检查：SQLite、数据目录可写与磁盘保留空间" data-en="Readiness: SQLite, writable data directory and free-space reserve"></td></tr>
+      <tr><td><span class="method m-get">GET</span></td><td class="path">/readyz</td><td data-zh="就绪检查：SQLite 写事务回滚探针、数据目录可落盘与磁盘保留空间" data-en="Readiness: rolled-back SQLite write transaction, durable data-directory probe and free-space reserve"></td></tr>
       <tr><td><span class="method m-get">GET</span></td><td class="path">/openapi.json</td><td data-zh="OpenAPI 规范（供工具使用）" data-en="OpenAPI spec (for tooling)"></td></tr>
     </tbody>
   </table>

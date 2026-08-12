@@ -72,4 +72,28 @@ describe('TeamsView permissions', () => {
     expect(wrapper.text()).toContain('选择一个团队')
     expect(wrapper.text()).toContain('还没有加入任何团队')
   })
+
+  it('ignores a slower team detail response after the user opens another team', async () => {
+    const secondTeam = { ...team, id: 4, name: '研发团队' }
+    api.listTeams.mockResolvedValue([team, secondTeam])
+    let resolveFirst
+    let resolveSecond
+    api.getTeam.mockImplementation(id => new Promise(resolve => {
+      if (id === 3) resolveFirst = resolve
+      else resolveSecond = resolve
+    }))
+    const wrapper = mountView()
+    await flushPromises()
+
+    const buttons = wrapper.findAll('.team-cards button')
+    buttons[0].trigger('click')
+    buttons[1].trigger('click')
+    await flushPromises()
+    resolveSecond({ ...detail, id: 4, name: '研发团队' })
+    await flushPromises()
+    resolveFirst(detail)
+    await flushPromises()
+
+    expect(wrapper.get('.team-detail h2').text()).toBe('研发团队')
+  })
 })

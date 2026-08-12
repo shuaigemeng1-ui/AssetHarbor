@@ -43,6 +43,7 @@ def test_svg_is_downloaded_not_rendered(client):
     assert img.status_code == 200
     assert "attachment" in img.headers["content-disposition"]
     assert img.headers["x-content-type-options"] == "nosniff"
+    assert img.headers["content-security-policy"] == "sandbox; default-src 'none'"
 
 
 # --- signed URLs -----------------------------------------------------------
@@ -199,12 +200,12 @@ def test_private_image_not_cached(client):
     assert "max-age=31536000" not in resp.headers["cache-control"]
 
 
-def test_public_image_immutably_cached(client):
+def test_public_image_requires_cache_revalidation(client):
     _, token = new_user(client)
     code = upload(client, token).json()["code"]  # test env default is public
     resp = client.get(f"/i/{code}")
-    assert "max-age=31536000" in resp.headers["cache-control"]
-    assert "immutable" in resp.headers["cache-control"]
+    assert resp.headers["cache-control"] == "public, max-age=0, must-revalidate"
+    assert "immutable" not in resp.headers["cache-control"]
 
 
 def test_signed_link_revoked_when_made_private(client):

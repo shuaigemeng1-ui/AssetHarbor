@@ -1,15 +1,6 @@
 <script setup>
-import { nextTick, ref, watch } from 'vue'
 import { dismissToast, feedback, resolveConfirm } from '../stores/feedback'
-
-const confirmButton = ref(null)
-
-watch(() => feedback.confirm, async value => {
-  if (value) {
-    await nextTick()
-    confirmButton.value?.focus()
-  }
-})
+import BaseModal from './BaseModal.vue'
 </script>
 
 <template>
@@ -20,17 +11,29 @@ watch(() => feedback.confirm, async value => {
     </div>
   </div>
 
-  <div v-if="feedback.confirm" class="modal-backdrop" @click.self="resolveConfirm(false)">
-    <section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message" @keydown.esc="resolveConfirm(false)">
+  <BaseModal
+    v-if="feedback.confirm"
+    :title="feedback.confirm.title"
+    labelled-by="confirm-title"
+    described-by="confirm-message"
+    dialog-role="alertdialog"
+    initial-focus="[data-confirm-cancel]"
+    @close="resolveConfirm(false)"
+  >
+    <div class="confirm-body">
       <div class="dialog-icon" :class="{ danger: feedback.confirm.danger }">{{ feedback.confirm.danger ? '!' : '?' }}</div>
-      <h2 id="confirm-title">{{ feedback.confirm.title }}</h2>
       <p id="confirm-message">{{ feedback.confirm.message }}</p>
       <div class="dialog-actions">
-        <button class="ghost" @click="resolveConfirm(false)">取消</button>
-        <button ref="confirmButton" class="primary" :class="{ danger: feedback.confirm.danger }" @click="resolveConfirm(true)">
+        <button data-confirm-cancel class="ghost" @click="resolveConfirm(false)">取消</button>
+        <button class="primary" :class="{ danger: feedback.confirm.danger }" @click="resolveConfirm(true)">
           {{ feedback.confirm.confirmText }}
         </button>
       </div>
-    </section>
-  </div>
+    </div>
+  </BaseModal>
 </template>
+
+<style scoped>
+.confirm-body { text-align: center; }
+.confirm-body > p { margin: 0 0 20px; color: var(--muted); font-size: 13px; }
+</style>

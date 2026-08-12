@@ -19,6 +19,7 @@ from ..schemas import (
     UnifiedMediaListResponse,
 )
 from .signing import build_image_url, build_video_url
+from .storage_quota import RESERVED_UPLOAD_STATUSES
 from .teams import can_manage_team, get_membership
 
 _MEDIA_KINDS = {"all", "image", "video"}
@@ -57,7 +58,14 @@ def fresh_library_user(db: Session, user: User) -> User:
     identity = sa_inspect(user).identity
     if not identity:
         raise HTTPException(status_code=401, detail="could not validate credentials")
-    fresh = db.get(User, int(identity[0]))
+    # ``Session.get`` is allowed to satisfy the lookup from the identity map.
+    # Force a database round trip so a user deleted by another request while
+    # this request waited outside the lifecycle lease cannot be reused.
+    fresh = db.execute(
+        select(User)
+        .where(User.id == int(identity[0]))
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
     if fresh is None:
         raise HTTPException(status_code=401, detail="could not validate credentials")
     return fresh
@@ -450,7 +458,8 @@ def library_stats(db: Session, user: User) -> LibraryStats:
     ) or 0
     pending_upload_bytes = db.scalar(
         select(func.coalesce(func.sum(UploadSession.size), 0)).where(
-            *upload_scope, UploadSession.status.in_(("active", "finalizing"))
+            *upload_scope,
+            UploadSession.status.in_(RESERVED_UPLOAD_STATUSES),
         )
     ) or 0
     groups = db.scalar(

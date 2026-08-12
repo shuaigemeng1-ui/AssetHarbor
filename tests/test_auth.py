@@ -1,5 +1,6 @@
 """Auth: register, login, me, change password, login rate limiting."""
 
+from app.core.config import settings
 from conftest import _uname, auth, login, new_user, register
 
 
@@ -38,6 +39,10 @@ def test_public_config_hides_secrets(client):
     body = response.json()
     assert body["registration_mode"] == "open"
     assert body["max_video_size_mb"] > 0
+    assert body["max_active_video_uploads"] == settings.max_active_video_uploads
+    assert body["video_chunk_concurrency"] == settings.video_chunk_concurrency
+    assert body["user_storage_quota_bytes"] == 0
+    assert body["team_storage_quota_bytes"] == 0
     assert "invite_code" not in body
     assert "jwt_secret" not in body
 
@@ -71,6 +76,9 @@ def test_change_password_flow(client):
     assert client.post("/api/auth/change-password", headers=h,
                        json={"old_password": "pass123", "new_password": "newpass1"}).status_code == 204
 
+    # 改密后此前签发的 JWT 必须立即失效。
+    assert client.get("/api/auth/me", headers=h).status_code == 401
+
     # 旧密码登录失败，新密码成功
     assert client.post("/api/auth/login", data={"username": name, "password": "pass123"}).status_code == 401
     assert client.post("/api/auth/login", data={"username": name, "password": "newpass1"}).status_code == 200
@@ -83,6 +91,7 @@ def test_admin_reset_password(client):
 
     assert client.patch(f"/api/admin/users/{uid}/password", headers=auth(atoken),
                         json={"new_password": "reset123"}).status_code == 204
+    assert client.get("/api/auth/me", headers=auth(token)).status_code == 401
     assert client.post("/api/auth/login", data={"username": name, "password": "pass123"}).status_code == 401
     assert client.post("/api/auth/login", data={"username": name, "password": "reset123"}).status_code == 200
 

@@ -40,6 +40,7 @@ from .video import (
     VideoPartResponse,
     VideoUpdate,
     VideoUploadCreate,
+    VideoUploadListResponse,
     VideoUploadStatus,
 )
 
@@ -81,5 +82,6 @@ __all__ = [
     "VideoPartResponse",
     "VideoUpdate",
     "VideoUploadCreate",
+    "VideoUploadListResponse",
     "VideoUploadStatus",
 ]

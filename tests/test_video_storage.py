@@ -113,6 +113,66 @@ def test_periodic_cleanup_removes_expired_rows_and_orphan_directories(client):
     assert not orphan.exists()
 
 
+def test_cleanup_does_not_delete_source_being_verified(client, monkeypatch):
+    from app.core.database import SessionLocal
+    from app.models import UploadSession
+    from app.services import videos
+    from conftest import auth, init_video, new_user, put_video_part
+
+    data = MP4_HEADER + b"cleanup-during-verification"
+    _, token = new_user(client)
+    initialized = init_video(client, token, data)
+    assert initialized.status_code == 201, initialized.text
+    upload_id = initialized.json()["upload_id"]
+    assert put_video_part(
+        client, token, upload_id, 0, data, 0, len(data)
+    ).status_code == 200
+
+    real_verify = videos._verify_parts_and_sha256
+    hashing = threading.Event()
+    release_hash = threading.Event()
+    finished = threading.Event()
+    outcome = {}
+
+    def blocked_verify(path, parts):
+        hashing.set()
+        assert release_hash.wait(5), "test did not release hashing"
+        return real_verify(path, parts)
+
+    monkeypatch.setattr(videos, "_verify_parts_and_sha256", blocked_verify)
+
+    def complete_worker():
+        try:
+            outcome["response"] = client.post(
+                f"/api/video-uploads/{upload_id}/complete", headers=auth(token)
+            )
+        finally:
+            finished.set()
+
+    thread = threading.Thread(target=complete_worker)
+    thread.start()
+    assert hashing.wait(2), "completion never entered verification"
+    try:
+        with SessionLocal() as db:
+            upload = db.get(UploadSession, upload_id)
+            assert upload.status == "verifying"
+            upload.expires_at = videos._now() - timedelta(seconds=1)
+            db.commit()
+        videos.cleanup_expired_uploads()
+        assert videos.session_file(upload_id).is_file()
+        with SessionLocal() as db:
+            upload = db.get(UploadSession, upload_id)
+            assert upload is not None and upload.status == "active"
+            assert upload.expires_at > videos._now()
+    finally:
+        release_hash.set()
+
+    assert finished.wait(5), "completion did not return after cleanup recovery"
+    thread.join(timeout=2)
+    assert outcome["response"].status_code == 409
+    assert videos.session_file(upload_id).is_file()
+
+
 def test_inbound_upload_gate_is_reclaimed_after_all_users_release():
     from app.services import videos
 
@@ -168,7 +228,7 @@ def test_cancel_waits_for_the_inbound_upload_gate(client):
             with SessionLocal() as db:
                 upload = db.get(UploadSession, upload_id)
                 assert upload is not None
-                videos.cancel_upload_session(db, upload)
+                videos.cancel_upload_session_internal(db, upload)
         except BaseException as exc:  # surface worker failures in the test thread
             failures.append(exc)
         finally:
@@ -201,7 +261,7 @@ def test_already_authorized_put_cannot_recreate_a_canceled_session(client):
 
     from app.core.config import settings
     from app.core.database import SessionLocal
-    from app.models import UploadSession
+    from app.models import UploadSession, User
     from app.services import videos
     from conftest import init_video, new_user
 
@@ -221,13 +281,14 @@ def test_already_authorized_put_cannot_recreate_a_canceled_session(client):
         with SessionLocal() as cancel_db:
             current = cancel_db.get(UploadSession, upload_id)
             assert current is not None
-            videos.cancel_upload_session(cancel_db, current)
+            videos.cancel_upload_session_internal(cancel_db, current)
 
         with pytest.raises(HTTPException) as error:
             asyncio.run(
                 videos.store_upload_part(
                     stale_db,
                     stale_upload,
+                    stale_db.get(User, stale_upload.owner_id),
                     0,
                     BodyRequest(),
                     f"bytes 0-{len(data) - 1}/{len(data)}",

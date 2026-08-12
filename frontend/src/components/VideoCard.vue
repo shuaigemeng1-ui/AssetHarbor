@@ -12,6 +12,7 @@ const props = defineProps({
   editable: { type: Boolean, default: false },
   groupable: { type: Boolean, default: false },
   removable: { type: Boolean, default: false },
+  showScope: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['play', 'delete', 'toggle-visibility', 'add-to-group', 'remove'])
@@ -173,6 +174,7 @@ async function saveName() {
         <div>
           <h3>{{ item.name || item.original_filename || '未命名视频' }}</h3>
           <p>{{ formatBytes(item.size) }} · {{ item.content_type }} · {{ item.code }}</p>
+          <p v-if="showScope" class="card-scope">{{ item.team_id ? `团队 #${item.team_id}` : '个人空间' }} · {{ item.owner_username || `用户 #${item.owner_id}` }}</p>
           <p class="card-date">{{ formatDate(item.created_at) }}</p>
         </div>
       </div>

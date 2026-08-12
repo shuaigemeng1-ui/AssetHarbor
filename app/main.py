@@ -15,6 +15,8 @@ import asyncio
 import logging
 import os
 import tempfile
+import threading
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -26,13 +28,24 @@ from sqlalchemy import text
 from .api.routes import admin, auth, gallery, images, keys, library, teams, upload, users, videos
 from .core.config import settings
 from .core.database import SessionLocal, init_db
-from .core.security import ensure_admin
+from .core.request_logging import RequestLogMiddleware
+from .core.security import ensure_admin, validate_bootstrap_state
 from .schemas import HealthResponse
 from .services.library import cleanup_orphan_media_library
 from .services.videos import cleanup_expired_uploads, ensure_free_space, recover_finalizing_uploads
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 logger = logging.getLogger(__name__)
+# The application emits one deliberately minimal request record. Disable
+# Uvicorn's duplicate access logger, which may include the raw query string.
+logging.getLogger("uvicorn.access").disabled = True
+
+# Readiness performs real SQLite and durable filesystem writes. Keep those
+# probes single-flight and briefly cache both success and failure so an exposed
+# endpoint cannot amplify concurrent health checks into writer-lock/fsync load.
+_READINESS_CACHE_SECONDS = 3.0
+_readiness_lock = threading.Lock()
+_readiness_cache: tuple[float, str | None] | None = None
 
 
 async def _cleanup_uploads_periodically(stop: asyncio.Event) -> None:
@@ -52,6 +65,7 @@ async def _cleanup_uploads_periodically(stop: asyncio.Event) -> None:
 async def lifespan(_: FastAPI):
     init_db()
     ensure_admin()
+    validate_bootstrap_state()
     cleanup_orphan_media_library()
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
     recover_finalizing_uploads()
@@ -77,6 +91,7 @@ app = FastAPI(
     docs_url=None,  # replaced by the custom bilingual docs page at /docs
     redoc_url=None,
 )
+app.add_middleware(RequestLogMiddleware)
 
 app.include_router(auth.router)
 app.include_router(upload.router)
@@ -138,23 +153,62 @@ def _probe_data_directory() -> None:
         raise failure
 
 
-@app.get("/readyz", response_model=HealthResponse, tags=["meta"])
-def readyz() -> HealthResponse:
-    """Readiness: SQLite is readable and the data volume can accept writes."""
+def _probe_database_write() -> None:
+    """Acquire SQLite's writer lock, execute a zero-row write, then roll back."""
+    with SessionLocal() as db:
+        try:
+            db.execute(text("BEGIN IMMEDIATE"))
+            db.execute(text("UPDATE users SET id = id WHERE 0"))
+        finally:
+            # Rollback is required even when the probe fails so readiness never
+            # changes rows or leaves a writer lock behind.
+            db.rollback()
+
+
+def _run_readiness_probe() -> str | None:
+    """Return a public failure detail, or ``None`` when every probe succeeds."""
     try:
-        with SessionLocal() as db:
-            if db.execute(text("SELECT 1")).scalar_one() != 1:
-                raise RuntimeError("unexpected SQLite probe result")
+        _probe_database_write()
     except Exception as exc:
         logger.warning("readiness database probe failed: %s", exc)
-        raise HTTPException(status_code=503, detail="database is not ready") from exc
+        return "database is not ready"
 
     try:
         _probe_data_directory()
         ensure_free_space()
     except Exception as exc:
         logger.warning("readiness storage probe failed: %s", exc)
-        raise HTTPException(status_code=503, detail="storage is not ready") from exc
+        return "storage is not ready"
+    return None
+
+
+def _cached_readiness_failure() -> str | None:
+    """Run at most one probe per cache window, including failed probes."""
+    global _readiness_cache
+    with _readiness_lock:
+        now = time.monotonic()
+        if _readiness_cache is not None:
+            expires_at, failure = _readiness_cache
+            if now < expires_at:
+                return failure
+        failure = _run_readiness_probe()
+        _readiness_cache = (time.monotonic() + _READINESS_CACHE_SECONDS, failure)
+        return failure
+
+
+def _reset_readiness_cache() -> None:
+    """Clear process-local probe state (used by deterministic tests)."""
+    global _readiness_cache
+    with _readiness_lock:
+        _readiness_cache = None
+
+
+@app.get("/readyz", response_model=HealthResponse, tags=["meta"])
+def readyz() -> HealthResponse:
+    """Readiness: cached single-flight SQLite and data-volume write probes."""
+    failure = _cached_readiness_failure()
+    if failure is not None:
+        raise HTTPException(status_code=503, detail=failure)
     return HealthResponse(status="ready", version=settings.version)
 
 

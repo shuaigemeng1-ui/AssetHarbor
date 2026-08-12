@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { deleteVideo, fetchPublicConfig, listTeamVideos, listVideos, updateVideo } from '../api'
 import { confirmAction, toast } from '../stores/feedback'
 import { addVideoFiles, VIDEO_ACCEPT } from '../stores/videoUploads'
+import { formatBytes } from '../utils/format'
 import UploadDropzone from './UploadDropzone.vue'
 import CollectionPickerModal from './CollectionPickerModal.vue'
 import VideoCard from './VideoCard.vue'
@@ -29,10 +30,26 @@ const publicConfig = ref(null)
 const PAGE_SIZE = 12
 let searchTimer
 let loadGeneration = 0
+let publicConfigPromise = null
 
 const isTeam = computed(() => props.teamId !== null && props.teamId !== undefined)
 const hasMore = computed(() => videos.value.length < total.value)
 const groupTargetTeamId = computed(() => groupTarget.value?.team_id ?? props.teamId)
+const isGlobalAdmin = computed(() => props.user.role === 'admin' && !isTeam.value)
+const uploadDescription = computed(() => {
+  const parts = ['支持 MP4、MOV、WebM、MKV、AVI、MPEG、TS、OGV、3GP、FLV、WMV']
+  if (Number(publicConfig.value?.max_video_size_mb) > 0) {
+    parts.push(`单文件最大 ${publicConfig.value.max_video_size_mb} MB`)
+  }
+  if (Number(publicConfig.value?.video_chunk_size_mb) > 0) {
+    parts.push(`${publicConfig.value.video_chunk_size_mb} MB 分片`)
+  }
+  const userQuota = Number(publicConfig.value?.user_storage_quota_bytes)
+  const teamQuota = Number(publicConfig.value?.team_storage_quota_bytes)
+  if (userQuota > 0) parts.push(`用户累计额度 ${formatBytes(userQuota)}`)
+  if (isTeam.value && teamQuota > 0) parts.push(`团队累计额度 ${formatBytes(teamQuota)}`)
+  return parts.join(' · ')
+})
 
 async function loadVideos({ append = false } = {}) {
   const generation = ++loadGeneration
@@ -65,7 +82,22 @@ function onQueryInput() {
   searchTimer = window.setTimeout(() => loadVideos(), 300)
 }
 
-function handleFiles(files) {
+async function ensurePublicConfig() {
+  if (publicConfig.value) return publicConfig.value
+  if (!publicConfigPromise) {
+    publicConfigPromise = fetchPublicConfig()
+      .then(config => {
+        publicConfig.value = config
+        uploadVisibility.value = config.default_visibility || uploadVisibility.value
+        return config
+      })
+      .finally(() => { publicConfigPromise = null })
+  }
+  return publicConfigPromise
+}
+
+async function handleFiles(files) {
+  try { await ensurePublicConfig() } catch { /* server validation remains authoritative */ }
   const list = Array.from(files || [])
   const base = uploadName.value.trim()
   list.forEach((file, index) => {
@@ -74,6 +106,9 @@ function handleFiles(files) {
       name,
       visibility: uploadVisibility.value,
       teamId: props.teamId,
+      maxSize: Number(publicConfig.value?.max_video_size_mb || 0) > 0
+        ? Number(publicConfig.value.max_video_size_mb) * 1024 * 1024
+        : Infinity,
     })
     if (result?.error) toast(`${file.name}：${result.error}`, 'error')
     else if (result?.duplicate) toast(`${file.name} 已在相同上传队列中`, 'info')
@@ -83,7 +118,7 @@ function handleFiles(files) {
 async function onDelete(item) {
   const ok = await confirmAction({
     title: '删除视频',
-    message: `确定删除「${item.name || item.original_filename || item.code}」？原文件将无法恢复。`,
+    message: `确定删除「${item.name || item.original_filename || item.code}」${isGlobalAdmin.value ? `（属主：${item.owner_username || `用户 #${item.owner_id}`}）` : ''}？原文件将无法恢复。`,
     confirmText: '删除',
     danger: true,
   })
@@ -103,7 +138,7 @@ async function onToggleVisibility(item) {
   if (next === 'public') {
     const ok = await confirmAction({
       title: '公开视频',
-      message: '公开后，任何拿到链接的人都能播放或下载这个视频。',
+      message: `公开后，任何拿到链接的人都能播放或下载这个视频。${isGlobalAdmin.value ? ` 属主：${item.owner_username || `用户 #${item.owner_id}`}。` : ''}`,
       confirmText: '设为公开',
     })
     if (!ok) return
@@ -150,10 +185,7 @@ watch(() => props.teamId, () => {
 onMounted(() => {
   window.addEventListener('oss:video-upload-complete', onUploadComplete)
   loadVideos()
-  fetchPublicConfig().then(config => {
-    publicConfig.value = config
-    uploadVisibility.value = config.default_visibility || uploadVisibility.value
-  }).catch(() => {})
+  ensurePublicConfig().catch(() => {})
 })
 onBeforeUnmount(() => {
   clearTimeout(searchTimer)
@@ -165,8 +197,8 @@ onBeforeUnmount(() => {
   <section class="library-view">
     <div class="section-heading">
       <div>
-        <p class="eyebrow">{{ isTeam ? '团队媒体库' : '断点续传' }}</p>
-        <h2>{{ isTeam ? '团队视频' : '我的视频' }}</h2>
+        <p class="eyebrow">{{ isTeam ? '团队媒体库' : isGlobalAdmin ? '全站媒体库' : '断点续传' }}</p>
+        <h2>{{ isTeam ? '团队视频' : isGlobalAdmin ? '全站视频' : '我的视频' }}</h2>
         <p>大文件分片传输，断网或刷新后仍可继续。</p>
       </div>
       <span class="total-badge">{{ total }} 个</span>
@@ -183,7 +215,7 @@ onBeforeUnmount(() => {
       <UploadDropzone
         :accept="VIDEO_ACCEPT"
         label="选择视频，或拖拽到这里"
-        :description="`支持 MP4、MOV、WebM、MKV、AVI、MPEG、TS、OGV、3GP、FLV、WMV${publicConfig ? ` · 最大 ${publicConfig.max_video_size_mb} MB · ${publicConfig.video_chunk_size_mb} MB 分片` : ''}`"
+        :description="uploadDescription"
         aria-label="选择或拖拽视频上传"
         @files="handleFiles"
       />
@@ -199,7 +231,7 @@ onBeforeUnmount(() => {
     </div>
 
     <p v-if="loading" class="status loading-state" aria-live="polite">正在加载视频…</p>
-    <p v-else-if="loadError" class="status error" role="alert">加载失败：{{ loadError }}</p>
+    <div v-else-if="loadError" class="status error" role="alert">加载失败：{{ loadError }} <button class="secondary" @click="loadVideos()">重试</button></div>
     <template v-else>
       <div v-if="videos.length" class="media-grid">
         <VideoCard
@@ -207,6 +239,7 @@ onBeforeUnmount(() => {
           :key="`${item.code}-${item.visibility}`"
           :item="item"
           :deletable="canDelete(item)"
+          :show-scope="isGlobalAdmin"
           :groupable="canGroup(item)"
           @add-to-group="groupTarget = item"
           @play="selectedVideo = item"

@@ -13,7 +13,6 @@ const error = ref('')
 const busy = ref(false)
 const showPassword = ref(false)
 const config = ref({ registration_mode: 'closed' })
-const configLoading = ref(true)
 
 const canRegister = computed(() => ['open', 'invite'].includes(config.value.registration_mode))
 const needsInvite = computed(() => config.value.registration_mode === 'invite')
@@ -45,14 +44,14 @@ async function submit() {
 }
 
 onMounted(async () => {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 3500)
   try {
-    config.value = await fetchPublicConfig()
+    config.value = await fetchPublicConfig({ signal: controller.signal })
   } catch {
     // Fail closed: a login remains possible while registration is hidden.
     config.value = { registration_mode: 'closed' }
-  } finally {
-    configLoading.value = false
-  }
+  } finally { clearTimeout(timeout) }
 })
 </script>
 
@@ -150,7 +149,7 @@ onMounted(async () => {
             <span>!</span><p>{{ error }}</p>
           </div>
 
-          <button type="submit" class="auth-submit" :disabled="busy || configLoading || !username || password.length < 6 || (needsInvite && !inviteCode)">
+          <button type="submit" class="auth-submit" :disabled="busy || !username || password.length < 6 || (mode === 'register' && needsInvite && !inviteCode)">
             <span>{{ submitText }}</span>
             <AppIcon v-if="!busy" name="chevron" size="16" />
             <span v-else class="submit-spinner" aria-hidden="true"></span>

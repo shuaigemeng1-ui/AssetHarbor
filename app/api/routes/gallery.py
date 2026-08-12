@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from ...core.config import settings
 from ...models import Image, User
 from ...schemas import ImageInfo, ImageListResponse, ImageUpdate, SignedLinkResponse
-from ...services.images import can_manage_image, delete_image
+from ...services.images import can_manage_image, delete_image, update_media_metadata
 from ...services.signing import build_image_url, build_signed_image_url
 from ...services.teams import is_team_member
 from ..deps import get_current_user, get_db
@@ -108,27 +108,14 @@ def update_image_endpoint(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ImageInfo:
-    image = db.execute(
-        select(Image).where(Image.code == code, Image.media_kind == "image")
-    ).scalar_one_or_none()
-    if image is None:
-        raise HTTPException(status_code=404, detail="image not found")
-    if not can_manage_image(db, current_user, image):
-        raise HTTPException(status_code=403, detail="you can only modify images you manage")
-
-    was_private = image.visibility == "private"
-    if payload.visibility is not None:
-        if payload.visibility not in ("public", "private"):
-            raise HTTPException(status_code=422, detail="visibility must be 'public' or 'private'")
-        if payload.visibility != image.visibility:
-            image.visibility = payload.visibility
-            if payload.visibility == "private" and not was_private:
-                # Revoke every previously issued signed link for this image.
-                image.signing_version += 1
-    if payload.name is not None:
-        image.name = payload.name.strip() or image.name
-    db.commit()
-    db.refresh(image)
+    image = update_media_metadata(
+        db,
+        code=code,
+        media_kind="image",
+        actor=current_user,
+        name=payload.name,
+        visibility=payload.visibility,
+    )
 
     owner_username = None
     if image.owner_id is not None:

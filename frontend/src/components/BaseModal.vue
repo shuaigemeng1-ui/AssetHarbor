@@ -1,15 +1,33 @@
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { acquireModalLock, releaseModalLock } from '../stores/modalLock'
 
-defineProps({
+const props = defineProps({
   title: { type: String, required: true },
   description: { type: String, default: '' },
   labelledBy: { type: String, default: 'modal-title' },
+  describedBy: { type: String, default: '' },
+  dialogRole: { type: String, default: 'dialog' },
+  initialFocus: { type: String, default: '' },
+  wide: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['close'])
 const panel = ref(null)
 let previousFocus = null
+let locked = false
+
+function lockBody() {
+  if (locked) return
+  locked = true
+  acquireModalLock()
+}
+
+function unlockBody() {
+  if (!locked) return
+  locked = false
+  releaseModalLock()
+}
 
 function close() {
   emit('close')
@@ -38,15 +56,16 @@ function onKeydown(event) {
 
 onMounted(async () => {
   previousFocus = document.activeElement
-  document.body.classList.add('modal-open')
+  lockBody()
   await nextTick()
+  const explicit = props.initialFocus ? panel.value?.querySelector(props.initialFocus) : null
   const preferred = panel.value?.querySelector('[autofocus]')
   const first = panel.value?.querySelector('input, select, textarea, button')
-  ;(preferred || first || panel.value)?.focus()
+  ;(explicit || preferred || first || panel.value)?.focus()
 })
 
 onBeforeUnmount(() => {
-  document.body.classList.remove('modal-open')
+  unlockBody()
   previousFocus?.focus?.()
 })
 </script>
@@ -57,15 +76,17 @@ onBeforeUnmount(() => {
       <section
         ref="panel"
         class="base-modal-panel"
-        role="dialog"
+        :class="{ wide }"
+        :role="dialogRole"
         aria-modal="true"
         :aria-labelledby="labelledBy"
+        :aria-describedby="describedBy || (description ? `${labelledBy}-description` : undefined)"
         @keydown="onKeydown"
       >
         <header class="base-modal-head">
           <div>
             <h2 :id="labelledBy">{{ title }}</h2>
-            <p v-if="description">{{ description }}</p>
+            <p v-if="description" :id="`${labelledBy}-description`">{{ description }}</p>
           </div>
           <button class="base-modal-close" type="button" aria-label="关闭" @click="close">×</button>
         </header>
@@ -96,6 +117,10 @@ onBeforeUnmount(() => {
   border-radius: 20px;
   background: var(--panel);
   box-shadow: 0 30px 90px rgb(15 23 42 / 28%);
+}
+
+.base-modal-panel.wide {
+  width: min(1050px, 100%);
 }
 
 .base-modal-head {

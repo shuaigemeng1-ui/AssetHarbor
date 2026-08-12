@@ -1,7 +1,7 @@
 """Admin-only endpoints: stats, user management, team overview."""
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -18,9 +18,11 @@ from ...core.security import hash_password
 from ...services.images import delete_image
 from ...services.library import (
     fresh_library_user,
+    library_lifecycle_lease,
     prepare_groups_for_user_deletion,
     serialized_library_lifecycle,
 )
+from ...services.storage_quota import RESERVED_UPLOAD_STATUSES
 from ...services.videos import delete_upload_sessions_for_owner, dissolve_team_media
 from ..deps import get_db, require_admin
 
@@ -34,25 +36,36 @@ def _user_out(user: User) -> UserOut:
 @router.post("/users", response_model=UserOut, status_code=201, summary="Create a user (admin)")
 def create_user(
     payload: AdminUserCreate,
+    current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> UserOut:
     if payload.role not in ("admin", "user"):
         raise HTTPException(status_code=422, detail="role must be 'admin' or 'user'")
-    if db.execute(select(User.id).where(User.username == payload.username)).scalar_one_or_none() is not None:
-        raise HTTPException(status_code=409, detail="username already taken")
-    user = User(
-        username=payload.username,
-        password_hash=hash_password(payload.password),
-        role=payload.role,
-    )
-    db.add(user)
-    try:
-        db.commit()
-    except IntegrityError:
+    # Bcrypt is intentionally outside the global lifecycle lease. Authorization
+    # and the owner-scoped insert are revalidated atomically after that work.
+    password_hash = hash_password(payload.password)
+    with library_lifecycle_lease():
         db.rollback()
-        raise HTTPException(status_code=409, detail="username already taken")
-    db.refresh(user)
-    return _user_out(user)
+        current_user = fresh_library_user(db, current_user)
+        if current_user.role != "admin":
+            raise HTTPException(status_code=403, detail="admin privileges required")
+        if db.execute(
+            select(User.id).where(User.username == payload.username)
+        ).scalar_one_or_none() is not None:
+            raise HTTPException(status_code=409, detail="username already taken")
+        user = User(
+            username=payload.username,
+            password_hash=password_hash,
+            role=payload.role,
+        )
+        db.add(user)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="username already taken")
+        db.refresh(user)
+        return _user_out(user)
 
 
 @router.get("/stats", response_model=AdminStats, summary="System statistics (admin)")
@@ -68,7 +81,7 @@ def admin_stats(db: Session = Depends(get_db)) -> AdminStats:
     storage = db.scalar(select(func.coalesce(func.sum(Image.size), 0))) or 0
     pending_upload_bytes = db.scalar(
         select(func.coalesce(func.sum(UploadSession.size), 0)).where(
-            UploadSession.status.in_(("active", "finalizing"))
+            UploadSession.status.in_(RESERVED_UPLOAD_STATUSES)
         )
     ) or 0
     return AdminStats(
@@ -131,23 +144,48 @@ def set_user_role(
     if target is None:
         raise HTTPException(status_code=404, detail="user not found")
 
-    target.role = payload.role
+    if target.role != payload.role:
+        # Role and JWT revocation are one atomic statement. The SQL-side
+        # increment preserves a concurrent password-reset increment too.
+        db.execute(
+            update(User)
+            .where(User.id == target.id)
+            .values(role=payload.role, auth_version=User.auth_version + 1)
+            .execution_options(synchronize_session=False)
+        )
     db.commit()
-    db.refresh(target)
+    db.expire_all()
+    target = db.get(User, user_id)
     return _user_out(target)
 
 
 @router.patch("/users/{user_id}/password", status_code=204, summary="Reset a user's password (admin)")
+@serialized_library_lifecycle
 def reset_password(
     user_id: int,
     payload: ResetPasswordRequest,
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> None:
+    # Dependency authorization may be stale after waiting for the lifecycle
+    # lease. Reopen the transaction and re-check the administrator before the
+    # credential write, matching destructive admin operations.
+    db.rollback()
+    current_user = fresh_library_user(db, current_user)
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="admin privileges required")
     target = db.get(User, user_id)
     if target is None:
         raise HTTPException(status_code=404, detail="user not found")
-    target.password_hash = hash_password(payload.new_password)
+    db.execute(
+        update(User)
+        .where(User.id == target.id)
+        .values(
+            password_hash=hash_password(payload.new_password),
+            auth_version=User.auth_version + 1,
+        )
+        .execution_options(synchronize_session=False)
+    )
     db.commit()
 
 

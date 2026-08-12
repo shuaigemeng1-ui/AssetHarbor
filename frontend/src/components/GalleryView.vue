@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { deleteImage, fetchPublicConfig, listImages, listTeamImages, updateImage, uploadFile } from '../api'
 import { confirmAction, toast } from '../stores/feedback'
+import { formatBytes } from '../utils/format'
 import CollectionPickerModal from './CollectionPickerModal.vue'
 import ImageResult from './ImageResult.vue'
 import UploadDropzone from './UploadDropzone.vue'
@@ -27,10 +28,26 @@ const PAGE_SIZE = 12
 let nextId = 1
 let searchTimer = null
 let loadGeneration = 0
+let publicConfigPromise = null
+const uploadQueue = []
+const IMAGE_UPLOAD_CONCURRENCY = 3
+let activeUploadCount = 0
 
 const isTeam = computed(() => props.teamId !== null && props.teamId !== undefined)
 const hasMore = computed(() => images.value.length < total.value)
 const groupTargetTeamId = computed(() => groupTarget.value?.team_id ?? props.teamId)
+const isGlobalAdmin = computed(() => props.user.role === 'admin' && !isTeam.value)
+const uploadDescription = computed(() => {
+  const parts = ['支持 JPG、PNG、GIF、WebP、SVG、AVIF 等常用格式']
+  if (Number(publicConfig.value?.max_upload_size_mb) > 0) {
+    parts.push(`单文件最大 ${publicConfig.value.max_upload_size_mb} MB`)
+  }
+  const userQuota = Number(publicConfig.value?.user_storage_quota_bytes)
+  const teamQuota = Number(publicConfig.value?.team_storage_quota_bytes)
+  if (userQuota > 0) parts.push(`用户累计额度 ${formatBytes(userQuota)}`)
+  if (isTeam.value && teamQuota > 0) parts.push(`团队累计额度 ${formatBytes(teamQuota)}`)
+  return parts.join(' · ')
+})
 
 async function loadGallery({ append = false } = {}) {
   const generation = ++loadGeneration
@@ -64,9 +81,25 @@ function onQueryInput() {
   searchTimer = window.setTimeout(() => loadGallery(), 300)
 }
 
+async function ensurePublicConfig() {
+  if (publicConfig.value) return publicConfig.value
+  if (!publicConfigPromise) {
+    publicConfigPromise = fetchPublicConfig()
+      .then(config => {
+        publicConfig.value = config
+        uploadVisibility.value = config.default_visibility || uploadVisibility.value
+        return config
+      })
+      .finally(() => { publicConfigPromise = null })
+  }
+  return publicConfigPromise
+}
+
 async function handleFiles(files) {
+  try { await ensurePublicConfig() } catch { /* server validation remains authoritative */ }
   const list = Array.from(files || [])
   const base = uploadName.value.trim()
+  const maxBytes = Number(publicConfig.value?.max_upload_size_mb || 0) * 1024 * 1024
   for (let index = 0; index < list.length; index++) {
     const file = list[index]
     const name = base ? (list.length > 1 ? `${base}-${index + 1}` : base) : ''
@@ -74,9 +107,44 @@ async function handleFiles(files) {
     // Keep mutations reactive while the request is in flight. Vue wraps
     // objects inserted into a reactive array, so removing by raw-object
     // identity can leave a completed card stuck in "uploading" forever.
-    const pending = reactive({ id: pendingId, file, name, visibility: uploadVisibility.value, teamId: props.teamId, status: 'uploading', result: null, error: '' })
+    const oversized = maxBytes > 0 && file.size > maxBytes
+    const pending = reactive({
+      id: pendingId,
+      file,
+      name,
+      visibility: uploadVisibility.value,
+      teamId: props.teamId,
+      status: oversized ? 'error' : 'queued',
+      result: null,
+      error: oversized ? `文件大小超过 ${publicConfig.value.max_upload_size_mb} MB 限制` : '',
+      retryable: !oversized,
+      queued: false,
+    })
     uploads.value.unshift(pending)
-    await runUpload(pending)
+    if (!oversized) enqueueUpload(pending)
+    else toast(`${file.name} 超过上传大小限制`, 'error')
+  }
+}
+
+function enqueueUpload(pending) {
+  if (pending.queued || pending.status === 'uploading') return
+  pending.status = 'queued'
+  pending.error = ''
+  pending.queued = true
+  uploadQueue.push(pending)
+  pumpUploadQueue()
+}
+
+function pumpUploadQueue() {
+  while (activeUploadCount < IMAGE_UPLOAD_CONCURRENCY && uploadQueue.length) {
+    const pending = uploadQueue.shift()
+    pending.queued = false
+    if (!uploads.value.some(item => item.id === pending.id)) continue
+    activeUploadCount++
+    runUpload(pending).finally(() => {
+      activeUploadCount = Math.max(0, activeUploadCount - 1)
+      pumpUploadQueue()
+    })
   }
 }
 
@@ -107,10 +175,11 @@ async function runUpload(pending) {
 }
 
 function retryUpload(pending) {
-  if (pending.status === 'error') runUpload(pending)
+  if (pending.status === 'error' && pending.retryable !== false) enqueueUpload(pending)
 }
 
 function removeUpload(pending) {
+  pending.queued = false
   uploads.value = uploads.value.filter(item => item.id !== pending.id)
 }
 
@@ -121,7 +190,7 @@ function wrapped(item) {
 async function onDelete(item) {
   const ok = await confirmAction({
     title: '删除图片',
-    message: `确定删除「${item.name || item.original_filename || item.code}」？此操作不可恢复。`,
+    message: `确定删除「${item.name || item.original_filename || item.code}」${isGlobalAdmin.value ? `（属主：${item.owner_username || `用户 #${item.owner_id}`}）` : ''}？此操作不可恢复。`,
     confirmText: '删除',
     danger: true,
   })
@@ -141,7 +210,7 @@ async function onToggleVisibility(item) {
   if (next === 'public') {
     const ok = await confirmAction({
       title: '公开图片',
-      message: '公开后，任何拿到链接的人都能访问这张图片。',
+      message: `公开后，任何拿到链接的人都能访问这张图片。${isGlobalAdmin.value ? ` 属主：${item.owner_username || `用户 #${item.owner_id}`}。` : ''}`,
       confirmText: '设为公开',
     })
     if (!ok) return
@@ -178,20 +247,17 @@ watch(() => props.teamId, () => {
 
 onMounted(async () => {
   loadGallery()
-  try {
-    publicConfig.value = await fetchPublicConfig()
-    uploadVisibility.value = publicConfig.value.default_visibility || uploadVisibility.value
-  } catch { /* upload APIs remain usable when optional public config is unavailable */ }
+  try { await ensurePublicConfig() } catch { /* upload APIs remain usable when optional public config is unavailable */ }
 })
 onBeforeUnmount(() => clearTimeout(searchTimer))
 </script>
 
 <template>
-  <section class="library-view">
+    <section class="library-view">
     <div class="section-heading">
       <div>
-        <p class="eyebrow">{{ isTeam ? '团队媒体库' : '个人媒体库' }}</p>
-        <h2>{{ isTeam ? '团队图片' : '我的图片' }}</h2>
+        <p class="eyebrow">{{ isTeam ? '团队媒体库' : isGlobalAdmin ? '全站媒体库' : '个人媒体库' }}</p>
+        <h2>{{ isTeam ? '团队图片' : isGlobalAdmin ? '全站图片' : '我的图片' }}</h2>
         <p>上传原图并获得可分享的短链接。</p>
       </div>
       <span class="total-badge">{{ total }} 张</span>
@@ -208,7 +274,7 @@ onBeforeUnmount(() => clearTimeout(searchTimer))
       <UploadDropzone
         accept="image/*"
         label="选择图片，或拖拽到这里"
-        :description="`支持 JPG、PNG、GIF、WebP、SVG、AVIF 等常用格式${publicConfig ? ` · 最大 ${publicConfig.max_upload_size_mb} MB` : ''}`"
+        :description="uploadDescription"
         aria-label="选择或拖拽图片上传"
         @files="handleFiles"
       />
@@ -226,7 +292,7 @@ onBeforeUnmount(() => clearTimeout(searchTimer))
     </div>
 
     <p v-if="loading" class="status loading-state" aria-live="polite">正在加载图片…</p>
-    <p v-else-if="loadError" class="status error" role="alert">加载失败：{{ loadError }}</p>
+    <div v-else-if="loadError" class="status error" role="alert">加载失败：{{ loadError }} <button class="secondary" @click="loadGallery()">重试</button></div>
     <template v-else>
       <div v-if="images.length" class="media-grid">
         <ImageResult
@@ -234,6 +300,7 @@ onBeforeUnmount(() => clearTimeout(searchTimer))
           :key="item.id || item.code"
           :item="wrapped(item)"
           :deletable="canDelete(item)"
+          :show-scope="isGlobalAdmin"
           :groupable="canGroup(item)"
           @add-to-group="groupTarget = item"
           @delete="onDelete(item)"

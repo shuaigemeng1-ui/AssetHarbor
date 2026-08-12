@@ -55,9 +55,9 @@
 # 1. 克隆
 git clone http://www.genkinet.net:10004/it_group/oss.git && cd oss
 
-# 2. 按需调整配置（建议设置管理员密码）
+# 2. 调整配置（全新默认安装必须设置管理员密码）
 cp .env.example .env
-#   编辑 .env：ADMIN_PASSWORD=你的管理员密码（建议必填）
+#   编辑 .env：ADMIN_PASSWORD=你的强管理员密码
 #             PORT / MAX_UPLOAD_SIZE_MB / PUBLIC_URL 等按需调整
 
 # 3. 启动
@@ -68,6 +68,11 @@ docker compose up -d
 #    用 admin / $ADMIN_PASSWORD 登录。新安装默认关闭自助注册；
 #    确需公开注册时显式设置 ALLOW_REGISTRATION=open。
 ```
+
+默认 `ALLOW_REGISTRATION=closed`。当数据库还是空的且未设置
+`ADMIN_PASSWORD` 时，应用会快速失败，避免部署出一个无人能够登录的实例；
+`invite` 模式未同时设置 `INVITE_CODE` 时也会拒绝启动。已有用户的升级实例
+可不设引导密码；否则必须配置强密码、选择 `open`，或同时配置邀请模式和邀请码。
 
 **网络模式**：默认 `bridge` 模式将宿主机端口（`PORT`）映射进容器。若需要容器直接绑定宿主机网络（如绑定指定宿主机 IP），在 `.env` 设置 `NETWORK_MODE=host`——此时 `PORT` 即容器直接监听的宿主机端口。
 
@@ -94,24 +99,34 @@ curl -X POST http://服务器IP:8080/api/upload \
 |---|---|---|
 | `PORT` | `8080` | 服务端口。`bridge` 模式下为宿主机映射端口；`host` 模式下为容器直接监听的宿主机端口 |
 | `NETWORK_MODE` | `bridge` | 网络模式：`bridge`（默认，端口映射）或 `host`（直接使用宿主机网络） |
-| `MAX_UPLOAD_SIZE_MB` | `10` | 单文件上传大小上限（MB） |
-| `MAX_VIDEO_SIZE_MB` | `2048` | 单个视频原文件大小上限（MiB） |
-| `VIDEO_CHUNK_SIZE_MB` | `8` | 视频分片大小（MiB）；反向代理请求体上限必须大于它 |
-| `VIDEO_UPLOAD_TTL_HOURS` | `168` | 未完成上传会话的滑动有效期（默认 7 天） |
-| `MAX_ACTIVE_VIDEO_UPLOADS` | `3` | 每位用户最多未完成视频会话数 |
-| `MIN_FREE_SPACE_MB` | `1024` | 磁盘保留空间；不足时图片/视频写入返回 507 |
-| `VIDEO_CLEANUP_INTERVAL_SECONDS` | `3600` | 清理过期/未完成视频上传的执行间隔（秒） |
-| `SQLITE_BUSY_TIMEOUT_MS` | `5000` | SQLite 等待写锁释放的最长时间（毫秒） |
-| `SHORT_CODE_LENGTH` | `10` | 短码长度（base62 字符，越长越难枚举） |
+| `FORWARDED_ALLOW_IPS` | `127.0.0.1` | 可写入 `X-Forwarded-*` 的可信反代 IP/CIDR（逗号分隔）；只有直连已被阻断且代理会覆盖转发头时才可使用 `*` |
+| `MAX_UPLOAD_SIZE_MB` | `10` | 单张图片上限，MiB（`1..1024`） |
+| `MAX_VIDEO_SIZE_MB` | `2048` | 视频原文件上限，MiB（`1..1048576`） |
+| `VIDEO_CHUNK_SIZE_MB` | `8` | 分片大小，MiB（`1..1024`，且不得大于视频上限） |
+| `VIDEO_UPLOAD_TTL_HOURS` | `168` | 未完成会话滑动有效期（`1..8760`） |
+| `MAX_ACTIVE_VIDEO_UPLOADS` | `3` | 每用户未完成视频会话数（`1..1000`） |
+| `VIDEO_CHUNK_CONCURRENCY` | `3` | 单 worker 同时接收的视频分片上限（`1..32`），同时提供给前端调度器 |
+| `MIN_FREE_SPACE_MB` | `1024` | 磁盘保留空间（`0..1048576`，`0` 为禁用）；不足时写入返回 507 |
+| `USER_STORAGE_QUOTA_MB` | `0` | 每用户“已完成媒体 + 未完成视频预留”总额度（`0..10485760` MiB，`0` 不限额）；团队媒体也计入上传者额度 |
+| `TEAM_STORAGE_QUOTA_MB` | `0` | 每团队“已完成媒体 + 未完成视频预留”总额度（`0..10485760` MiB，`0` 不限额）；团队上传须同时满足用户与团队额度 |
+| `VIDEO_CLEANUP_INTERVAL_SECONDS` | `3600` | 过期上传清理间隔秒数（`1..604800`） |
+| `SQLITE_BUSY_TIMEOUT_MS` | `5000` | SQLite 写锁等待毫秒数（`1..300000`） |
+| `SHORT_CODE_LENGTH` | `10` | base62 短码长度（`6..32`） |
 | `PUBLIC_URL` | *(空)* | 返回链接的前缀，如 `https://img.example.com`；留空则按请求自动推断 |
-| `ADMIN_PASSWORD` | *(空)* | 首次启动自动创建/刷新 `admin` 管理员账号；留空则不创建 |
+| `ADMIN_PASSWORD` | *(空)* | 全新且关闭注册的安装必填；启动时创建/刷新 `admin` |
 | `ALLOW_REGISTRATION` | `closed` | 注册策略：`open` 开放 / `invite` 邀请码 / `closed` 关闭；升级后仍需公开注册必须显式设为 `open` |
 | `INVITE_CODE` | *(空)* | `ALLOW_REGISTRATION=invite` 时的注册邀请码 |
-| `REGISTRATION_RATE_LIMIT_PER_MINUTE` | `10` | 每 IP 每分钟自助注册尝试次数 |
-| `REGISTRATION_RATE_LIMIT_PER_USERNAME` | `3` | 每用户名每分钟自助注册尝试次数 |
+| `TOKEN_EXPIRE_MINUTES` | `10080` | 登录令牌有效分钟数（`1..525600`） |
+| `LOGIN_RATE_LIMIT_PER_MINUTE` / `LOGIN_RATE_LIMIT_PER_USERNAME` | `20` / `5` | 每 IP/账号每分钟登录次数（`0` 禁用，上限 `1000000`） |
+| `REGISTRATION_RATE_LIMIT_PER_MINUTE` / `REGISTRATION_RATE_LIMIT_PER_USERNAME` | `10` / `3` | 每 IP/用户名每分钟注册次数（`0` 禁用，上限 `1000000`） |
+| `IMAGES_RATE_LIMIT_PER_MINUTE` | `240` | 每 IP 每分钟公开媒体请求数（`0` 禁用，上限 `1000000`） |
+| `UPLOAD_RATE_LIMIT_PER_MINUTE` | `60` | 每用户每分钟上传请求数（`0` 禁用，上限 `1000000`） |
 | `JWT_SECRET` | *(空)* | JWT 签名密钥；留空则每次重启登录态失效（建议 `openssl rand -hex 32` 生成） |
 | `DEFAULT_VISIBILITY` | `private` | 新上传图片的默认可见性：`private`（仅自己/团队/管理员 + 签名链接）或 `public`（任何人可访问） |
-| `SIGNED_URL_TTL_SECONDS` | `86400` | 私密媒体签名链接有效期（秒） |
+| `SIGNED_URL_TTL_SECONDS` | `86400` | 私密媒体签名链接有效秒数（`60..604800`） |
+
+所有数值配置都会在导入配置时校验；非法值会在接收流量前明确抛出
+Pydantic `ValidationError`。
 
 ## 🔌 API 概览
 
@@ -127,7 +142,7 @@ curl -X POST http://服务器IP:8080/api/upload \
 | POST | `/api/auth/login` | 表单 `username` & `password` → `{access_token, user}` |
 | GET | `/api/auth/me` | 当前用户信息 |
 | POST | `/api/auth/change-password` | `{old_password, new_password}` 修改自己的密码 |
-| GET | `/api/auth/config` | 前端可安全读取的注册模式、上传限制等配置 |
+| GET | `/api/auth/config` | 前端可安全读取的注册模式、上传/会话/并发限制及用户/团队额度上限（字节） |
 
 ### 图片
 
@@ -147,6 +162,7 @@ curl -X POST http://服务器IP:8080/api/upload \
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | POST | `/api/video-uploads` | 初始化 `{filename,size,name?,visibility?,team_id?,fingerprint}`；返回 `upload_id`、`chunk_size`、`total_parts`、`uploaded_parts`、`expires_at` |
+| GET | `/api/video-uploads` | 刷新或 IndexedDB 丢失后找回当前用户的可续传会话，同时返回 `max_active` 与 `part_concurrency` |
 | GET | `/api/video-uploads/{upload_id}` | 查询服务端真实状态和已上传分片序号 |
 | PUT | `/api/video-uploads/{upload_id}/parts/{part_number}` | 原始二进制，请求头必须含 `Content-Range` 与 `X-Chunk-SHA256`；相同内容重复提交幂等成功 |
 | POST | `/api/video-uploads/{upload_id}/complete` | 校验全部分片、快速指纹和真实容器格式后原子发布 |
@@ -241,7 +257,7 @@ SVG 类图片一律以附件形式下发（`Content-Disposition: attachment` + `
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log
 ```
 
 前端（Vite 热更新，默认代理到 `http://localhost:8000`，可用 `VITE_API_TARGET` 覆盖）：
@@ -263,15 +279,24 @@ mkdir -p ../app/static && cp -r dist/* ../app/static/
 pytest
 ```
 
+仓库内的 `.gitlab-ci.yml` 是发布门禁：Python 3.12 执行编译检查和
+pytest，Node 20 执行 `npm ci`、Vitest 与生产构建，另一个无需 Docker
+daemon 的 CLI 作业检查空白错误和 Compose 配置。Git Tag 会自动通过 DinD
+执行真实多阶段镜像构建，其他流水线可设置 `CI_DOCKER_BUILD=1` 启用；所有
+作业都不会启动应用。
+
 > 前端未构建时，访问 `/` 会得到 404 提示（镜像内已内置构建产物，只有本地裸跑后端会触发）。
 
 ### 反向代理与部署注意事项
 
 - 保持单个 Uvicorn worker。SQLite 与上传中间文件都在本机；多实例和共享对象存储不在当前范围。
 - 持久化整个 `/data`，其中 `/data/uploads` 保存未完成分片。入口脚本只在首次挂载时递归初始化权限，后续启动不会扫描全部媒体文件。
-- Nginx 的 `client_max_body_size` 必须大于 `VIDEO_CHUNK_SIZE_MB`（默认配置至少设为 `9m`）；不要移除 `Range`、`If-Range`、`Content-Range`、`Accept-Ranges`。Caddy 同样需要放宽请求体限制。
-- 依赖下限 `starlette>=0.49.1` 包含上游 Range 解析复杂度漏洞修复；公网开放 `/v` 时请持续更新依赖。
-- `/healthz` 仅做轻量存活检查；`/readyz` 还会验证 SQLite 可读、在 `/data` 完成一次可落盘且会删除的写探测，并检查磁盘保留空间。流量就绪探针应使用 `/readyz`。
+- Nginx 的 `client_max_body_size` 必须大于 `max(MAX_UPLOAD_SIZE_MB, VIDEO_CHUNK_SIZE_MB)`，并为 multipart 边界留出余量（默认配置建议至少 `12m`）；不要移除 `Range`、`If-Range`、`Content-Range`、`Accept-Ranges`。Caddy 同样需要放宽请求体限制。
+- 将 `FORWARDED_ALLOW_IPS` 仅配置为 Nginx/Caddy 的来源 IP 或 Docker 网段，否则所有反代访客可能共用代理的限流身份；信任未知来源会允许客户端伪造地址。
+- Starlette 精确锁定为 `1.0.1`，包含此前的 FileResponse Range DoS 修复以及 `1.0.1` 的畸形 Host 修复；公网开放媒体时请持续更新依赖。
+- `/healthz` 仅做轻量存活检查；`/readyz` 会获取真实 SQLite 写锁、执行零行更新后回滚，再在 `/data` 完成可落盘且会删除的写探测，并检查磁盘保留空间。探测采用单飞机制，成功和失败都会缓存约 3 秒，避免健康检查突发流量放大写锁与 `fsync`；流量就绪探针应使用 `/readyz`。
+- 每个响应都带 `X-Request-ID`。只有符合安全格式（1–64 个字母、数字、点、下划线或连字符）的入站 ID 才会透传，否则自动生成。请求日志包含这个安全请求 ID、方法、解码路径、状态码和耗时，绝不记录其他请求头或签名链接的 `sig`/`expires` 查询参数。
+- Uvicorn 默认 access log 已关闭，避免重复或包含查询串的日志。Compose 使用有界 `local` 日志驱动（每文件 `10m`、保留 3 个）；可按宿主机留存策略调整。
 
 ### 维护窗口内的 SQLite WAL 一致备份与恢复
 
@@ -357,7 +382,7 @@ oss/
 - [ ] S3 兼容 API（对接 PicGo / ShareX / uPic 截图客户端）
 - [ ] S3/MinIO 存储后端适配层
 - [ ] HTTPS：Caddy 反代一键启用（自动续期证书）
-- [ ] CI：GitHub Actions 自动构建并推送 GHCR / Docker Hub
+- [x] GitLab CI 发布门禁：后端测试、前端测试/构建、Compose 与空白检查
 
 ## 🤝 参与贡献
 

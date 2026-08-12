@@ -16,4 +16,8 @@ class PublicConfig(BaseModel):
     max_upload_size_mb: int
     max_video_size_mb: int
     video_chunk_size_mb: int
+    max_active_video_uploads: int
+    video_chunk_concurrency: int
+    user_storage_quota_bytes: int
+    team_storage_quota_bytes: int
     default_visibility: str

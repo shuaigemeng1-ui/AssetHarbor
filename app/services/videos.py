@@ -26,14 +26,20 @@ from sqlalchemy.orm import Session
 from ..core.config import settings
 from ..core.database import SessionLocal
 from ..models import Image, Team, UploadPart, UploadSession, User
-from .library import delete_team_groups, fresh_library_user, serialized_library_lifecycle
+from .library import (
+    delete_team_groups,
+    fresh_library_user,
+    library_lifecycle_lease,
+    serialized_library_lifecycle,
+)
 from .shortcode import generate_short_code
+from .storage_quota import RESERVED_UPLOAD_STATUSES, enforce_storage_quota
 from .teams import get_membership
 
 _CONTENT_RANGE_RE = re.compile(r"^bytes (\d+)-(\d+)/(\d+)$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _SAMPLE_SIZE = 1024 * 1024
-_ACTIVE_STATUSES = ("active", "finalizing")
+_ACTIVE_STATUSES = ("active", "verifying", "finalizing")
 
 _lock_guard = threading.Lock()
 _upload_locks: dict[str, threading.RLock] = {}
@@ -44,7 +50,7 @@ _finalization_lock = threading.RLock()
 # global concurrency (3), but this server-side guard is required because API
 # clients are not trusted to obey it.  A per-upload gate also prevents many
 # duplicate PUTs from each allocating a full chunk-sized temporary file.
-_inbound_part_slots = threading.BoundedSemaphore(3)
+_inbound_part_slots = threading.BoundedSemaphore(settings.video_chunk_concurrency)
 _inbound_gate_guard = threading.Lock()
 _inbound_upload_gates: dict[str, threading.BoundedSemaphore] = {}
 _inbound_gate_users: dict[str, int] = {}
@@ -54,6 +60,24 @@ _inbound_gate_users: dict[str, int] = {}
 # space before any of them starts writing.
 _disk_reservation_lock = threading.Lock()
 _reserved_write_bytes = 0
+_STORAGE_FULL_ERRNOS = {errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC)}
+
+
+def _is_storage_full_error(exc: BaseException) -> bool:
+    """Recognize direct filesystem and wrapped SQLite capacity failures."""
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if getattr(current, "errno", None) in _STORAGE_FULL_ERRNOS:
+            return True
+        if getattr(current, "winerror", None) == 112:
+            return True
+        message = str(current).lower()
+        if "database or disk is full" in message or "disk quota exceeded" in message:
+            return True
+        current = getattr(current, "orig", None) or getattr(current, "__cause__", None)
+    return False
 
 
 def _serialized(lock: threading.Lock):
@@ -65,6 +89,16 @@ def _serialized(lock: threading.Lock):
                 return function(*args, **kwargs)
         return wrapped
     return decorate
+
+
+def _serialized_upload_session(function):
+    """Acquire one session's lock after outer library/finalization locks."""
+    @wraps(function)
+    def wrapped(db: Session, upload: UploadSession, *args, **kwargs):
+        with _leased_upload_lock(upload.upload_id):
+            return function(db, upload, *args, **kwargs)
+
+    return wrapped
 
 
 @contextmanager
@@ -295,6 +329,22 @@ def supported_video_types() -> str:
     return "MP4/M4V, MOV, WebM, MKV, AVI, MPEG/MPG, TS, OGV, 3GP, FLV, WMV"
 
 
+_VIDEO_EXTENSION_BY_CONTENT_TYPE = {
+    "video/3gpp": "3gp",
+    "video/quicktime": "mov",
+    "video/x-m4v": "m4v",
+    "video/mp4": "mp4",
+    "video/webm": "webm",
+    "video/x-matroska": "mkv",
+    "video/x-msvideo": "avi",
+    "video/mpeg": "mpg",
+    "video/mp2t": "ts",
+    "video/ogg": "ogv",
+    "video/x-flv": "flv",
+    "video/x-ms-wmv": "wmv",
+}
+
+
 # ---------------------------------------------------------------------------
 # Fingerprints and session lifecycle
 # ---------------------------------------------------------------------------
@@ -384,10 +434,19 @@ def create_upload_session(
     if existing is not None:
         return existing
 
+    # A new session reserves its declared bytes. Existing idempotent sessions
+    # returned above already hold that reservation and must not be double-counted.
+    enforce_storage_quota(
+        db,
+        owner_id=user.id,
+        team_id=team_id,
+        additional_bytes=size,
+    )
+
     active_count = db.scalar(
         select(func.count()).select_from(UploadSession).where(
             UploadSession.owner_id == user.id,
-            UploadSession.status.in_(_ACTIVE_STATUSES),
+            UploadSession.status.in_(RESERVED_UPLOAD_STATUSES),
             UploadSession.expires_at > now,
         )
     ) or 0
@@ -448,7 +507,7 @@ def get_upload_for_user(
         # synchronous cancellation gate may legitimately wait for an earlier
         # inbound request.  Hourly cleanup removes that expired session.
         if cleanup_expired:
-            cancel_upload_session(db, upload)
+            cancel_upload_session(db, upload, user)
         raise HTTPException(status_code=410, detail="upload session expired")
     if upload is None:
         raise HTTPException(status_code=404, detail="upload session not found")
@@ -493,6 +552,7 @@ def _parse_content_range(value: str | None, upload: UploadSession, part_number: 
 async def store_upload_part(
     db: Session,
     upload: UploadSession,
+    user: User,
     part_number: int,
     request: Request,
     content_range: str | None,
@@ -516,6 +576,7 @@ async def store_upload_part(
 
     global_slot_acquired = False
     upload_gate = _lease_inbound_upload_gate(upload_id)
+    upload_gate_reference_held = True
     upload_gate_acquired = False
     reserved_bytes = 0
     tmp_path: Path | None = None
@@ -534,9 +595,13 @@ async def store_upload_part(
         # directory or temporary file, so that stale PUT cannot resurrect
         # canceled storage.
         db.rollback()
-        gated_upload = db.get(UploadSession, upload_id)
+        user = fresh_library_user(db, user)
+        gated_upload = _fresh_upload_session(db, upload_id)
         if gated_upload is None:
             raise HTTPException(status_code=404, detail="upload session not found")
+        if gated_upload.owner_id != user.id and user.role != "admin":
+            raise HTTPException(status_code=404, detail="upload session not found")
+        _check_team_access(db, gated_upload.team_id, user)
         if gated_upload.expires_at <= _now():
             raise HTTPException(status_code=410, detail="upload session expired")
         if gated_upload.status not in ("active", "finalizing", "completed"):
@@ -573,76 +638,30 @@ async def store_upload_part(
         if actual_sha != digest_header:
             raise HTTPException(status_code=409, detail="chunk SHA-256 mismatch")
 
-        # A process-local lock is sufficient for the documented single-worker
-        # deployment and serializes duplicate concurrent writes for one upload.
-        with _leased_upload_lock(upload_id):
-            # Complete may have committed while this request streamed its body.
-            # Start a fresh transaction before making the final state decision.
-            db.rollback()
-            current = db.get(UploadSession, upload_id)
-            if current is None:
-                raise HTTPException(status_code=404, detail="upload session not found")
-            existing = db.execute(select(UploadPart).where(
-                UploadPart.upload_id == upload_id,
-                UploadPart.part_number == part_number,
-            )).scalar_one_or_none()
-            if existing is not None:
-                if existing.sha256 == actual_sha and existing.size == received:
-                    if current.status == "active":
-                        current.expires_at = _new_expiry()
-                        current.updated_at = _now()
-                        db.commit()
-                    return existing
-                raise HTTPException(status_code=409, detail="part number already contains different data")
-            if current.status != "active":
-                raise HTTPException(status_code=409, detail=f"upload cannot accept parts while {current.status}")
-
-            if part_number == 0:
-                with tmp_path.open("rb") as first:
-                    detected = detect_video_type(first.read(min(received, 64 * 1024)))
-                if detected is None:
-                    raise HTTPException(
-                        status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                        detail=f"unsupported video type; supported: {supported_video_types()}",
-                    )
-
-            mode = "r+b" if part_path.exists() else "w+b"
-            with part_path.open(mode) as target, tmp_path.open("rb") as source:
-                target.seek(offset)
-                while True:
-                    block = source.read(256 * 1024)
-                    if not block:
-                        break
-                    target.write(block)
-                target.flush()
-                os.fsync(target.fileno())
-
-            record = UploadPart(
-                upload_id=upload_id,
-                part_number=part_number,
-                offset=offset,
-                size=received,
-                sha256=actual_sha,
-                created_at=_now(),
-            )
-            current.expires_at = _new_expiry()
-            current.updated_at = _now()
-            db.add(record)
-            try:
-                db.commit()
-            except IntegrityError:
-                db.rollback()
-                duplicate = db.execute(select(UploadPart).where(
-                    UploadPart.upload_id == upload_id,
-                    UploadPart.part_number == part_number,
-                )).scalar_one_or_none()
-                if duplicate and duplicate.sha256 == actual_sha and duplicate.size == received:
-                    return duplicate
-                raise HTTPException(status_code=409, detail="part number already contains different data")
-            db.refresh(record)
-            return record
+        # Do not acquire the library lease while holding the inbound gate:
+        # cancellation uses library -> inbound, so the reverse order would
+        # deadlock. Release body-stream capacity first, then run the short
+        # final commit in a worker with the canonical lock order. A cancel may
+        # win in between; the fresh session/actor checks then return 404/401
+        # without registering bytes or recreating the directory.
+        _inbound_part_slots.release()
+        global_slot_acquired = False
+        upload_gate.release()
+        upload_gate_acquired = False
+        _release_inbound_upload_gate(upload_id, upload_gate)
+        upload_gate_reference_held = False
+        return await asyncio.to_thread(
+            _commit_upload_part,
+            upload_id,
+            user,
+            part_number,
+            offset,
+            received,
+            actual_sha,
+            tmp_path,
+        )
     except OSError as exc:
-        if exc.errno in {errno.ENOSPC, getattr(errno, "EDQUOT", -1)} or getattr(exc, "winerror", None) == 112:
+        if _is_storage_full_error(exc):
             raise HTTPException(status_code=507, detail="insufficient storage space") from exc
         raise
     finally:
@@ -660,7 +679,113 @@ async def store_upload_part(
             _inbound_part_slots.release()
         if upload_gate_acquired:
             upload_gate.release()
-        _release_inbound_upload_gate(upload_id, upload_gate)
+        if upload_gate_reference_held:
+            _release_inbound_upload_gate(upload_id, upload_gate)
+
+
+def _commit_upload_part(
+    upload_id: str,
+    user: User,
+    part_number: int,
+    offset: int,
+    received: int,
+    actual_sha: str,
+    tmp_path: Path,
+) -> UploadPart:
+    """Fresh-authorize and publish one staged part under canonical locks."""
+    with library_lifecycle_lease():
+        with _leased_inbound_upload_gate_sync(upload_id):
+            with _leased_upload_lock(upload_id):
+                with SessionLocal() as commit_db:
+                    commit_db.rollback()
+                    user = fresh_library_user(commit_db, user)
+                    current = _fresh_upload_session(commit_db, upload_id)
+                    if current is None:
+                        raise HTTPException(status_code=404, detail="upload session not found")
+                    if current.owner_id != user.id and user.role != "admin":
+                        raise HTTPException(status_code=404, detail="upload session not found")
+                    _check_team_access(commit_db, current.team_id, user)
+
+                    existing = commit_db.execute(select(UploadPart).where(
+                        UploadPart.upload_id == upload_id,
+                        UploadPart.part_number == part_number,
+                    )).scalar_one_or_none()
+                    if existing is not None:
+                        if existing.sha256 == actual_sha and existing.size == received:
+                            if current.status == "active":
+                                current.expires_at = _new_expiry()
+                                current.updated_at = _now()
+                                commit_db.commit()
+                            return existing
+                        raise HTTPException(
+                            status_code=409,
+                            detail="part number already contains different data",
+                        )
+                    if current.status != "active":
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"upload cannot accept parts while {current.status}",
+                        )
+                    if not tmp_path.is_file():
+                        raise HTTPException(status_code=409, detail="chunk staging data is missing")
+
+                    if part_number == 0:
+                        with tmp_path.open("rb") as first:
+                            detected = detect_video_type(
+                                first.read(min(received, 64 * 1024))
+                            )
+                        if detected is None:
+                            raise HTTPException(
+                                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                                detail=(
+                                    "unsupported video type; supported: "
+                                    f"{supported_video_types()}"
+                                ),
+                            )
+
+                    part_path = session_file(upload_id)
+                    mode = "r+b" if part_path.exists() else "w+b"
+                    with part_path.open(mode) as target, tmp_path.open("rb") as source:
+                        target.seek(offset)
+                        while True:
+                            block = source.read(256 * 1024)
+                            if not block:
+                                break
+                            target.write(block)
+                        target.flush()
+                        os.fsync(target.fileno())
+
+                    record = UploadPart(
+                        upload_id=upload_id,
+                        part_number=part_number,
+                        offset=offset,
+                        size=received,
+                        sha256=actual_sha,
+                        created_at=_now(),
+                    )
+                    current.expires_at = _new_expiry()
+                    current.updated_at = _now()
+                    commit_db.add(record)
+                    try:
+                        commit_db.commit()
+                    except IntegrityError:
+                        commit_db.rollback()
+                        duplicate = commit_db.execute(select(UploadPart).where(
+                            UploadPart.upload_id == upload_id,
+                            UploadPart.part_number == part_number,
+                        )).scalar_one_or_none()
+                        if (
+                            duplicate
+                            and duplicate.sha256 == actual_sha
+                            and duplicate.size == received
+                        ):
+                            return duplicate
+                        raise HTTPException(
+                            status_code=409,
+                            detail="part number already contains different data",
+                        )
+                    commit_db.refresh(record)
+                    return record
 
 
 def _verify_parts_and_sha256(path: Path, parts: list[UploadPart]) -> str:
@@ -713,122 +838,326 @@ def _create_final_image(db: Session, upload: UploadSession, info: dict[str, str]
     return image
 
 
-@serialized_library_lifecycle
-@_serialized(_finalization_lock)
 def complete_upload_session(db: Session, upload: UploadSession, user: User) -> Image:
+    """Verify outside the global lifecycle lease, then fresh-authorize commit.
+
+    Lock order is always library -> finalization -> upload.  Phase one records
+    a unique verification lease while holding that order.  The expensive
+    multi-gigabyte read then runs without any process-global lock.  Phase two
+    reacquires the same order and only publishes bytes after revalidating the
+    user, team membership and verification nonce from a fresh transaction.
+    """
     upload_id = upload.upload_id
-    with _leased_upload_lock(upload_id):
-        # End the authorization/status read transaction.  Team dissolution and
-        # upload cancellation both commit under compatible lifecycle locks, so
-        # finalization must make its decision from a fresh database snapshot.
-        db.rollback()
-        user = fresh_library_user(db, user)
-        current = db.get(UploadSession, upload_id)
-        if current is None:
-            raise HTTPException(status_code=404, detail="upload session not found")
-        if current.owner_id != user.id and user.role != "admin":
-            raise HTTPException(status_code=404, detail="upload session not found")
-        if current.status == "completed" and current.final_code:
-            image = db.execute(select(Image).where(
-                Image.code == current.final_code, Image.media_kind == "video"
-            )).scalar_one_or_none()
-            if image is not None:
-                return image
-            raise HTTPException(status_code=409, detail="completed video metadata is missing")
-        if current.status == "finalizing":
-            recover_finalizing_session(db, current)
-            db.expire_all()
-            current = db.get(UploadSession, upload_id)
-            if current and current.status == "completed" and current.final_code:
-                image = db.execute(select(Image).where(Image.code == current.final_code)).scalar_one()
-                return image
-            raise HTTPException(status_code=409, detail="upload finalization is incomplete; retry shortly")
-        if current.status != "active":
-            raise HTTPException(status_code=409, detail=f"upload cannot be completed while {current.status}")
-        _check_team_access(db, current.team_id, user)
+    nonce = uuid.uuid4().hex
+    with library_lifecycle_lease():
+        with _finalization_lock:
+            with _leased_upload_lock(upload_id):
+                # End the authorization/status read transaction. Team
+                # dissolution and user/member deletion commit under the same
+                # outer lifecycle lease, so this snapshot cannot be stale.
+                db.rollback()
+                user = fresh_library_user(db, user)
+                current = db.get(UploadSession, upload_id)
+                if current is None:
+                    raise HTTPException(status_code=404, detail="upload session not found")
+                if current.owner_id != user.id and user.role != "admin":
+                    raise HTTPException(status_code=404, detail="upload session not found")
+                if current.status == "completed" and current.final_code:
+                    image = db.execute(select(Image).where(
+                        Image.code == current.final_code, Image.media_kind == "video"
+                    )).scalar_one_or_none()
+                    if image is not None:
+                        return image
+                    raise HTTPException(status_code=409, detail="completed video metadata is missing")
+                if current.status == "finalizing":
+                    recover_finalizing_session(db, current)
+                    db.expire_all()
+                    current = db.get(UploadSession, upload_id)
+                    if current and current.status == "completed" and current.final_code:
+                        return db.execute(
+                            select(Image).where(Image.code == current.final_code)
+                        ).scalar_one()
+                    raise HTTPException(
+                        status_code=409,
+                        detail="upload finalization is incomplete; retry shortly",
+                    )
+                if current.status != "active":
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"upload cannot be completed while {current.status}",
+                    )
+                _check_team_access(db, current.team_id, user)
 
-        parts = db.execute(
-            select(UploadPart).where(UploadPart.upload_id == current.upload_id).order_by(UploadPart.part_number)
-        ).scalars().all()
-        if len(parts) != current.total_parts or [part.part_number for part in parts] != list(range(current.total_parts)):
-            raise HTTPException(status_code=409, detail="not all video parts have been uploaded")
-        for part in parts:
-            expected_offset, expected_size = _expected_part(current, part.part_number)
-            if part.offset != expected_offset or part.size != expected_size:
-                raise HTTPException(status_code=409, detail="uploaded part metadata is inconsistent")
+                parts = db.execute(
+                    select(UploadPart)
+                    .where(UploadPart.upload_id == current.upload_id)
+                    .order_by(UploadPart.part_number)
+                ).scalars().all()
+                if (
+                    len(parts) != current.total_parts
+                    or [part.part_number for part in parts]
+                    != list(range(current.total_parts))
+                ):
+                    raise HTTPException(
+                        status_code=409,
+                        detail="not all video parts have been uploaded",
+                    )
+                for part in parts:
+                    expected_offset, expected_size = _expected_part(
+                        current, part.part_number
+                    )
+                    if part.offset != expected_offset or part.size != expected_size:
+                        raise HTTPException(
+                            status_code=409,
+                            detail="uploaded part metadata is inconsistent",
+                        )
 
-        source = session_file(current.upload_id)
-        if not source.is_file() or source.stat().st_size != current.size:
-            raise HTTPException(status_code=409, detail="uploaded video data is incomplete")
+                source = session_file(current.upload_id)
+                if not source.is_file() or source.stat().st_size != current.size:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="uploaded video data is incomplete",
+                    )
+                expected_size = current.size
+                expected_fingerprint = current.fingerprint
+                current.status = "verifying"
+                current.resume_info = json.dumps(
+                    {"verification_nonce": nonce}, ensure_ascii=False
+                )
+                current.updated_at = _now()
+                current.expires_at = _new_expiry()
+                db.commit()
+
+    # No global lifecycle/finalization/upload lock is held while reading the
+    # full source. Status=verifying prevents PUT from mutating it; cancellation
+    # may still retire it, which the second phase detects before publication.
+    try:
         with source.open("rb") as file:
-            detected = detect_video_type(file.read(min(current.size, 64 * 1024)))
+            detected = detect_video_type(file.read(min(expected_size, 64 * 1024)))
         if detected is None:
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
                 detail=f"unsupported video type; supported: {supported_video_types()}",
             )
-        if calculate_quick_fingerprint(source, current.size) != current.fingerprint:
-            raise HTTPException(status_code=409, detail="video fingerprint does not match initialization")
-
-        content_type, extension = detected
+        if calculate_quick_fingerprint(source, expected_size) != expected_fingerprint:
+            raise HTTPException(
+                status_code=409,
+                detail="video fingerprint does not match initialization",
+            )
         digest = _verify_parts_and_sha256(source, parts)
-        code = _unique_video_code(db)
-        rel_path = Path("files") / code[:2] / code[2:4] / f"{code}.{extension}"
-        destination = settings.data_dir / rel_path
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        info = {
-            "code": code,
-            "stored_path": str(rel_path),
-            "content_type": content_type,
-            "sha256": digest,
-        }
+    except FileNotFoundError as exc:
+        _reset_verifying_upload(db, upload_id, nonce)
+        raise HTTPException(status_code=404, detail="upload session not found") from exc
+    except Exception:
+        _reset_verifying_upload(db, upload_id, nonce)
+        raise
 
-        # Persist recovery metadata before the atomic move.  On a crash,
-        # startup can finish from either the source or destination path.
-        current.status = "finalizing"
-        current.resume_info = json.dumps(info, ensure_ascii=False)
-        current.updated_at = _now()
-        current.expires_at = _new_expiry()
-        db.commit()
+    content_type, extension = detected
+    with library_lifecycle_lease():
+        with _finalization_lock:
+            with _leased_upload_lock(upload_id):
+                db.rollback()
+                # Resolve the target session before refreshing the actor.  An
+                # administrator may finalize another user's upload and then
+                # be deleted while the unlocked hash is running.  In that
+                # case the surviving upload must leave ``verifying`` before
+                # the actor's original 401 is propagated.
+                current = _fresh_upload_session(db, upload_id)
+                if current is None:
+                    raise HTTPException(status_code=404, detail="upload session not found")
+                try:
+                    user = fresh_library_user(db, user)
+                except HTTPException:
+                    _return_verifying_to_active(db, current, nonce)
+                    raise
+                if current.owner_id != user.id and user.role != "admin":
+                    _return_verifying_to_active(db, current, nonce)
+                    raise HTTPException(status_code=404, detail="upload session not found")
+                if not _has_verification_nonce(current, nonce):
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"upload cannot be completed while {current.status}",
+                    )
+                try:
+                    _check_team_access(db, current.team_id, user)
+                except HTTPException:
+                    _return_verifying_to_active(db, current, nonce)
+                    raise
+                source = session_file(current.upload_id)
+                if not source.is_file() or source.stat().st_size != current.size:
+                    _return_verifying_to_active(db, current, nonce)
+                    raise HTTPException(
+                        status_code=409,
+                        detail="uploaded video data is incomplete",
+                    )
 
-        try:
-            os.replace(source, destination)
-        except OSError:
-            db.expire_all()
-            failed = db.get(UploadSession, current.upload_id)
-            if failed is not None and source.exists():
-                failed.status = "active"
-                failed.resume_info = ""
-                failed.updated_at = _now()
-                db.commit()
-            raise
+                try:
+                    code = _unique_video_code(db)
+                    rel_path = (
+                        Path("files")
+                        / code[:2]
+                        / code[2:4]
+                        / f"{code}.{extension}"
+                    )
+                    destination = settings.data_dir / rel_path
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    info = {
+                        "code": code,
+                        "stored_path": str(rel_path),
+                        "content_type": content_type,
+                        "sha256": digest,
+                    }
 
-        try:
-            db.expire_all()
-            final = db.get(UploadSession, current.upload_id)
-            if final is None:
-                raise RuntimeError("upload session disappeared during finalization")
-            image = _create_final_image(db, final, info)
-            final.status = "completed"
-            final.final_code = code
-            final.completed_at = _now()
-            final.updated_at = _now()
-            final.expires_at = _new_expiry()
-            db.commit()
-            db.refresh(image)
-            try:
-                session_dir(current.upload_id).rmdir()
-            except OSError:
-                pass
-            return image
-        except Exception:
-            db.rollback()
-            # Leave the durable ``finalizing`` state for startup/request retry.
-            raise
+                    # Persist recovery metadata before the atomic move. On a
+                    # crash, startup can finish from source or destination.
+                    current.status = "finalizing"
+                    current.resume_info = json.dumps(info, ensure_ascii=False)
+                    current.updated_at = _now()
+                    current.expires_at = _new_expiry()
+                    db.commit()
+                except Exception as exc:
+                    db.rollback()
+                    failed = _fresh_upload_session(db, upload_id)
+                    if failed is not None:
+                        _return_verifying_to_active(db, failed, nonce)
+                    if _is_storage_full_error(exc):
+                        raise HTTPException(
+                            status_code=507,
+                            detail="insufficient storage space",
+                        ) from exc
+                    if isinstance(exc, OSError):
+                        raise HTTPException(
+                            status_code=500,
+                            detail="could not prepare video storage",
+                        ) from exc
+                    raise
+
+                try:
+                    os.replace(source, destination)
+                except OSError:
+                    db.expire_all()
+                    failed = db.get(UploadSession, current.upload_id)
+                    if failed is not None and source.exists():
+                        failed.status = "active"
+                        failed.resume_info = ""
+                        failed.updated_at = _now()
+                        db.commit()
+                    raise
+
+                try:
+                    db.expire_all()
+                    final = db.get(UploadSession, current.upload_id)
+                    if final is None:
+                        raise RuntimeError(
+                            "upload session disappeared during finalization"
+                        )
+                    image = _create_final_image(db, final, info)
+                    final.status = "completed"
+                    final.final_code = code
+                    final.completed_at = _now()
+                    final.updated_at = _now()
+                    final.expires_at = _new_expiry()
+                    db.commit()
+                    db.refresh(image)
+                    try:
+                        session_dir(current.upload_id).rmdir()
+                    except OSError:
+                        pass
+                    return image
+                except Exception:
+                    db.rollback()
+                    # Keep durable finalizing state for startup/request retry.
+                    raise
+
+
+def _has_verification_nonce(upload: UploadSession, nonce: str) -> bool:
+    if upload.status != "verifying":
+        return False
+    try:
+        info = json.loads(upload.resume_info)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return False
+    return info.get("verification_nonce") == nonce
+
+
+def _fresh_upload_session(db: Session, upload_id: str) -> UploadSession | None:
+    """Bypass an identity-map row that another request may have deleted."""
+    return db.execute(
+        select(UploadSession)
+        .where(UploadSession.upload_id == upload_id)
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+
+
+def _return_verifying_to_active(
+    db: Session, upload: UploadSession, nonce: str
+) -> bool:
+    """Reset exactly the verification attempt represented by ``nonce``."""
+    if not _has_verification_nonce(upload, nonce):
+        return False
+    upload.status = "active" if session_file(upload.upload_id).is_file() else "failed"
+    upload.resume_info = ""
+    upload.updated_at = _now()
+    upload.expires_at = _new_expiry()
+    db.commit()
+    return True
+
+
+def _reset_verifying_upload(db: Session, upload_id: str, nonce: str) -> None:
+    """Best-effort failure compensation using the canonical lock order."""
+    with library_lifecycle_lease():
+        with _finalization_lock:
+            with _leased_upload_lock(upload_id):
+                db.rollback()
+                current = _fresh_upload_session(db, upload_id)
+                if current is not None:
+                    _return_verifying_to_active(db, current, nonce)
+
+
+def _validated_finalizing_info(
+    raw_info: str,
+) -> tuple[dict[str, str], Path]:
+    """Parse recovery metadata and derive a destination without trusting it."""
+    try:
+        info = json.loads(raw_info)
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError("invalid recovery metadata") from exc
+    required = {"code", "stored_path", "content_type", "sha256"}
+    if not isinstance(info, dict) or not required.issubset(info):
+        raise ValueError("missing recovery fields")
+    code = info["code"]
+    content_type = info["content_type"]
+    sha256 = info["sha256"]
+    stored_path = info["stored_path"]
+    if (
+        not isinstance(code, str)
+        or re.fullmatch(rf"[0-9A-Za-z]{{{settings.short_code_length}}}", code)
+        is None
+    ):
+        raise ValueError("invalid recovery code")
+    if not isinstance(sha256, str) or _SHA256_RE.fullmatch(sha256) is None:
+        raise ValueError("invalid recovery digest")
+    extension = _VIDEO_EXTENSION_BY_CONTENT_TYPE.get(content_type)
+    if extension is None:
+        raise ValueError("invalid recovery content type")
+    expected_relative = Path("files") / code[:2] / code[2:4] / f"{code}.{extension}"
+    if not isinstance(stored_path, str) or Path(stored_path) != expected_relative:
+        raise ValueError("invalid recovery path")
+    files_root = settings.files_dir.resolve()
+    destination = (settings.data_dir / expected_relative).resolve()
+    if not destination.is_relative_to(files_root):
+        raise ValueError("recovery path escapes files directory")
+    return {
+        "code": code,
+        "stored_path": str(expected_relative),
+        "content_type": content_type,
+        "sha256": sha256,
+    }, destination
 
 
 @serialized_library_lifecycle
 @_serialized(_finalization_lock)
+@_serialized_upload_session
 def recover_finalizing_session(db: Session, upload: UploadSession) -> None:
     """Idempotently finish one session interrupted around its atomic move."""
     upload_id = upload.upload_id
@@ -839,26 +1168,24 @@ def recover_finalizing_session(db: Session, upload: UploadSession) -> None:
     if upload.status != "finalizing":
         return
     try:
-        info = json.loads(upload.resume_info)
-        required = {"code", "stored_path", "content_type", "sha256"}
-        if not required.issubset(info):
-            raise ValueError("missing recovery fields")
-    except (TypeError, ValueError, json.JSONDecodeError):
+        info, destination = _validated_finalizing_info(upload.resume_info)
+    except ValueError:
         source = session_file(upload.upload_id)
         upload.status = "active" if source.is_file() else "failed"
         upload.resume_info = ""
         upload.updated_at = _now()
+        upload.expires_at = _new_expiry()
         db.commit()
         return
 
     source = session_file(upload.upload_id)
-    destination = settings.data_dir / info["stored_path"]
     if not destination.is_file() and source.is_file():
         destination.parent.mkdir(parents=True, exist_ok=True)
         os.replace(source, destination)
     if not destination.is_file():
         upload.status = "failed"
         upload.updated_at = _now()
+        upload.expires_at = _new_expiry()
         db.commit()
         return
 
@@ -880,6 +1207,7 @@ def recover_finalizing_session(db: Session, upload: UploadSession) -> None:
         upload.status = "active" if owner is not None else "failed"
         upload.resume_info = ""
         upload.updated_at = _now()
+        upload.expires_at = _new_expiry()
         db.commit()
         return
 
@@ -893,40 +1221,112 @@ def recover_finalizing_session(db: Session, upload: UploadSession) -> None:
     db.refresh(image)
 
 
+@serialized_library_lifecycle
+@_serialized(_finalization_lock)
+@_serialized_upload_session
+def recover_verifying_session(db: Session, upload: UploadSession) -> None:
+    """Return an interrupted pre-publication verification to a resumable state."""
+    upload_id = upload.upload_id
+    db.rollback()
+    current = db.get(UploadSession, upload_id)
+    if current is None or current.status != "verifying":
+        return
+    current.status = "active" if session_file(upload_id).is_file() else "failed"
+    current.resume_info = ""
+    current.updated_at = _now()
+    current.expires_at = _new_expiry()
+    db.commit()
+
+
 def recover_finalizing_uploads() -> int:
-    """Recover all interrupted finalizations after database initialization."""
+    """Recover interrupted verification/finalization after initialization."""
     recovered = 0
     with SessionLocal() as db:
-        uploads = db.execute(select(UploadSession).where(UploadSession.status == "finalizing")).scalars().all()
+        uploads = db.execute(
+            select(UploadSession).where(
+                UploadSession.status.in_(("verifying", "finalizing"))
+            )
+        ).scalars().all()
         for upload in uploads:
             try:
-                recover_finalizing_session(db, upload)
+                if upload.status == "verifying":
+                    recover_verifying_session(db, upload)
+                else:
+                    recover_finalizing_session(db, upload)
                 recovered += 1
             except OSError:
                 db.rollback()
     return recovered
 
 
-def cancel_upload_session(db: Session, upload: UploadSession) -> None:
+def _delete_upload_session_locked(db: Session, upload_id: str) -> None:
+    """Delete tracking and temp bytes while lifecycle/inbound/upload are held."""
+    current = _fresh_upload_session(db, upload_id)
+    destination: Path | None = None
+    if current is not None and current.status == "finalizing":
+        try:
+            _info, destination = _validated_finalizing_info(current.resume_info)
+        except ValueError:
+            # Corrupt recovery metadata is never interpreted as a filesystem
+            # path. The upload directory remains safe to remove by upload_id.
+            destination = None
+    db.execute(delete(UploadPart).where(UploadPart.upload_id == upload_id))
+    if current is not None:
+        db.delete(current)
+    db.commit()
+    shutil.rmtree(session_dir(upload_id), ignore_errors=True)
+    if destination is not None:
+        try:
+            destination.unlink(missing_ok=True)
+        except OSError:
+            # DB/session deletion remains the source of truth. Startup orphan
+            # maintenance may retry a filesystem cleanup that the OS denied.
+            pass
+
+
+def cancel_upload_session(
+    db: Session,
+    upload: UploadSession,
+    actor: User,
+) -> None:
+    """Cancel through a fresh owner/admin check under canonical locks."""
     upload_id = upload.upload_id
-    # Gate order matches PUT (inbound gate -> upload lock).  Once DELETE
-    # returns, every earlier PUT has finished and no already-authorized stale
-    # PUT can recreate files: it must pass this gate and revalidate the row.
+    # First drain a body that was already streaming, without holding the
+    # lifecycle lease. This intentionally gives a concurrent role/membership
+    # revocation a chance to commit while DELETE waits. The destructive phase
+    # below then reacquires using the one canonical order.
     with _leased_inbound_upload_gate_sync(upload_id):
-        with _leased_upload_lock(upload_id):
-            db.rollback()
-            current = db.get(UploadSession, upload_id)
-            db.execute(delete(UploadPart).where(UploadPart.upload_id == upload_id))
-            if current is not None:
-                db.delete(current)
-            db.commit()
-            shutil.rmtree(session_dir(upload_id), ignore_errors=True)
+        pass
+
+    # PUT releases its streaming gate before attempting this same
+    # library -> inbound -> upload order, so there is no reverse-order wait.
+    with library_lifecycle_lease():
+        with _leased_inbound_upload_gate_sync(upload_id):
+            with _leased_upload_lock(upload_id):
+                db.rollback()
+                current = _fresh_upload_session(db, upload_id)
+                if current is None:
+                    raise HTTPException(status_code=404, detail="upload session not found")
+                actor = fresh_library_user(db, actor)
+                if current.owner_id != actor.id and actor.role != "admin":
+                    raise HTTPException(status_code=404, detail="upload session not found")
+                _delete_upload_session_locked(db, upload_id)
+
+
+def cancel_upload_session_internal(db: Session, upload: UploadSession) -> None:
+    """Trusted lifecycle cleanup for expiry and explicit owner deletion."""
+    upload_id = upload.upload_id
+    with library_lifecycle_lease():
+        with _leased_inbound_upload_gate_sync(upload_id):
+            with _leased_upload_lock(upload_id):
+                db.rollback()
+                _delete_upload_session_locked(db, upload_id)
 
 
 def delete_upload_sessions_for_owner(db: Session, owner_id: int) -> None:
     uploads = db.execute(select(UploadSession).where(UploadSession.owner_id == owner_id)).scalars().all()
     for upload in uploads:
-        cancel_upload_session(db, upload)
+        cancel_upload_session_internal(db, upload)
 
 
 def _cleanup_upload_directory(child: Path, stale_before: float) -> bool:
@@ -967,18 +1367,21 @@ def cleanup_expired_uploads() -> int:
         ).scalars().all()
         for upload in expired:
             upload_id = upload.upload_id
-            if upload.status == "finalizing":
+            if upload.status in ("verifying", "finalizing"):
                 try:
-                    recover_finalizing_session(db, upload)
+                    if upload.status == "verifying":
+                        recover_verifying_session(db, upload)
+                    else:
+                        recover_finalizing_session(db, upload)
                     db.expire_all()
-                    refreshed = db.get(UploadSession, upload_id)
+                    refreshed = _fresh_upload_session(db, upload_id)
                     if refreshed is not None and refreshed.expires_at > _now():
                         continue
                     upload = refreshed or upload
                 except OSError:
                     db.rollback()
                     continue
-            cancel_upload_session(db, upload)
+            cancel_upload_session_internal(db, upload)
             removed += 1
 
         sessions = db.execute(select(UploadSession)).scalars().all()

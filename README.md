@@ -55,9 +55,9 @@ A self-hosted media service for images and original video files. Videos use resu
 # 1. Clone
 git clone http://www.genkinet.net:10004/it_group/oss.git && cd oss
 
-# 2. Configure (set an admin password — recommended)
+# 2. Configure (ADMIN_PASSWORD is required for a fresh default install)
 cp .env.example .env
-#   Edit .env:  ADMIN_PASSWORD=your-admin-password
+#   Edit .env:  ADMIN_PASSWORD=your-strong-admin-password
 #               PORT / MAX_UPLOAD_SIZE_MB / PUBLIC_URL ... as needed
 
 # 3. Start
@@ -68,6 +68,13 @@ docker compose up -d
 #    Sign in with admin / $ADMIN_PASSWORD. New installs disable self-registration.
 #    Set ALLOW_REGISTRATION=open explicitly if public sign-up is intended.
 ```
+
+With the default `ALLOW_REGISTRATION=closed`, an empty installation fails fast
+if `ADMIN_PASSWORD` is missing, preventing a deployment with no usable account.
+The same protection applies to `invite` mode when `INVITE_CODE` is empty. An
+existing installation that already has users may leave the bootstrap password
+empty; otherwise set a strong password, use `open`, or configure invite mode
+and its code together.
 
 **Network mode**: the default `bridge` mode maps the host port (`PORT`) to the container. If you need the container to bind directly to the host network (e.g. bind a specific host IP), set `NETWORK_MODE=host` in `.env` — `PORT` then becomes the host port the app listens on directly.
 
@@ -94,24 +101,34 @@ curl -X POST http://<server-ip>:8080/api/upload \
 |---|---|---|
 | `PORT` | `8080` | Service port. In `bridge` mode: the host-mapped port; in `host` mode: the port the container listens on directly |
 | `NETWORK_MODE` | `bridge` | Network mode: `bridge` (default, port mapping) or `host` (bind directly to the host network) |
-| `MAX_UPLOAD_SIZE_MB` | `10` | Per-file upload size limit (MB) |
-| `MAX_VIDEO_SIZE_MB` | `2048` | Maximum original video size (MiB) |
-| `VIDEO_CHUNK_SIZE_MB` | `8` | Video chunk size (MiB); reverse-proxy body limit must be larger |
-| `VIDEO_UPLOAD_TTL_HOURS` | `168` | Sliding lifetime of an unfinished video session |
-| `MAX_ACTIVE_VIDEO_UPLOADS` | `3` | Maximum unfinished video sessions per user |
-| `MIN_FREE_SPACE_MB` | `1024` | Reserved free disk space; image/video writes fail with 507 below it |
-| `VIDEO_CLEANUP_INTERVAL_SECONDS` | `3600` | Interval between expired/incomplete video-upload cleanup passes |
-| `SQLITE_BUSY_TIMEOUT_MS` | `5000` | SQLite busy-writer wait time in milliseconds |
-| `SHORT_CODE_LENGTH` | `10` | Short-code length (base62 chars; longer = harder to enumerate) |
+| `FORWARDED_ALLOW_IPS` | `127.0.0.1` | Comma-separated trusted reverse-proxy IPs/CIDRs allowed to set `X-Forwarded-*`; never use `*` unless direct access is blocked and the proxy overwrites forwarded headers |
+| `MAX_UPLOAD_SIZE_MB` | `10` | Per-image limit in MiB (`1..1024`) |
+| `MAX_VIDEO_SIZE_MB` | `2048` | Maximum original video size in MiB (`1..1048576`) |
+| `VIDEO_CHUNK_SIZE_MB` | `8` | Chunk size in MiB (`1..1024`, not above the video limit) |
+| `VIDEO_UPLOAD_TTL_HOURS` | `168` | Sliding unfinished-session lifetime (`1..8760`) |
+| `MAX_ACTIVE_VIDEO_UPLOADS` | `3` | Unfinished video sessions per user (`1..1000`) |
+| `VIDEO_CHUNK_CONCURRENCY` | `3` | Maximum simultaneous inbound video chunks in the single worker (`1..32`); also exposed to the frontend scheduler |
+| `MIN_FREE_SPACE_MB` | `1024` | Reserved free disk space (`0..1048576`; `0` disables); writes fail with 507 below it |
+| `USER_STORAGE_QUOTA_MB` | `0` | Per-user completed media plus unfinished video reservations (`0..10485760` MiB; `0` = unlimited); team media also counts for its uploader |
+| `TEAM_STORAGE_QUOTA_MB` | `0` | Per-team completed media plus unfinished video reservations (`0..10485760` MiB; `0` = unlimited); team uploads must satisfy both user and team quotas |
+| `VIDEO_CLEANUP_INTERVAL_SECONDS` | `3600` | Expired-upload cleanup interval in seconds (`1..604800`) |
+| `SQLITE_BUSY_TIMEOUT_MS` | `5000` | SQLite busy-writer wait in milliseconds (`1..300000`) |
+| `SHORT_CODE_LENGTH` | `10` | Base62 short-code length (`6..32`) |
 | `PUBLIC_URL` | *(empty)* | Base prefix for returned links, e.g. `https://img.example.com`; leave empty to auto-derive from the request |
-| `ADMIN_PASSWORD` | *(empty)* | Creates/refreshes the `admin` account on startup; empty = no admin bootstrapped |
+| `ADMIN_PASSWORD` | *(empty)* | Required for a fresh closed-registration install; creates/refreshes `admin` |
 | `ALLOW_REGISTRATION` | `closed` | Registration policy: `open` / `invite` / `closed`; upgrades that need public sign-up must explicitly set `open` |
 | `INVITE_CODE` | *(empty)* | Invite code required when `ALLOW_REGISTRATION=invite` |
-| `REGISTRATION_RATE_LIMIT_PER_MINUTE` | `10` | Self-registration attempts per IP per minute |
-| `REGISTRATION_RATE_LIMIT_PER_USERNAME` | `3` | Self-registration attempts per username per minute |
+| `TOKEN_EXPIRE_MINUTES` | `10080` | Access-token lifetime (`1..525600`) |
+| `LOGIN_RATE_LIMIT_PER_MINUTE` / `LOGIN_RATE_LIMIT_PER_USERNAME` | `20` / `5` | Login attempts per IP/account per minute (`0` disables; max `1000000`) |
+| `REGISTRATION_RATE_LIMIT_PER_MINUTE` / `REGISTRATION_RATE_LIMIT_PER_USERNAME` | `10` / `3` | Registration attempts per IP/username per minute (`0` disables; max `1000000`) |
+| `IMAGES_RATE_LIMIT_PER_MINUTE` | `240` | Public media requests per IP per minute (`0` disables; max `1000000`) |
+| `UPLOAD_RATE_LIMIT_PER_MINUTE` | `60` | Upload requests per user per minute (`0` disables; max `1000000`) |
 | `JWT_SECRET` | *(empty)* | JWT signing secret; empty = ephemeral (all sessions reset on restart). Use `openssl rand -hex 32` |
 | `DEFAULT_VISIBILITY` | `private` | Default visibility for new uploads: `private` (only you/team/admins + signed links) or `public` (anyone with the link) |
-| `SIGNED_URL_TTL_SECONDS` | `86400` | TTL of expiring signed links for private media (seconds) |
+| `SIGNED_URL_TTL_SECONDS` | `86400` | Private-media signed-link TTL in seconds (`60..604800`) |
+
+Numeric settings are validated during configuration import. Invalid values
+raise a Pydantic `ValidationError` before the application accepts traffic.
 
 ## 🔌 API Overview
 
@@ -127,7 +144,7 @@ All endpoints except register / login / public image fetch / health require `Aut
 | POST | `/api/auth/login` | form `username` & `password` → `{access_token, user}` |
 | GET | `/api/auth/me` | current user |
 | POST | `/api/auth/change-password` | `{old_password, new_password}` |
-| GET | `/api/auth/config` | non-sensitive UI config: registration mode and upload limits |
+| GET | `/api/auth/config` | non-sensitive UI config: registration mode, upload/session/concurrency limits and user/team quota ceilings in bytes |
 
 ### Images
 
@@ -147,6 +164,7 @@ Compute SHA-256 for up to 1 MiB at the start, middle, and end, then set `fingerp
 | Method | Path | Description |
 |---|---|---|
 | POST | `/api/video-uploads` | initialize `{filename,size,name?,visibility?,team_id?,fingerprint}`; returns `upload_id`, `chunk_size`, `total_parts`, `uploaded_parts`, `expires_at` |
+| GET | `/api/video-uploads` | discover the current user's resumable sessions after refresh or IndexedDB loss; also returns `max_active` and `part_concurrency` |
 | GET | `/api/video-uploads/{upload_id}` | authoritative status and uploaded part numbers |
 | PUT | `/api/video-uploads/{upload_id}/parts/{part_number}` | raw bytes with `Content-Range` and `X-Chunk-SHA256`; identical replay is idempotent |
 | POST | `/api/video-uploads/{upload_id}/complete` | verify all parts, fingerprint and real container type, then atomically publish |
@@ -232,7 +250,7 @@ Backend (data lands in `./data`):
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log
 ```
 
 Frontend (Vite HMR, proxied to `http://localhost:8000`; override with `VITE_API_TARGET`):
@@ -254,15 +272,25 @@ Tests:
 pytest
 ```
 
+The repository includes a GitLab release gate in `.gitlab-ci.yml`: Python 3.12
+runs compile checks and pytest, Node 20 runs `npm ci`, Vitest and the production
+build, and a daemonless Docker CLI job validates whitespace and Compose syntax.
+Tags automatically run a real multi-stage Docker build with DinD; maintainers
+can enable the same build on another pipeline with `CI_DOCKER_BUILD=1`. No job
+starts the application.
+
 > Visiting `/` before the frontend is built returns a 404 hint (the Docker image ships with the built frontend; only bare-backend local runs are affected).
 
 ### Reverse proxy and deployment notes
 
 - Keep exactly one Uvicorn worker. SQLite and incomplete upload files are local; multi-instance/shared-object-storage deployment is outside this release.
 - Persist all of `/data`, including `/data/uploads`. The entrypoint initializes ownership once and then avoids recursively changing a large volume on every restart.
-- For Nginx, set `client_max_body_size` above `VIDEO_CHUNK_SIZE_MB` (for the default use at least `9m`) and do not strip `Range`, `If-Range`, `Content-Range`, or `Accept-Ranges`. Apply the equivalent request-body setting in Caddy.
-- The dependency floor `starlette>=0.49.1` includes the upstream fix for quadratic `Range` parsing. Keep dependencies updated when exposing `/v` publicly.
-- `/healthz` is a lightweight liveness check. `/readyz` additionally verifies SQLite readability, a durable write/remove probe in `/data`, and the configured free-space reserve; point traffic readiness checks at `/readyz`.
+- For Nginx, set `client_max_body_size` above `max(MAX_UPLOAD_SIZE_MB, VIDEO_CHUNK_SIZE_MB)` with room for multipart framing (with the defaults, use at least `12m`). Do not strip `Range`, `If-Range`, `Content-Range`, or `Accept-Ranges`; apply the equivalent body limit in Caddy.
+- Set `FORWARDED_ALLOW_IPS` to only the Nginx/Caddy source IP or Docker network CIDR. Otherwise every proxied visitor may share the proxy's rate-limit identity; trusting unverified sources lets clients spoof their address.
+- Starlette is pinned to `1.0.1`, which includes the earlier FileResponse Range DoS fix and the `1.0.1` malformed-Host fix. Keep dependencies updated when exposing media publicly.
+- `/healthz` is a lightweight liveness check. `/readyz` acquires a real SQLite writer lock, performs a zero-row update and rolls it back, then performs a durable write/remove probe in `/data` and checks the free-space reserve. Probes are single-flight and cache success or failure for about three seconds to prevent health-check bursts from multiplying writes. Point traffic readiness checks at `/readyz`.
+- Every response includes `X-Request-ID`. A caller-supplied ID is reused only when it matches the safe 1–64 character format; otherwise the app generates one. Request logs contain that safe request ID plus method, decoded path, status and duration—never other request headers or query parameters such as signed-link `sig`/`expires`.
+- Uvicorn's default access log is disabled to avoid duplicate or query-bearing records. Compose uses Docker's bounded `local` log driver (`10m`, 3 files); adjust these limits to match the host's retention policy.
 
 ### Maintenance-window backup and restore (SQLite WAL)
 
@@ -348,7 +376,7 @@ oss/
 - [ ] S3-compatible API (PicGo / ShareX / uPic clients)
 - [ ] S3/MinIO storage backend
 - [ ] HTTPS: one-click Caddy reverse proxy (auto TLS)
-- [ ] CI: GitHub Actions build → GHCR / Docker Hub
+- [x] GitLab CI release gate: backend tests, frontend tests/build, Compose and whitespace checks
 
 ## 🤝 Contributing
 

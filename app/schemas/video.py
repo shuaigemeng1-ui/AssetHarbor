@@ -42,6 +42,11 @@ class VideoListResponse(BaseModel):
 
 class VideoUploadStatus(BaseModel):
     upload_id: str
+    filename: str
+    size: int
+    name: str
+    visibility: str
+    fingerprint: str
     team_id: int | None = None
     chunk_size: int
     total_parts: int
@@ -49,6 +54,13 @@ class VideoUploadStatus(BaseModel):
     uploaded_parts: list[int]
     expires_at: datetime
     video: VideoInfo | None = None
+
+
+class VideoUploadListResponse(BaseModel):
+    items: list[VideoUploadStatus]
+    total: int
+    max_active: int
+    part_concurrency: int
 
 
 class VideoPartResponse(BaseModel):
