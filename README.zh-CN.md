@@ -95,7 +95,7 @@ curl -X POST http://服务器IP:8080/api/upload \
 | `ALLOW_REGISTRATION` | `open` | 注册策略：`open` 开放 / `invite` 邀请码 / `closed` 关闭 |
 | `INVITE_CODE` | *(空)* | `ALLOW_REGISTRATION=invite` 时的注册邀请码 |
 | `JWT_SECRET` | *(空)* | JWT 签名密钥；留空则每次重启登录态失效（建议 `openssl rand -hex 32` 生成） |
-| `DEFAULT_VISIBILITY` | `public` | 新上传图片的默认可见性：`public` / `private` |
+| `DEFAULT_VISIBILITY` | `private` | 新上传图片的默认可见性：`private`（仅自己/团队/管理员 + 签名链接）或 `public`（任何人可访问） |
 | `SIGNED_URL_TTL_SECONDS` | `86400` | 私密图签名链接有效期（秒） |
 
 ## 🔌 API 概览
@@ -117,9 +117,10 @@ curl -X POST http://服务器IP:8080/api/upload \
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/upload` | multipart `file`，可选 `name`、`visibility`、`team_id` |
+| POST | `/api/upload` | multipart `file`，可选 `name`、`visibility`、`team_id`（默认私密） |
 | GET | `/i/{code}` | 获取图片（公开：任何人；私密：属主/团队成员/管理员/签名链接） |
 | GET | `/api/images?limit&offset&q` | 列出我的图片（管理员看全部），按名称/文件名/短码搜索 |
+| PATCH | `/api/images/{code}` | 修改 `name` / `visibility`（属主/管理员/团队管理员） |
 | DELETE | `/api/images/{code}` | 删除图片（属主/管理员/团队管理员） |
 | GET | `/api/images/{code}/link?ttl` | 生成限时签名链接（属主/团队成员/管理员） |
 

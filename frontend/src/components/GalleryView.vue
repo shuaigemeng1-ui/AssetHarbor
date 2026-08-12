@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import { deleteImage, listImages, uploadFile } from '../api'
+import { deleteImage, listImages, updateImage, uploadFile } from '../api'
 import ImageResult from './ImageResult.vue'
 import UploadDropzone from './UploadDropzone.vue'
 
@@ -11,7 +11,7 @@ const loading = ref(true)
 const loadError = ref('')
 const query = ref('')
 const uploadName = ref('')
-const uploadVisibility = ref('public')
+const uploadVisibility = ref('private')
 
 let nextId = 1
 let searchTimer = null
@@ -66,6 +66,16 @@ async function onDelete(item) {
   }
 }
 
+async function onToggleVisibility(item) {
+  const next = item.result.visibility === 'private' ? 'public' : 'private'
+  if (next === 'public' && !window.confirm('设为公开后，任何人拿到链接都能访问。确定？')) return
+  try {
+    item.result = await updateImage(item.result.code, { visibility: next })
+  } catch (err) {
+    window.alert(`操作失败：${err.message}`)
+  }
+}
+
 function canDelete(item) {
   return props.user.role === 'admin' || item.result?.owner_id === props.user.id
 }
@@ -77,8 +87,8 @@ function canDelete(item) {
       <input v-model="uploadName" class="name-input" type="text"
              placeholder="图片命名（可选，多张自动加序号）" maxlength="255" />
       <select v-model="uploadVisibility" class="vis-select">
-        <option value="public">公开 · 任何人可访问</option>
         <option value="private">私密 · 仅自己/团队可见</option>
+        <option value="public">公开 · 任何人可访问</option>
       </select>
     </div>
     <UploadDropzone @files="handleFiles" />
@@ -101,7 +111,8 @@ function canDelete(item) {
       </p>
       <ul class="results">
         <li v-for="item in items" :key="item.id">
-          <ImageResult :item="item" :deletable="item.status === 'done' && canDelete(item)" @delete="onDelete(item)" />
+          <ImageResult :item="item" :deletable="item.status === 'done' && canDelete(item)"
+                       @delete="onDelete(item)" @toggle-visibility="onToggleVisibility(item)" />
         </li>
       </ul>
     </template>

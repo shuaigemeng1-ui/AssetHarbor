@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ...core.config import settings
 from ...models import Image, User
-from ...schemas import ImageInfo, ImageListResponse, SignedLinkResponse
+from ...schemas import ImageInfo, ImageListResponse, ImageUpdate, SignedLinkResponse
 from ...services.images import can_manage_image, delete_image
 from ...services.signing import build_image_url, build_signed_image_url
 from ...services.teams import is_team_member
@@ -92,6 +92,54 @@ def delete_image_endpoint(
     if not can_manage_image(db, current_user, image):
         raise HTTPException(status_code=403, detail="you can only delete images you manage")
     delete_image(db, image)
+
+
+@router.patch(
+    "/images/{code}",
+    response_model=ImageInfo,
+    summary="Update an image's name/visibility (owner/admin/team-manager)",
+)
+def update_image_endpoint(
+    code: str,
+    request: Request,
+    payload: ImageUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ImageInfo:
+    image = db.execute(select(Image).where(Image.code == code)).scalar_one_or_none()
+    if image is None:
+        raise HTTPException(status_code=404, detail="image not found")
+    if not can_manage_image(db, current_user, image):
+        raise HTTPException(status_code=403, detail="you can only modify images you manage")
+
+    if payload.visibility is not None:
+        if payload.visibility not in ("public", "private"):
+            raise HTTPException(status_code=422, detail="visibility must be 'public' or 'private'")
+        image.visibility = payload.visibility
+    if payload.name is not None:
+        image.name = payload.name.strip() or image.name
+    db.commit()
+    db.refresh(image)
+
+    owner_username = None
+    if image.owner_id is not None:
+        owner = db.get(User, image.owner_id)
+        owner_username = owner.username if owner else None
+
+    return ImageInfo(
+        code=image.code,
+        url=build_image_url(request, image.code),
+        size=image.size,
+        content_type=image.content_type,
+        sha256=image.sha256,
+        created_at=image.created_at,
+        name=image.name,
+        visibility=image.visibility,
+        owner_id=image.owner_id,
+        team_id=image.team_id,
+        original_filename=image.original_filename,
+        owner_username=owner_username,
+    )
 
 
 @router.get(

@@ -96,7 +96,7 @@ curl -X POST http://<server-ip>:8080/api/upload \
 | `ALLOW_REGISTRATION` | `open` | Registration policy: `open` / `invite` / `closed` |
 | `INVITE_CODE` | *(empty)* | Invite code required when `ALLOW_REGISTRATION=invite` |
 | `JWT_SECRET` | *(empty)* | JWT signing secret; empty = ephemeral (all sessions reset on restart). Use `openssl rand -hex 32` |
-| `DEFAULT_VISIBILITY` | `public` | Default visibility for new uploads: `public` / `private` |
+| `DEFAULT_VISIBILITY` | `private` | Default visibility for new uploads: `private` (only you/team/admins + signed links) or `public` (anyone with the link) |
 | `SIGNED_URL_TTL_SECONDS` | `86400` | TTL of expiring signed links for private images (seconds) |
 
 ## 🔌 API Overview
@@ -118,9 +118,10 @@ All endpoints except register / login / public image fetch / health require `Aut
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/api/upload` | multipart `file`, optional `name`, `visibility`, `team_id` |
+| POST | `/api/upload` | multipart `file`, optional `name`, `visibility`, `team_id` (defaults to private) |
 | GET | `/i/{code}` | fetch image (public: anyone; private: owner/team/admin/signed link) |
 | GET | `/api/images?limit&offset&q` | list my images (admins see all), search by name/filename/code |
+| PATCH | `/api/images/{code}` | update `name` / `visibility` (owner/admin/team-manager) |
 | DELETE | `/api/images/{code}` | delete (owner/admin/team-manager) |
 | GET | `/api/images/{code}/link?ttl` | expiring signed link (owner/admin/team-member) |
 

@@ -11,7 +11,7 @@ from .auth import (
     TokenResponse,
     UserOut,
 )
-from .image import ImageInfo, ImageListResponse, SignedLinkResponse, UploadResponse
+from .image import ImageInfo, ImageListResponse, ImageUpdate, SignedLinkResponse, UploadResponse
 from .key import ApiKeyCreate, ApiKeyCreated, ApiKeyOut
 from .meta import HealthResponse
 from .team import (
@@ -34,6 +34,7 @@ __all__ = [
     "HealthResponse",
     "ImageInfo",
     "ImageListResponse",
+    "ImageUpdate",
     "RegisterRequest",
     "ResetPasswordRequest",
     "RoleUpdate",

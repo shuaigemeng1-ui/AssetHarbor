@@ -105,6 +105,14 @@ export function deleteImage(code) {
   return request(`/api/images/${code}`, { method: 'DELETE' })
 }
 
+export function updateImage(code, { name, visibility } = {}) {
+  return request(`/api/images/${code}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, visibility }),
+  })
+}
+
 // --- teams -----------------------------------------------------------------
 
 export function createTeam(name, description) {

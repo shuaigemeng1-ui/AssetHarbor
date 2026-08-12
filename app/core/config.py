@@ -40,7 +40,9 @@ class Settings(BaseSettings):
 
     # --- security ----------------------------------------------------------
     # Default visibility for new uploads: public | private.
-    default_visibility: str = "public"
+    # private by default — uploads are not openly accessible until you
+    # explicitly share them (public) or issue a signed link.
+    default_visibility: str = "private"
     # TTL (seconds) of expiring signed URLs used to view private images.
     signed_url_ttl_seconds: int = 60 * 60 * 24  # 24h
     # In-process rate limits, per 60s window. See app/services/ratelimit.py.

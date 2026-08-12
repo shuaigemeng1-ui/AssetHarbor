@@ -142,6 +142,49 @@ def test_admin_can_delete_any_image(client):
     assert client.delete(f"/api/images/{code}", headers=auth(atoken)).status_code == 204
 
 
+# --- update (PATCH) --------------------------------------------------------
+
+
+def test_patch_visibility_owner(client):
+    _, token = new_user(client)
+    h = auth(token)
+    code = upload(client, token).json()["code"]  # test env default is public
+
+    r = client.patch(f"/api/images/{code}", headers=h, json={"visibility": "private"})
+    assert r.status_code == 200
+    assert r.json()["visibility"] == "private"
+    # 改私密后匿名访问 404
+    assert client.get(f"/i/{code}").status_code == 404
+
+    # 改回公开后任何人可访问
+    assert client.patch(f"/api/images/{code}", headers=h, json={"visibility": "public"}).status_code == 200
+    assert client.get(f"/i/{code}").status_code == 200
+
+
+def test_patch_name(client):
+    _, token = new_user(client)
+    h = auth(token)
+    code = upload(client, token).json()["code"]
+    r = client.patch(f"/api/images/{code}", headers=h, json={"name": "新名字"})
+    assert r.status_code == 200
+    assert r.json()["name"] == "新名字"
+
+
+def test_patch_visibility_forbidden_for_others(client):
+    _, t1 = new_user(client)
+    _, t2 = new_user(client)
+    code = upload(client, t1).json()["code"]
+    assert client.patch(f"/api/images/{code}", headers=auth(t2), json={"visibility": "private"}).status_code == 403
+    assert client.patch(f"/api/images/{code}", json={"visibility": "private"}).status_code == 401
+
+
+def test_patch_invalid_visibility(client):
+    _, token = new_user(client)
+    h = auth(token)
+    code = upload(client, token).json()["code"]
+    assert client.patch(f"/api/images/{code}", headers=h, json={"visibility": "sneaky"}).status_code == 422
+
+
 # --- rate limit ------------------------------------------------------------
 
 

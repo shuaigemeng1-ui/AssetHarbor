@@ -10,6 +10,7 @@ import {
   listTeamImages,
   listTeams,
   removeTeamMember,
+  updateImage,
   uploadFile,
 } from '../api'
 import ImageResult from './ImageResult.vue'
@@ -26,7 +27,7 @@ const spaceItems = ref([])
 const spaceLoading = ref(false)
 const spaceQuery = ref('')
 const uploadName = ref('')
-const uploadVisibility = ref('public')
+const uploadVisibility = ref('private')
 
 let nextId = 1
 let searchTimer = null
@@ -158,6 +159,16 @@ async function onDelete(item) {
   }
 }
 
+async function onToggleVisibility(item) {
+  const next = item.result.visibility === 'private' ? 'public' : 'private'
+  if (next === 'public' && !window.confirm('设为公开后，任何人拿到链接都能访问。确定？')) return
+  try {
+    item.result = await updateImage(item.result.code, { visibility: next })
+  } catch (err) {
+    window.alert(`操作失败：${err.message}`)
+  }
+}
+
 function canDelete(item) {
   if (props.user.role === 'admin' || item.result?.owner_id === props.user.id) return true
   return selected.value && (selected.value.role === 'owner' || selected.value.role === 'admin')
@@ -220,8 +231,8 @@ onMounted(loadTeams)
         <div class="options">
           <input v-model="uploadName" class="name-input" placeholder="图片命名（可选）" maxlength="255" />
           <select v-model="uploadVisibility" class="vis-select">
+            <option value="private">私密 · 仅团队可见</option>
             <option value="public">公开 · 任何人可访问</option>
-            <option value="private">仅团队可见</option>
           </select>
         </div>
         <UploadDropzone @files="handleFiles" />
@@ -232,7 +243,8 @@ onMounted(loadTeams)
         <p v-if="spaceLoading" class="status">加载中…</p>
         <ul v-else class="results">
           <li v-for="item in spaceItems" :key="item.id">
-            <ImageResult :item="item" :deletable="item.status === 'done' && canDelete(item)" @delete="onDelete(item)" />
+            <ImageResult :item="item" :deletable="item.status === 'done' && canDelete(item)"
+                         @delete="onDelete(item)" @toggle-visibility="onToggleVisibility(item)" />
           </li>
         </ul>
         <p v-if="!spaceLoading && !spaceItems.length" class="status">团队空间还没有图片</p>

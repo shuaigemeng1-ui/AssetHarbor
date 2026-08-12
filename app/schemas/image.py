@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class UploadResponse(BaseModel):
@@ -16,6 +16,11 @@ class UploadResponse(BaseModel):
     visibility: str
     owner_id: int | None
     team_id: int | None = None
+
+
+class ImageUpdate(BaseModel):
+    name: str | None = Field(default=None, max_length=255)
+    visibility: str | None = None
 
 
 class ImageInfo(UploadResponse):

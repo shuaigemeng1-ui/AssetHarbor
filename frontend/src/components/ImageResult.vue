@@ -8,7 +8,7 @@ const props = defineProps({
   deletable: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['delete'])
+const emit = defineEmits(['delete', 'toggle-visibility'])
 
 const copied = ref(false)
 const signedUrl = ref(null)
@@ -79,6 +79,9 @@ async function copyUrl() {
 
       <button v-if="item.result" class="copy" :disabled="copied" :title="copyTarget" @click="copyUrl">
         {{ copied ? '已复制 ✓' : '复制链接' }}
+      </button>
+      <button v-if="deletable && item.result" class="copy" :title="'切换公开/私密'" @click="emit('toggle-visibility')">
+        {{ item.result.visibility === 'private' ? '设为公开' : '设为私密' }}
       </button>
       <button v-if="deletable && item.result" class="copy danger" title="删除图片" @click="emit('delete')">
         删除
