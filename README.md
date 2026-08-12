@@ -11,7 +11,7 @@
 - 🖼️ **多格式支持**：jpg / png / gif / webp / svg / bmp / ico / avif / tiff，**按魔数嗅探真实类型**，不信任文件名
 - 🔒 **安全默认值**：非 root 运行、SVG 附件式下发（防存储型 XSS）、上传大小限制、不可变缓存头
 - 📦 **API 优先**：`POST /api/upload` 一行命令即可上传（后续兼容 PicGo / ShareX / uPic 客户端）
-- 📋 **极简 Web UI**：拖拽上传、预览、一键复制链接
+- 🖥️ **Vue 3 前端**：SPA 拖拽上传、预览、一键复制链接，与后端同容器交付（多阶段构建）
 
 ## 🚀 快速开始
 
@@ -84,23 +84,42 @@ GET /i/{code}
 
 ## 🛠️ 本地开发
 
+后端（数据落在 `./data`）：
+
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
+uvicorn app.main:app --reload     # http://localhost:8080
+```
 
-# 启动开发服务器（数据落在 ./data）
-uvicorn app.main:app --reload
+前端（Vite 热更新，已配置代理到 8080）：
 
-# 跑测试
+```bash
+cd frontend && npm install && npm run dev   # http://localhost:5173
+```
+
+构建前端产物（供后端/镜像托管，产物在 `frontend/dist`）：
+
+```bash
+cd frontend && npm run build
+# 本地直接让后端托管时：
+mkdir -p ../app/static && cp -r dist/* ../app/static/
+```
+
+跑测试：
+
+```bash
 pytest
 ```
+
+> 前端未构建时，访问 `/` 会得到 404 提示（镜像内已内置构建产物，只有本地裸跑后端会触发）。
 
 ## 📁 项目结构
 
 ```
 oss/
-├── app/
-│   ├── main.py              # FastAPI 入口
+├── app/                     # Python 后端（FastAPI）
+│   ├── main.py              # 应用入口 + SPA 托管
 │   ├── config.py            # 环境变量配置（OSS_* 前缀）
 │   ├── database.py          # SQLAlchemy engine / session
 │   ├── models.py            # 数据模型（当前：Image）
@@ -112,9 +131,17 @@ oss/
 │   ├── services/
 │   │   ├── shortcode.py     # 密码学随机 base62 短码
 │   │   └── images.py        # 魔数嗅探 + 上传落盘
-│   └── static/index.html    # 极简上传页（无构建步骤）
+│   └── static/              # 前端构建产物（Docker 多阶段注入）
+├── frontend/                # Vue 3 + Vite 前端源码
+│   ├── src/
+│   │   ├── App.vue
+│   │   ├── components/      # UploadDropzone / ImageResult
+│   │   ├── api.js
+│   │   └── style.css
+│   ├── vite.config.js       # 含 dev 代理到后端 8080
+│   └── package.json
 ├── tests/                   # pytest + TestClient
-├── Dockerfile               # 多阶段无关、非 root、健康检查
+├── Dockerfile               # 多阶段：node 构建前端 → python 运行时
 ├── docker-compose.yml
 └── .env.example
 ```
@@ -129,11 +156,12 @@ oss/
 
 ## 🗺️ 路线图
 
-- [x] MVP：上传 API、短码 URL、SQLite、极简前端、Docker 部署
+- [x] MVP：上传 API、短码 URL、SQLite、Docker 部署
+- [x] 前端升级：Vue 3 + Vite SPA，多阶段构建单容器交付
 - [ ] 认证与角色：JWT 登录、admin/user、注册策略（开放/邀请码）、管理员密码环境变量
 - [ ] 多租户隔离：用户独立命名空间，图片 private/public，私有图仅本人可见
 - [ ] 群组：建组、加入、组内共享
-- [ ] 前端打磨：Vue 3 SPA、画廊、拖拽增强
+- [ ] 前端打磨：画廊、图片管理、拖拽增强
 - [ ] S3 兼容 API（对接 PicGo / ShareX / uPic 截图客户端）
 - [ ] S3/MinIO 存储后端适配层
 - [ ] HTTPS：Caddy 反代一键启用（自动续期证书）

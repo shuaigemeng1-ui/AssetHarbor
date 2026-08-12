@@ -9,3 +9,6 @@ __pycache__/
 .pytest_cache/
 README.md
 LICENSE
+frontend/node_modules/
+frontend/dist/
+app/static/

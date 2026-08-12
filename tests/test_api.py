@@ -1,5 +1,7 @@
 """API tests for upload + short-code image serving."""
 
+import pytest
+
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 FAKE_PNG = PNG_MAGIC + b"\x00" * 64
 
@@ -62,6 +64,26 @@ def test_healthz(client):
 
 
 def test_index_page_served(client):
+    from app.main import STATIC_DIR
+
+    if not (STATIC_DIR / "index.html").is_file():
+        pytest.skip("frontend not built; run `npm --prefix frontend run build`")
     resp = client.get("/")
     assert resp.status_code == 200
     assert "oss" in resp.text
+
+
+def test_spa_fallback_serves_index_for_unknown_paths(client):
+    from app.main import STATIC_DIR
+
+    if not (STATIC_DIR / "index.html").is_file():
+        pytest.skip("frontend not built; run `npm --prefix frontend run build`")
+    resp = client.get("/some/client/route")
+    assert resp.status_code == 200
+    assert "oss" in resp.text
+
+
+def test_unknown_api_route_returns_json_404(client):
+    resp = client.get("/api/nope")
+    assert resp.status_code == 404
+    assert resp.headers["content-type"].startswith("application/json")

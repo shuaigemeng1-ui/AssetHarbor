@@ -1,3 +1,8 @@
+# --- Frontend build output / deps ---
+frontend/node_modules/
+frontend/dist/
+app/static/
+
 # Python
 __pycache__/
 *.py[cod]
