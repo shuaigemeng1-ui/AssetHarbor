@@ -10,6 +10,7 @@ const props = defineProps({
   dialogRole: { type: String, default: 'dialog' },
   initialFocus: { type: String, default: '' },
   wide: { type: Boolean, default: false },
+  fitViewport: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['close'])
@@ -76,7 +77,7 @@ onBeforeUnmount(() => {
       <section
         ref="panel"
         class="base-modal-panel"
-        :class="{ wide }"
+        :class="{ wide, scrollable: !fitViewport, 'viewport-fit': fitViewport }"
         :role="dialogRole"
         aria-modal="true"
         :aria-labelledby="labelledBy"
@@ -111,12 +112,33 @@ onBeforeUnmount(() => {
 
 .base-modal-panel {
   width: min(520px, 100%);
-  max-height: min(760px, calc(100vh - 40px));
-  overflow: auto;
   border: 1px solid var(--border);
   border-radius: 20px;
   background: var(--panel);
   box-shadow: 0 30px 90px rgb(15 23 42 / 28%);
+}
+
+.base-modal-panel.scrollable {
+  max-height: min(760px, calc(100vh - 40px));
+  overflow: auto;
+}
+
+.base-modal-panel.viewport-fit {
+  height: min(760px, calc(100vh - 40px));
+  height: min(760px, calc(100dvh - 40px));
+  max-height: none;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.base-modal-panel.viewport-fit .base-modal-head {
+  position: static;
+  border-radius: 19px 19px 0 0;
+}
+
+.base-modal-panel.viewport-fit .base-modal-content {
+  min-height: 0;
+  display: grid;
 }
 
 .base-modal-panel.wide {
@@ -176,7 +198,13 @@ onBeforeUnmount(() => {
 
 @media (max-width: 580px) {
   .base-modal-backdrop { padding: 8px; }
-  .base-modal-panel { max-height: calc(100vh - 16px); border-radius: 16px; }
+  .base-modal-panel { border-radius: 16px; }
+  .base-modal-panel.scrollable { max-height: calc(100vh - 16px); }
+  .base-modal-panel.viewport-fit {
+    height: calc(100vh - 16px);
+    height: calc(100dvh - 16px);
+  }
+  .base-modal-panel.viewport-fit .base-modal-head { border-radius: 15px 15px 0 0; }
   .base-modal-head, .base-modal-content { padding-inline: 17px; }
   .base-modal-footer { padding-inline: 17px; }
 }

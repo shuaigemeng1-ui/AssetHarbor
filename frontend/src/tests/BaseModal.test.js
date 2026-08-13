@@ -43,4 +43,19 @@ describe('BaseModal focus and nested scroll locking', () => {
     expect(document.body.classList.contains('modal-open')).toBe(false)
     expect(document.activeElement).toBe(trigger)
   })
+
+  it('removes the scrolling panel mode when content fits the viewport', async () => {
+    const modal = mount(BaseModal, {
+      attachTo: document.body,
+      props: { title: '视频播放', labelledBy: 'video-title', fitViewport: true, wide: true },
+      slots: { default: '<div class="fixed-player">播放器</div>' },
+    })
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    const panel = document.body.querySelector('.base-modal-panel')
+    expect(panel.classList.contains('viewport-fit')).toBe(true)
+    expect(panel.classList.contains('scrollable')).toBe(false)
+
+    modal.unmount()
+  })
 })

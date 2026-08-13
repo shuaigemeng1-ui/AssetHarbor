@@ -60,6 +60,7 @@ onMounted(() => {
     :description="`${formatBytes(item.size)} · ${item.content_type}`"
     labelled-by="player-title"
     wide
+    fit-viewport
     @close="emit('close')"
   >
     <section class="player-content">
@@ -80,14 +81,18 @@ onMounted(() => {
 <style scoped>
 .player-content {
   width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
   color: #fff;
 }
 
 .player-stage {
   width: 100%;
+  height: 100%;
   min-height: 0;
-  aspect-ratio: 16 / 9;
-  max-height: calc(100dvh - 220px);
+  display: grid;
+  place-items: center;
   border-radius: 14px;
   background: #05080f;
 }
@@ -95,7 +100,9 @@ onMounted(() => {
 .player-stage video {
   width: 100%;
   height: 100%;
+  max-width: 100%;
   max-height: none;
+  display: block;
   border-radius: inherit;
   background: #05080f;
   object-fit: contain;
@@ -103,12 +110,22 @@ onMounted(() => {
 
 .player-fallback {
   width: 100%;
-  min-height: 100%;
+  height: 100%;
+  min-height: 0;
+  max-width: none;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  padding: clamp(24px, 6vh, 70px) 25px;
+  text-align: center;
+}
+
+.player-fallback p {
+  color: #98a2b3;
 }
 
 @media (max-width: 580px) {
   .player-stage {
-    max-height: calc(100dvh - 190px);
     border-radius: 10px;
   }
 }
