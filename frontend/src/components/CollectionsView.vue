@@ -459,7 +459,7 @@ onBeforeUnmount(() => {
 
 .section-heading h2 {
   margin: 0 0 5px;
-  font-size: 24px;
+  font-size: 28px;
   font-weight: 680;
   letter-spacing: -.025em;
 }
@@ -467,13 +467,13 @@ onBeforeUnmount(() => {
 .section-heading .eyebrow {
   margin-bottom: 5px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: .1em;
 }
 
 .section-heading p:not(.eyebrow) {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .section-heading > .primary {
@@ -481,7 +481,7 @@ onBeforeUnmount(() => {
   border-radius: 5px;
   padding: 0 13px;
   box-shadow: none;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .collections-layout {
@@ -515,7 +515,7 @@ onBeforeUnmount(() => {
   background: #fff;
   color: var(--text);
   box-shadow: none;
-  font-size: 12px;
+  font-size: 14px;
   outline: 0;
 }
 
@@ -536,7 +536,7 @@ onBeforeUnmount(() => {
   right: 24px;
   min-width: 18px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   text-align: center;
   transform: translateY(-50%);
 }
@@ -577,7 +577,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   border: 1px solid var(--border);
   color: var(--accent);
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .folder-copy {
@@ -590,7 +590,7 @@ onBeforeUnmount(() => {
 .folder-copy strong {
   overflow: hidden;
   color: var(--text);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 620;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -598,14 +598,14 @@ onBeforeUnmount(() => {
 
 .folder-copy small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .sidebar-status,
 .sidebar-empty {
   padding: 36px 14px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
   text-align: center;
 }
 
@@ -637,19 +637,19 @@ onBeforeUnmount(() => {
 
 .collection-title h3 {
   margin: 0 0 3px;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 660;
 }
 
 .collection-title p {
   margin: 0 0 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .collection-title small {
   color: var(--muted-light);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .collection-actions {
@@ -685,7 +685,7 @@ onBeforeUnmount(() => {
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .kind-tabs button.active {
@@ -704,7 +704,7 @@ onBeforeUnmount(() => {
   display: grid;
   place-content: center;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .collection-media-grid {
@@ -734,7 +734,7 @@ onBeforeUnmount(() => {
 .collection-empty h3,
 .detail-placeholder h3 {
   margin: 0 0 5px;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 630;
 }
 
@@ -742,7 +742,7 @@ onBeforeUnmount(() => {
 .detail-placeholder p {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .group-editor {
@@ -754,7 +754,7 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 5px;
   color: var(--text);
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 650;
 }
 
@@ -766,6 +766,7 @@ onBeforeUnmount(() => {
   padding: 9px 10px;
   background: #fff;
   color: var(--text);
+  font-size: 14px;
   box-shadow: none;
   outline: 0;
   resize: vertical;
@@ -800,7 +801,7 @@ onBeforeUnmount(() => {
 
 .group-editor .error-text {
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 @media (max-width: 1000px) {
@@ -821,5 +822,9 @@ onBeforeUnmount(() => {
   .collection-actions,
   .item-search { width: 100%; }
   .collection-media-grid { grid-template-columns: 1fr; }
+  .group-search input,
+  .item-search,
+  .group-editor input,
+  .group-editor textarea { font-size: 16px; }
 }
 </style>

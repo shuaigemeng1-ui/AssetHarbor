@@ -593,7 +593,7 @@ onBeforeUnmount(() => {
 
 .account-heading p {
   max-width: 720px;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.6;
 }
 
@@ -642,7 +642,7 @@ onBeforeUnmount(() => {
 .password-panel-head h3 {
   margin: 0 0 4px;
   color: var(--text, #242424);
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.3;
 }
 
@@ -651,7 +651,7 @@ onBeforeUnmount(() => {
 .password-panel-head p {
   margin: 0;
   color: var(--muted, #737373);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.55;
 }
 
@@ -680,12 +680,12 @@ onBeforeUnmount(() => {
 
 .key-warning strong {
   color: #6b4d1f;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .key-warning span {
   color: var(--muted, #737373);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -704,13 +704,13 @@ onBeforeUnmount(() => {
   background: #fff;
   color: #44403c;
   overflow-wrap: anywhere;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
 .panel-error {
   margin: 0 18px 14px;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .key-table-wrap {
@@ -750,7 +750,7 @@ onBeforeUnmount(() => {
   height: 46px;
   background: #fafaf9;
   color: #626262;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 680;
   white-space: nowrap;
 }
@@ -767,7 +767,7 @@ onBeforeUnmount(() => {
 .key-table td {
   height: 62px;
   color: #585858;
-  font-size: 10px;
+  font-size: 14px;
 }
 
 .key-table tbody tr:last-child td,
@@ -779,7 +779,7 @@ onBeforeUnmount(() => {
   display: block;
   overflow: hidden;
   color: #454545;
-  font-size: 11px;
+  font-size: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -797,7 +797,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   color: #4f5661;
-  font-size: 10px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -826,7 +826,7 @@ onBeforeUnmount(() => {
 .key-row-actions .compact {
   min-height: 30px;
   padding: 5px 8px;
-  font-size: 10px;
+  font-size: 13px;
 }
 
 .key-row-actions .danger {
@@ -847,7 +847,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 8px;
   color: var(--muted, #737373);
-  font-size: 10px;
+  font-size: 13px;
   text-align: center;
 }
 
@@ -867,7 +867,7 @@ onBeforeUnmount(() => {
 }
 
 .api-help-head h3 {
-  font-size: 13px;
+  font-size: 16px;
 }
 
 .api-help-head a {
@@ -876,7 +876,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 5px;
   color: var(--accent, #0b63e5);
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 650;
   text-decoration: none;
   white-space: nowrap;
@@ -905,7 +905,7 @@ onBeforeUnmount(() => {
   background: transparent;
   color: #616161;
   cursor: pointer;
-  font-size: 10px;
+  font-size: 14px;
   font-weight: 620;
 }
 
@@ -942,7 +942,7 @@ onBeforeUnmount(() => {
   padding: 13px 14px 13px 40px;
   background: #fafaf9;
   color: #8a8a8a;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.8;
 }
 
@@ -952,7 +952,7 @@ onBeforeUnmount(() => {
 
 .api-code-example code {
   color: #4d5969;
-  font-size: 10px;
+  font-size: 12px;
   white-space: pre;
 }
 
@@ -987,7 +987,7 @@ onBeforeUnmount(() => {
 
 .security-field > label {
   color: #525252;
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 650;
 }
 
@@ -1015,7 +1015,7 @@ onBeforeUnmount(() => {
   background: transparent;
   color: var(--text, #242424);
   outline: 0;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .password-input input::placeholder,
@@ -1052,7 +1052,7 @@ onBeforeUnmount(() => {
 .security-form .form-error,
 .security-form .ok-msg {
   margin: 0;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .security-form .ok-msg {
@@ -1069,13 +1069,13 @@ onBeforeUnmount(() => {
 
 .security-note strong {
   color: #555;
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .security-note p {
   margin: 5px 0 0;
   color: var(--muted, #737373);
-  font-size: 10px;
+  font-size: 13px;
   line-height: 1.6;
 }
 
@@ -1086,7 +1086,7 @@ onBeforeUnmount(() => {
 
 .key-create-form label {
   color: #525252;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 650;
 }
 
@@ -1099,7 +1099,7 @@ onBeforeUnmount(() => {
   background: #fff;
   color: var(--text, #242424);
   outline: 0;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .key-create-form input:focus {
@@ -1109,12 +1109,12 @@ onBeforeUnmount(() => {
 
 .key-create-form small {
   color: var(--muted, #737373);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .key-create-form .form-error {
   margin: 4px 0 0;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 @container account-page (max-width: 900px) {
@@ -1131,15 +1131,15 @@ onBeforeUnmount(() => {
   .api-help { order: 3; }
 }
 
-@container api-key-panel (max-width: 620px) {
+@container api-key-panel (max-width: 720px) {
   .key-table {
-    min-width: 620px;
+    min-width: 720px;
   }
 }
 
 @container account-page (max-width: 620px) {
   .account-heading h2 {
-    font-size: 22px;
+    font-size: 26px;
   }
 
   .account-layout,
@@ -1184,6 +1184,11 @@ onBeforeUnmount(() => {
 
   .key-line {
     display: grid;
+  }
+
+  .password-input input,
+  .key-create-form input {
+    font-size: 16px;
   }
 }
 
@@ -1233,7 +1238,7 @@ onBeforeUnmount(() => {
   .key-table tbody th::before {
     content: attr(data-label);
     color: #777;
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 650;
   }
 

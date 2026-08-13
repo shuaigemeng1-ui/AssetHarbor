@@ -331,7 +331,7 @@ async function saveName() {
 
 .inspector-heading h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.35;
 }
 
@@ -360,14 +360,14 @@ async function saveName() {
 
 .heading-copy p {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.3;
 }
 
 .heading-copy h2 {
   overflow: hidden;
   margin-top: 2px;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -380,7 +380,7 @@ async function saveName() {
   padding: 4px 8px;
   color: var(--muted);
   background: var(--panel-soft);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 650;
 }
 
@@ -419,11 +419,11 @@ async function saveName() {
 
 .preview-empty strong {
   color: var(--text);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .preview-empty small {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .preview-empty button {
@@ -433,7 +433,7 @@ async function saveName() {
   color: var(--accent);
   cursor: pointer;
   font: inherit;
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .inspector-section {
@@ -447,7 +447,7 @@ async function saveName() {
 
 .inspector-section h3 {
   margin: 0 0 11px;
-  font-size: 12px;
+  font-size: 16px;
   line-height: 1.4;
 }
 
@@ -471,14 +471,14 @@ async function saveName() {
 
 .metadata-list dt {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .metadata-list dd {
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;
-  font-size: 11px;
+  font-size: 13px;
   text-align: right;
 }
 
@@ -495,7 +495,7 @@ async function saveName() {
 
 .section-title-row span {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .link-field {
@@ -508,7 +508,7 @@ async function saveName() {
   background: var(--panel-soft);
   color: var(--muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.45;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -523,7 +523,7 @@ async function saveName() {
   color: var(--text);
   cursor: pointer;
   font: inherit;
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -574,7 +574,7 @@ async function saveName() {
 }
 
 .rename-form label {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 650;
 }
 
@@ -583,6 +583,7 @@ async function saveName() {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px 11px;
+  font-size: 14px;
   outline: 0;
 }
 
@@ -594,7 +595,7 @@ async function saveName() {
 .form-error {
   margin: 4px 0 0;
   color: var(--danger);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 @media (max-width: 900px) {
@@ -611,5 +612,6 @@ async function saveName() {
   .inspector-heading,
   .inspector-section { padding-inline: 15px; }
   .inspector-preview { margin-inline: 15px; }
+  .rename-form input { font-size: 16px; }
 }
 </style>

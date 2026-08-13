@@ -518,7 +518,7 @@ async function doDeleteTeam(team) {
   white-space: nowrap;
 }
 
-.admin-view .stat-label { margin-top: 2px; color: var(--muted, #737373); font-size: 10px; }
+.admin-view .stat-label { margin-top: 2px; color: var(--muted, #737373); font-size: 12px; }
 
 .admin-section-head {
   margin: 30px 0 12px;
@@ -530,10 +530,10 @@ async function doDeleteTeam(team) {
   padding-bottom: 10px;
 }
 
-.admin-section-head h3 { margin: 0 0 2px; color: var(--text, #242424); font-size: 15px; }
-.admin-section-head p { margin: 0; color: var(--muted, #737373); font-size: 11px; }
+.admin-section-head h3 { margin: 0 0 2px; color: var(--text, #242424); font-size: 18px; }
+.admin-section-head p { margin: 0; color: var(--muted, #737373); font-size: 13px; }
 .traffic-section-head { margin-top: 34px; }
-.traffic-range { display: grid; gap: 5px; color: var(--muted, #737373); font-size: 10px; font-weight: 650; }
+.traffic-range { display: grid; gap: 5px; color: var(--muted, #737373); font-size: 14px; font-weight: 650; }
 .traffic-range select {
   min-width: 118px;
   min-height: 36px;
@@ -542,6 +542,7 @@ async function doDeleteTeam(team) {
   padding: 7px 10px;
   background: #fff;
   color: var(--text, #242424);
+  font-size: 14px;
   outline: 0;
 }
 .traffic-range select:focus-visible {
@@ -561,7 +562,7 @@ async function doDeleteTeam(team) {
   background: #fff;
   box-shadow: none;
 }
-.traffic-stat-card span { display: block; color: var(--muted, #737373); font-size: 10px; font-weight: 650; }
+.traffic-stat-card span { display: block; color: var(--muted, #737373); font-size: 12px; font-weight: 650; }
 .traffic-stat-card strong {
   display: block;
   margin-top: 5px;
@@ -577,7 +578,7 @@ async function doDeleteTeam(team) {
   margin-top: 3px;
   overflow: hidden;
   color: var(--muted-light, #a3a3a3);
-  font-size: 9px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -592,7 +593,7 @@ async function doDeleteTeam(team) {
   padding: 10px 12px;
   background: #fffafa;
   color: var(--danger, #d82727);
-  font-size: 11px;
+  font-size: 13px;
 }
 .traffic-warning {
   margin-top: 12px;
@@ -601,7 +602,7 @@ async function doDeleteTeam(team) {
   padding: 10px 12px;
   background: #fdfcf8;
   color: #6b4d1f;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.6;
 }
 .traffic-dashboard { margin-top: 12px; display: grid; gap: 12px; }
@@ -622,8 +623,8 @@ async function doDeleteTeam(team) {
   border-bottom: 1px solid var(--border, #e5e5e3);
   padding: 12px 15px;
 }
-.traffic-panel-head h4 { margin: 0; color: var(--text, #242424); font-size: 13px; }
-.traffic-panel-head p { margin: 2px 0 0; color: var(--muted, #737373); font-size: 10px; }
+.traffic-panel-head h4 { margin: 0; color: var(--text, #242424); font-size: 16px; }
+.traffic-panel-head p { margin: 2px 0 0; color: var(--muted, #737373); font-size: 13px; }
 .total-badge,
 .role-badge {
   border: 1px solid var(--border, #e5e5e3);
@@ -631,10 +632,10 @@ async function doDeleteTeam(team) {
   background: #fafaf9;
   color: #57534e;
 }
-.total-badge { padding: 4px 8px; font-size: 10px; }
+.total-badge { padding: 4px 8px; font-size: 12px; }
 .role-badge.admin { border-color: #d6d3d1; background: #f5f5f4; color: #44403c; }
 .traffic-trend-scroll { max-height: 340px; overflow: auto; }
-.traffic-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.traffic-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .traffic-table th,
 .traffic-table td {
   border-bottom: 1px solid var(--border, #e5e5e3);
@@ -648,7 +649,7 @@ async function doDeleteTeam(team) {
   top: 0;
   background: #fafaf9;
   color: var(--muted, #737373);
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -673,9 +674,9 @@ async function doDeleteTeam(team) {
 .member-usage-table .role-badge { margin-left: 7px; }
 .traffic-breakdown-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .compact-traffic-table { min-width: 480px; }
-.compact-traffic-table code { margin-left: 7px; color: var(--text, #242424); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
-.compact-traffic-table small { display: block; margin: 2px 0 0; color: var(--muted-light, #a3a3a3); font: 9px ui-monospace, monospace; }
-.route-method { display: inline-block; min-width: 36px; color: #57534e; font: 750 9px ui-monospace, monospace; }
+.compact-traffic-table code { margin-left: 7px; color: var(--text, #242424); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.compact-traffic-table small { display: block; margin: 2px 0 0; color: var(--muted-light, #a3a3a3); font: 11px ui-monospace, monospace; }
+.route-method { display: inline-block; min-width: 42px; color: #57534e; font: 750 11px ui-monospace, monospace; }
 .empty-table-cell { padding-block: 20px !important; color: var(--muted, #737373); text-align: center !important; }
 .table-shell {
   overflow-x: auto;
@@ -698,13 +699,13 @@ async function doDeleteTeam(team) {
   border-radius: 5px;
   background: #fafaf9;
   color: #57534e;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 750;
 }
 
 .user-actions { justify-content: flex-end; }
 .admin-user-form { display: grid; gap: 15px; }
-.admin-user-form label { display: grid; gap: 6px; color: var(--text, #242424); font-size: 12px; font-weight: 650; }
+.admin-user-form label { display: grid; gap: 6px; color: var(--text, #242424); font-size: 14px; font-weight: 650; }
 .admin-user-form input,
 .admin-user-form select {
   width: 100%;
@@ -714,6 +715,7 @@ async function doDeleteTeam(team) {
   padding: 8px 10px;
   background: #fff;
   color: var(--text, #242424);
+  font-size: 14px;
   outline: 0;
 }
 .admin-user-form input:focus,
@@ -721,7 +723,7 @@ async function doDeleteTeam(team) {
   border-color: var(--accent, #0b63e5);
   box-shadow: 0 0 0 2px rgb(11 99 229 / 10%);
 }
-.admin-user-form small { color: var(--muted, #737373); font-size: 10px; font-weight: 400; }
+.admin-user-form small { color: var(--muted, #737373); font-size: 12px; font-weight: 400; }
 .admin-user-form .form-error { margin: 0; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
@@ -730,6 +732,9 @@ async function doDeleteTeam(team) {
   .section-heading > button { align-self: flex-start; }
   .traffic-section-head { align-items: stretch; }
   .traffic-range select { width: 100%; }
+  .traffic-range select,
+  .admin-user-form input,
+  .admin-user-form select { font-size: 16px; }
 }
 
 @media (max-width: 1120px) {

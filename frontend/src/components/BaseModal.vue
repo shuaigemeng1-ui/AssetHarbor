@@ -164,7 +164,7 @@ onBeforeUnmount(() => {
 .base-modal-head h2 {
   margin: 0;
   color: var(--text, #24211d);
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 650;
   line-height: 1.35;
 }
@@ -172,7 +172,7 @@ onBeforeUnmount(() => {
 .base-modal-head p {
   margin: 5px 0 0;
   color: var(--muted, #746f67);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.55;
 }
 

@@ -248,7 +248,7 @@ onMounted(loadTeams)
 
 .section-heading h2 {
   margin: 0 0 5px;
-  font-size: 24px;
+  font-size: 28px;
   font-weight: 680;
   letter-spacing: -.025em;
 }
@@ -256,13 +256,13 @@ onMounted(loadTeams)
 .section-heading .eyebrow {
   margin-bottom: 5px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: .1em;
 }
 
 .section-heading p:not(.eyebrow) {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .teams-layout {
@@ -295,7 +295,7 @@ onMounted(loadTeams)
 
 .aside-title h3 {
   margin: 0;
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 660;
 }
 
@@ -305,7 +305,7 @@ onMounted(loadTeams)
   padding: 2px 5px;
   background: #eeece8;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 550;
 }
 
@@ -356,7 +356,7 @@ onMounted(loadTeams)
 .team-avatar {
   width: 32px;
   height: 32px;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .team-avatar.large {
@@ -376,21 +376,21 @@ onMounted(loadTeams)
 }
 
 .team-cards strong {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 620;
 }
 
 .team-cards small {
   margin-top: 2px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .team-panel > .status {
   min-height: auto;
   padding: 26px 4px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 13px;
   text-align: center;
 }
 
@@ -404,7 +404,7 @@ onMounted(loadTeams)
 
 .team-create-form h4 {
   margin: 0 0 1px;
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 650;
 }
 
@@ -417,7 +417,7 @@ onMounted(loadTeams)
   background: #fff;
   color: var(--text);
   box-shadow: none;
-  font-size: 12px;
+  font-size: 14px;
   outline: 0;
 }
 
@@ -432,7 +432,7 @@ onMounted(loadTeams)
   min-height: 36px;
   border-radius: 5px;
   box-shadow: none;
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .team-detail {
@@ -464,14 +464,14 @@ onMounted(loadTeams)
 
 .team-head h2 {
   margin: 0 0 3px;
-  font-size: 19px;
+  font-size: 20px;
   font-weight: 670;
 }
 
 .team-head p {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .team-actions,
@@ -493,7 +493,7 @@ onMounted(loadTeams)
   padding: 3px 6px;
   background: var(--panel-soft);
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   white-space: nowrap;
 }
 
@@ -522,7 +522,7 @@ onMounted(loadTeams)
 
 .panel-title-row h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 660;
 }
 
@@ -532,7 +532,7 @@ onMounted(loadTeams)
   padding: 1px 4px;
   background: var(--panel-soft);
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .add-member input {
@@ -555,14 +555,14 @@ onMounted(loadTeams)
 .member-avatar {
   width: 28px;
   height: 28px;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .member-list .username {
   min-width: 0;
   flex: 1;
   overflow: hidden;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 620;
   text-overflow: ellipsis;
 }
@@ -589,7 +589,7 @@ onMounted(loadTeams)
   color: var(--muted);
   box-shadow: none;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .space-tabs button.active {
@@ -612,14 +612,14 @@ onMounted(loadTeams)
 
 .placeholder-panel h3 {
   margin: 0 0 5px;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 630;
 }
 
 .placeholder-panel p {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 @media (max-width: 940px) {
@@ -640,5 +640,7 @@ onMounted(loadTeams)
   .add-member input { min-width: 0; flex: 1; }
   .member-list li { align-items: flex-start; flex-wrap: wrap; }
   .member-actions { width: 100%; justify-content: flex-end; }
+  .team-create-form input,
+  .add-member input { font-size: 16px; }
 }
 </style>

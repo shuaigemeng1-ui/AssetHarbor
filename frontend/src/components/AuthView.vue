@@ -288,7 +288,7 @@ onMounted(async () => {
 
 .auth-field > small {
   color: #667085;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 400;
 }
 
@@ -336,7 +336,7 @@ onMounted(async () => {
   background: transparent;
   color: #626b7d;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .password-toggle:hover {
@@ -410,7 +410,7 @@ onMounted(async () => {
   justify-content: center;
   gap: 7px;
   color: #667085;
-  font-size: 12px;
+  font-size: 13px;
   text-align: center;
 }
 
@@ -445,7 +445,7 @@ onMounted(async () => {
   }
 
   .auth-brand small {
-    font-size: 12px;
+    font-size: 13px;
   }
 
   .auth-form-side {

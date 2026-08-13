@@ -302,7 +302,7 @@ async function saveName() {
   color: #71717a;
 }
 
-.video-placeholder small { font-size: 11px; }
+.video-placeholder small { font-size: 12px; }
 
 .play-badge {
   width: 34px;
@@ -325,7 +325,7 @@ async function saveName() {
   border-radius: 4px;
   background: rgb(255 255 255 / 90%);
   color: #52525b;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
   line-height: 1.3;
 }
@@ -336,7 +336,7 @@ async function saveName() {
   margin: 0;
   overflow: hidden;
   color: #27272a;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   line-height: 1.4;
   text-overflow: ellipsis;
@@ -351,13 +351,17 @@ async function saveName() {
   border: 0;
   background: transparent;
   color: #2563eb;
-  font-size: 11px;
+  font-size: 14px;
   cursor: pointer;
 }
 
 .rename-form { display: grid; gap: 7px; }
-.rename-form label { font-size: 12px; font-weight: 650; }
-.rename-form input { min-height: 42px; border: 1px solid var(--border); border-radius: 10px; padding: 8px 11px; outline: 0; }
+.rename-form label { font-size: 14px; font-weight: 650; }
+.rename-form input { min-height: 42px; border: 1px solid var(--border); border-radius: 10px; padding: 8px 11px; font-size: 14px; outline: 0; }
 .rename-form input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgb(37 99 235 / 10%); }
-.rename-form p { margin: 4px 0 0; font-size: 12px; }
+.rename-form p { margin: 4px 0 0; font-size: 13px; }
+
+@media (max-width: 580px) {
+  .rename-form input { font-size: 16px; }
+}
 </style>

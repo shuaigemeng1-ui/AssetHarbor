@@ -3,11 +3,32 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const workspaceCss = readFileSync(new URL('../workspace.css', import.meta.url), 'utf8')
+const baseCss = readFileSync(new URL('../style.css', import.meta.url), 'utf8')
 const collectionsView = readFileSync(new URL('../components/CollectionsView.vue', import.meta.url), 'utf8')
 const galleryView = readFileSync(new URL('../components/GalleryView.vue', import.meta.url), 'utf8')
 const videoView = readFileSync(new URL('../components/VideoView.vue', import.meta.url), 'utf8')
 const mainEntry = readFileSync(new URL('../main.js', import.meta.url), 'utf8')
 const collectionsCss = collectionsView.match(/<style scoped>([\s\S]*?)<\/style>/)?.[1] || ''
+
+const readableComponentStyles = [
+  'AccountView.vue',
+  'AdminView.vue',
+  'AuthView.vue',
+  'BaseModal.vue',
+  'CollectionPickerModal.vue',
+  'CollectionsView.vue',
+  'HomeView.vue',
+  'ImageInspector.vue',
+  'ImageResult.vue',
+  'TeamsView.vue',
+  'UploadCenterView.vue',
+  'UploadDropzone.vue',
+  'VideoCard.vue',
+  'VideoInspector.vue',
+].map(name => ({
+  name,
+  source: readFileSync(new URL(`../components/${name}`, import.meta.url), 'utf8'),
+}))
 
 function withoutComments(source) {
   return source.replace(/\/\*[\s\S]*?\*\//g, '')
@@ -99,6 +120,45 @@ function withoutJsComments(source) {
 }
 
 describe('responsive workspace layout contract', () => {
+  it('uses a readable semantic type scale across shared workspace surfaces', () => {
+    const root = topLevelBlock(baseCss, ':root')
+    expectDeclaration(root, '--font-micro', '11px')
+    expectDeclaration(root, '--font-caption', '12px')
+    expectDeclaration(root, '--font-secondary', '13px')
+    expectDeclaration(root, '--font-body', '14px')
+    expectDeclaration(root, '--font-control', '14px')
+    expectDeclaration(root, '--font-panel', '16px')
+    expectDeclaration(root, '--font-page', 'clamp(26px, 2vw, 30px)')
+    expect(root).toContain('font: 16px/1.55')
+
+    expectDeclaration(topLevelBlock(workspaceCss, '.side-nav button'), 'font-size', 'var(--font-control)')
+    expectDeclaration(topLevelBlock(workspaceCss, '.workspace-context small'), 'font-size', 'var(--font-caption)')
+    expectDeclaration(topLevelBlock(workspaceCss, '.upload-activity'), 'font-size', 'var(--font-caption)')
+    expectDeclaration(topLevelBlock(baseCss, '.queue-meta'), 'font-size', 'var(--font-caption)')
+    expectDeclaration(topLevelBlock(baseCss, '.data-table'), 'font-size', 'var(--font-body)')
+
+    const activeUploadHover = topLevelBlock(workspaceCss, '.side-nav .nav-upload-center.active:hover')
+    expectDeclaration(activeUploadHover, 'background', 'var(--accent-soft)')
+    expectDeclaration(activeUploadHover, 'color', 'var(--accent)')
+  })
+
+  it('does not regress component text below the 11px readability floor', () => {
+    for (const { name, source } of readableComponentStyles) {
+      const styles = [...source.matchAll(/<style(?:\s+scoped)?>([\s\S]*?)<\/style>/g)]
+        .map(match => withoutComments(match[1]))
+        .join('\n')
+      const undersized = [...styles.matchAll(/(?:font-size\s*:\s*|font\s*:[^;{}]*?\s)(\d+(?:\.\d+)?)px\b/g)]
+        .map(match => Number(match[1]))
+        .filter(size => size < 11)
+      expect(undersized, `${name} contains text below 11px`).toEqual([])
+    }
+  })
+
+  it('keeps mobile form controls at a zoom-safe readable size', () => {
+    const mobileBase = topLevelBlock(baseCss, '@media (max-width: 760px)')
+    expectDeclaration(topLevelBlock(mobileBase, 'input,\n  select,\n  textarea'), 'font-size', '16px !important')
+  })
+
   it('keeps the 1080p content width and progressively expands on wider displays', () => {
     expectDeclaration(
       topLevelBlock(workspaceCss, ':root'),

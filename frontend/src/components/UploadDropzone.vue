@@ -110,7 +110,7 @@ function onDrop(event) {
 .drop .hint {
   margin: 0 0 4px;
   color: var(--text, #24211d);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 620;
   line-height: 1.45;
 }
@@ -119,7 +119,7 @@ function onDrop(event) {
   max-width: 660px;
   margin: 0;
   color: var(--muted, #746f67);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.55;
 }
 

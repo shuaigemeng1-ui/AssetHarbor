@@ -19,7 +19,14 @@
   --danger-soft: #fff1f0;
   --shadow-sm: 0 1px 2px rgb(16 24 40 / 5%);
   --shadow-md: 0 12px 32px rgb(31 42 68 / 9%);
-  font: 15px/1.55 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-micro: 11px;
+  --font-caption: 12px;
+  --font-secondary: 13px;
+  --font-body: 14px;
+  --font-control: 14px;
+  --font-panel: 16px;
+  --font-page: clamp(26px, 2vw, 30px);
+  font: 16px/1.55 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
 * {
@@ -47,7 +54,8 @@ body.modal-open {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -60,6 +68,7 @@ button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 select:focus-visible,
+textarea:focus-visible,
 [tabindex]:focus-visible {
   outline: 3px solid rgb(37 99 235 / 20%);
   outline-offset: 2px;
@@ -132,7 +141,7 @@ p {
 }
 
 .brand-copy strong {
-  font-size: 16px;
+  font-size: var(--font-panel);
   letter-spacing: 0.08em;
 }
 
@@ -140,7 +149,7 @@ p {
 .user-details small {
   margin-top: 3px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 
 .tabs-nav {
@@ -168,7 +177,7 @@ p {
 .tabs-nav button {
   position: relative;
   padding: 7px 14px;
-  font-size: 14px;
+  font-size: var(--font-control);
 }
 
 .tabs-nav button:hover,
@@ -188,15 +197,15 @@ p {
 }
 
 .nav-count {
-  min-width: 18px;
-  height: 18px;
+  min-width: 20px;
+  height: 20px;
   margin-left: 3px;
   display: inline-grid;
   place-items: center;
-  border-radius: 9px;
+  border-radius: 10px;
   background: var(--accent);
   color: #fff;
-  font-size: 10px;
+  font-size: var(--font-micro);
 }
 
 .userbox {
@@ -226,7 +235,7 @@ p {
 .user-details strong {
   max-width: 120px;
   overflow: hidden;
-  font-size: 13px;
+  font-size: var(--font-secondary);
   text-overflow: ellipsis;
 }
 
@@ -246,7 +255,7 @@ p {
   gap: 18px;
   border-top: 1px solid var(--border);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-caption);
 }
 
 .site-footer a + a {
@@ -263,7 +272,7 @@ p {
 
 .section-heading h2 {
   margin-bottom: 6px;
-  font-size: clamp(26px, 3vw, 36px);
+  font-size: var(--font-page);
   line-height: 1.2;
   letter-spacing: -0.035em;
 }
@@ -276,7 +285,7 @@ p {
 .eyebrow {
   margin-bottom: 7px;
   color: var(--accent);
-  font-size: 11px;
+  font-size: var(--font-micro);
   font-weight: 750;
   letter-spacing: 0.13em;
   text-transform: uppercase;
@@ -293,7 +302,7 @@ p {
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent);
-  font-size: 12px;
+  font-size: var(--font-caption);
   font-weight: 650;
 }
 
@@ -334,6 +343,7 @@ p {
   border-radius: 10px;
   background: var(--panel);
   color: var(--text);
+  font-size: var(--font-control);
   outline: 0;
   transition: border-color 150ms, box-shadow 150ms;
 }
@@ -416,7 +426,7 @@ p {
   max-width: 660px;
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 
 .library-toolbar {
@@ -531,7 +541,7 @@ button.media-preview:disabled {
 }
 
 .preview-placeholder small {
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 
 .video-placeholder {
@@ -571,7 +581,7 @@ button.media-preview:disabled {
   border-radius: 999px;
   background: rgb(17 24 39 / 68%);
   color: #fff;
-  font-size: 10px;
+  font-size: var(--font-micro);
   font-weight: 700;
   backdrop-filter: blur(5px);
 }
@@ -588,7 +598,7 @@ button.media-preview:disabled {
   max-width: 100%;
   margin-bottom: 4px;
   overflow: hidden;
-  font-size: 14px;
+  font-size: var(--font-panel);
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -599,7 +609,7 @@ button.media-preview:disabled {
 .codec-hint {
   margin-bottom: 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
   overflow-wrap: anywhere;
 }
 
@@ -630,14 +640,14 @@ button.secondary,
 button.ghost,
 .ghost.button-link,
 button.copy {
-  min-height: 34px;
+  min-height: 40px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 8px;
   padding: 6px 11px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-control);
   font-weight: 600;
   line-height: 1.2;
   text-decoration: none;
@@ -725,19 +735,19 @@ button.ghost.danger:hover {
 .empty-state h3,
 .placeholder-panel h3 {
   margin-bottom: 5px;
-  font-size: 15px;
+  font-size: var(--font-panel);
 }
 
 .empty-state p,
 .placeholder-panel p {
   margin-bottom: 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--font-secondary);
 }
 
 .status {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--font-body);
 }
 
 .status.error,
@@ -780,7 +790,7 @@ button.ghost.danger:hover {
 .panel-title-row h3,
 .aside-title h3 {
   margin-bottom: 0;
-  font-size: 14px;
+  font-size: var(--font-panel);
 }
 
 .queue-heading h3 span,
@@ -796,7 +806,7 @@ button.ghost.danger:hover {
   border-radius: 999px;
   background: var(--warning-soft);
   color: var(--warning);
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 
 .queue-list {
@@ -823,13 +833,13 @@ button.ghost.danger:hover {
   border-radius: 10px;
   background: var(--accent-soft);
   color: var(--accent);
-  font-size: 11px;
+  font-size: var(--font-micro);
 }
 
 .queue-filename {
   min-width: 0;
   overflow: hidden;
-  font-size: 13px;
+  font-size: var(--font-body);
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -837,7 +847,7 @@ button.ghost.danger:hover {
 
 .queue-title-row strong {
   color: var(--accent);
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 
 .progress-track {
@@ -861,7 +871,7 @@ button.ghost.danger:hover {
   flex-wrap: wrap;
   gap: 4px 11px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--font-caption);
 }
 
 .queue-status {
@@ -881,7 +891,7 @@ button.ghost.danger:hover {
 .queue-error,
 .queue-note {
   margin: 6px 0 0;
-  font-size: 10px;
+  font-size: var(--font-caption);
 }
 
 .queue-note {
@@ -972,13 +982,13 @@ button.ghost.danger:hover {
 }
 
 .team-cards strong {
-  font-size: 12px;
+  font-size: var(--font-body);
 }
 
 .team-cards small {
   margin-top: 2px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--font-caption);
 }
 
 .team-create-form {
@@ -991,16 +1001,16 @@ button.ghost.danger:hover {
 
 .team-create-form h4 {
   margin-bottom: 1px;
-  font-size: 12px;
+  font-size: var(--font-body);
 }
 
 .team-create-form input,
 .add-member input,
 .account-form input,
 .auth-card input {
-  min-height: 38px;
+  min-height: 42px;
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: var(--font-control);
 }
 
 .team-detail {
@@ -1031,7 +1041,7 @@ button.ghost.danger:hover {
 .team-head p {
   margin-bottom: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 
 .team-actions,
@@ -1047,7 +1057,7 @@ button.ghost.danger:hover {
   border-radius: 999px;
   background: #f2f4f7;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--font-micro);
   white-space: nowrap;
 }
 
@@ -1086,7 +1096,7 @@ button.ghost.danger:hover {
   min-width: 0;
   flex: 1;
   overflow: hidden;
-  font-size: 12px;
+  font-size: var(--font-body);
   font-weight: 650;
   text-overflow: ellipsis;
 }
@@ -1094,7 +1104,7 @@ button.ghost.danger:hover {
 .member-avatar {
   width: 29px;
   height: 29px;
-  font-size: 11px;
+  font-size: var(--font-micro);
 }
 
 .space-tabs {
@@ -1110,7 +1120,7 @@ button.ghost.danger:hover {
 
 .space-tabs button {
   padding: 7px 19px;
-  font-size: 12px;
+  font-size: var(--font-control);
 }
 
 /* Player and confirmation dialogs */
@@ -1159,7 +1169,7 @@ button.ghost.danger:hover {
 .confirm-dialog p {
   margin-bottom: 20px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--font-body);
 }
 
 .dialog-actions {
@@ -1196,7 +1206,7 @@ button.ghost.danger:hover {
   max-width: 75vw;
   margin-bottom: 2px;
   overflow: hidden;
-  font-size: 15px;
+  font-size: var(--font-panel);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1204,7 +1214,7 @@ button.ghost.danger:hover {
 .player-head p {
   margin-bottom: 0;
   color: #98a2b3;
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 
 .modal-close {
@@ -1243,7 +1253,7 @@ button.ghost.danger:hover {
   background: rgb(255 255 255 / 96%);
   box-shadow: var(--shadow-md);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-secondary);
   pointer-events: auto;
 }
 
@@ -1280,7 +1290,7 @@ button.ghost.danger:hover {
 .auth-card h1 {
   margin-bottom: 5px;
   color: var(--text);
-  font-size: 27px;
+  font-size: var(--font-page);
   text-align: center;
 }
 
@@ -1328,7 +1338,7 @@ button.ghost.danger:hover {
 /* Account / admin legacy screens */
 .section-title {
   margin: 22px 0 10px;
-  font-size: 17px;
+  font-size: 18px;
 }
 
 .section-title .count {
@@ -1354,17 +1364,17 @@ button.ghost.danger:hover {
 
 .ok-msg {
   color: var(--success);
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 
 .form-error {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 
 .hint {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 
 .hint code,
@@ -1375,7 +1385,7 @@ button.ghost.danger:hover {
   padding: 2px 5px;
   background: var(--panel-soft);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 
 .key-reveal {
@@ -1389,7 +1399,7 @@ button.ghost.danger:hover {
 .key-reveal .warn {
   margin-bottom: 10px;
   color: var(--warning);
-  font-size: 12px;
+  font-size: var(--font-secondary);
 }
 
 .key-value {
@@ -1422,7 +1432,7 @@ button.ghost.danger:hover {
 .stat-label,
 .muted {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-secondary);
 }
 
 .data-table {
@@ -1432,7 +1442,7 @@ button.ghost.danger:hover {
   border-radius: 12px;
   border-spacing: 0;
   background: var(--panel);
-  font-size: 12px;
+  font-size: var(--font-body);
 }
 
 .data-table th,
@@ -1445,7 +1455,7 @@ button.ghost.danger:hover {
 .data-table th {
   background: var(--panel-soft);
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--font-caption);
   font-weight: 650;
 }
 
@@ -1517,8 +1527,15 @@ button.ghost.danger:hover {
   }
 
   .add-member input {
+    min-width: 0;
     width: auto;
     flex: 1;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
   }
 
   .queue-item {

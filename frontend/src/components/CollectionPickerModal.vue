@@ -208,8 +208,8 @@ async function createAndAdd() {
 .picker-groups input { position: absolute; opacity: 0; pointer-events: none; }
 .group-color { width: 10px; height: 32px; flex: 0 0 auto; border-radius: 999px; }
 .group-copy { min-width: 0; flex: 1; display: grid; }
-.group-copy strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.group-copy small { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.group-copy strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.group-copy small { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .check {
   width: 22px;
   height: 22px;
@@ -218,12 +218,12 @@ async function createAndAdd() {
   border: 1px solid var(--border);
   border-radius: 50%;
   color: transparent;
-  font-size: 11px;
+  font-size: 12px;
 }
 .selected .check { border-color: var(--accent); background: var(--accent); color: #fff; }
-.picker-groups .load-more-groups { min-height: 38px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-soft); color: var(--accent); cursor: pointer; font-size: 11px; }
+.picker-groups .load-more-groups { min-height: 40px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-soft); color: var(--accent); cursor: pointer; font-size: 13px; }
 .quick-create { display: grid; grid-template-columns: 1fr auto; gap: 13px; }
-.quick-create label { display: grid; gap: 5px; color: var(--text); font-size: 11px; font-weight: 650; }
+.quick-create label { display: grid; gap: 5px; color: var(--text); font-size: 13px; font-weight: 650; }
 .quick-create input[type='text'],
 .quick-create input:not([type]) {
   min-height: 42px;
@@ -233,7 +233,7 @@ async function createAndAdd() {
 }
 .color-field input { width: 52px; height: 42px; border: 1px solid var(--border); border-radius: 10px; padding: 4px; background: #fff; }
 .quick-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
-.picker-error { margin: 13px 0 0; color: var(--danger); font-size: 12px; }
+.picker-error { margin: 13px 0 0; color: var(--danger); font-size: 13px; }
 .footer-spacer { flex: 1; }
 
 @media (max-width: 480px) {

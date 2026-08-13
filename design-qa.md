@@ -1,5 +1,17 @@
 # Design QA
 
+## Latest Upload-Center and Readability Pass
+
+- Source visual truth: `C:\Users\user\AppData\Local\Temp\codex-clipboard-43722f88-71ce-48d1-bde2-bab44e85b67f.png`
+- Source pixels: 2048 × 1024
+- Requested state: authenticated workspace with an independent video upload center and readable typography across all pages
+- Implementation route: `/#/upload-center`; the former global upload modal has been removed
+- Implementation screenshot: unavailable
+- Static result: shared typography now uses an explicit 11–30px semantic scale with a 16px root, component-level 12–14px supporting/body text, 14px controls, 16px panel titles, and 26–30px page titles. Mobile form fields remain 16px.
+- Upload-center result: bookmarkable page, all-space queue, restore/empty/task states, unfinished-task count, and keyboard focus on the page heading.
+- Automated verification: 29 frontend test files and 155 tests passed after the final accessibility review; production build passed.
+- Browser comparison remains blocked because the workspace instruction prohibits starting the frontend project and no rendered implementation capture was supplied.
+
 ## Latest Responsive-Density Pass
 
 - Source visual truth: `C:\Users\user\AppData\Local\Temp\codex-clipboard-1e8a3f96-d374-4282-b777-1036b9de63b5.png`

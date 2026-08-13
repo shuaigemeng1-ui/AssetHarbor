@@ -44,11 +44,7 @@ describe('global upload center navigation', () => {
           AccountView: true,
           AuthView: true,
           UiFeedback: true,
-          VideoUploadQueue: {
-            props: { allScopes: Boolean },
-            template: '<div class="queue-stub" :data-all-scopes="String(allScopes)" />',
-          },
-          BaseModal: { template: '<div class="modal-stub"><slot /></div>' },
+          UploadCenterView: { template: '<div class="upload-center-stub" />' },
         },
       },
     })
@@ -63,9 +59,118 @@ describe('global upload center navigation', () => {
     const button = wrapper.get('.context-sidebar .nav-upload-center')
     expect(button.attributes('aria-label')).toBe('打开视频上传中心')
     await button.trigger('click')
-    expect(wrapper.find('.modal-stub').exists()).toBe(true)
-    expect(wrapper.find('.queue-stub').exists()).toBe(true)
-    expect(wrapper.get('.queue-stub').attributes('data-all-scopes')).toBe('true')
+    await flushPromises()
+
+    expect(window.location.hash).toBe('#/upload-center')
+    expect(wrapper.find('.upload-center-stub').exists()).toBe(true)
+    expect(wrapper.find('.base-modal-overlay').exists()).toBe(false)
+    expect(button.attributes('aria-current')).toBe('page')
+    expect(wrapper.findAll('[aria-current="page"]')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it.each([
+    ['regular user', { id: 1, username: 'tester', role: 'user' }],
+    ['administrator', { id: 99, username: 'admin', role: 'admin' }],
+  ])('opens the upload center directly from a %s bookmark', async (_label, currentUser) => {
+    api.fetchMe.mockResolvedValue(currentUser)
+    window.location.hash = '#/upload-center'
+    const wrapper = mount(App, {
+      global: {
+        stubs: {
+          AppIcon: { template: '<i />' },
+          HomeView: true,
+          GalleryView: true,
+          VideoView: true,
+          CollectionsView: true,
+          TeamsView: true,
+          AdminView: true,
+          AccountView: true,
+          AuthView: true,
+          UiFeedback: true,
+          UploadCenterView: { template: '<div class="upload-center-stub" />' },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(window.location.hash).toBe('#/upload-center')
+    expect(wrapper.find('.upload-center-stub').exists()).toBe(true)
+    expect(wrapper.get('.nav-upload-center').attributes('aria-current')).toBe('page')
+    expect(wrapper.findAll('[aria-current="page"]')).toHaveLength(1)
+    expect(videoUploads.initializeVideoUploads).toHaveBeenCalledWith(currentUser.id)
+    wrapper.unmount()
+  })
+
+  it('preserves an upload-center bookmark through login', async () => {
+    api.getToken.mockReturnValue(null)
+    window.location.hash = '#/upload-center'
+    const wrapper = mount(App, {
+      global: {
+        stubs: {
+          AppIcon: { template: '<i />' },
+          HomeView: true,
+          GalleryView: true,
+          VideoView: true,
+          CollectionsView: true,
+          TeamsView: true,
+          AdminView: true,
+          AccountView: true,
+          AuthView: {
+            template: '<button class="auth-stub" @click="$emit(\'authed\', { id: 7, username: \'signed-in\', role: \'user\' })">login</button>',
+          },
+          UiFeedback: true,
+          UploadCenterView: { template: '<div class="upload-center-stub" />' },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(window.location.hash).toBe('#/upload-center')
+    expect(wrapper.find('.workspace-shell').exists()).toBe(false)
+    await wrapper.get('.auth-stub').trigger('click')
+    await flushPromises()
+
+    expect(window.location.hash).toBe('#/upload-center')
+    expect(wrapper.find('.upload-center-stub').exists()).toBe(true)
+    expect(wrapper.get('.nav-upload-center').attributes('aria-current')).toBe('page')
+    expect(videoUploads.initializeVideoUploads).toHaveBeenCalledWith(7)
+    wrapper.unmount()
+  })
+
+  it('can leave and return to the upload center without resetting upload state', async () => {
+    window.location.hash = '#/upload-center'
+    const wrapper = mount(App, {
+      global: {
+        stubs: {
+          AppIcon: { template: '<i />' },
+          HomeView: { template: '<div class="home-stub" />' },
+          GalleryView: true,
+          VideoView: true,
+          CollectionsView: true,
+          TeamsView: true,
+          AdminView: true,
+          AccountView: true,
+          AuthView: true,
+          UiFeedback: true,
+          UploadCenterView: { template: '<div class="upload-center-stub" />' },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.upload-center-stub').exists()).toBe(true)
+    await wrapper.get('.sidebar-brand').trigger('click')
+    await flushPromises()
+    expect(window.location.hash).toBe('#/overview')
+    expect(wrapper.find('.home-stub').exists()).toBe(true)
+
+    await wrapper.get('.nav-upload-center').trigger('click')
+    await flushPromises()
+    expect(window.location.hash).toBe('#/upload-center')
+    expect(wrapper.find('.upload-center-stub').exists()).toBe(true)
+    expect(videoUploads.resetVideoUploads).not.toHaveBeenCalled()
+    expect(videoUploads.initializeVideoUploads).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 
@@ -86,8 +191,6 @@ describe('global upload center navigation', () => {
           AccountView: true,
           AuthView: { template: '<div class="auth-stub" />' },
           UiFeedback: true,
-          VideoUploadQueue: true,
-          BaseModal: true,
         },
       },
     })
@@ -121,8 +224,6 @@ describe('global upload center navigation', () => {
           AccountView: true,
           AuthView: true,
           UiFeedback: true,
-          VideoUploadQueue: true,
-          BaseModal: true,
         },
       },
     })
@@ -153,8 +254,6 @@ describe('global upload center navigation', () => {
           AccountView: true,
           AuthView: true,
           UiFeedback: true,
-          VideoUploadQueue: true,
-          BaseModal: true,
         },
       },
     })
@@ -216,8 +315,7 @@ describe('global upload center navigation', () => {
           AccountView: true,
           AuthView: true,
           UiFeedback: true,
-          VideoUploadQueue: { template: '<div class="queue-stub" />' },
-          BaseModal: { template: '<div class="modal-stub"><slot /></div>' },
+          UploadCenterView: { template: '<div class="upload-center-stub" />' },
         },
       },
     })
@@ -246,7 +344,13 @@ describe('global upload center navigation', () => {
     }
 
     await sidebar.get('.nav-upload-center').trigger('click')
-    expect(wrapper.find('.modal-stub').exists()).toBe(true)
+    await flushPromises()
+
+    expect(window.location.hash).toBe('#/upload-center')
+    expect(wrapper.find('.upload-center-stub').exists()).toBe(true)
+    expect(wrapper.find('.base-modal-overlay').exists()).toBe(false)
+    expect(sidebar.get('.nav-upload-center').attributes('aria-current')).toBe('page')
+    expect(sidebar.findAll('[aria-current="page"]')).toHaveLength(1)
     wrapper.unmount()
   })
 
@@ -271,8 +375,6 @@ describe('global upload center navigation', () => {
           AccountView: true,
           AuthView: true,
           UiFeedback: true,
-          VideoUploadQueue: true,
-          BaseModal: true,
         },
       },
     })
@@ -318,8 +420,6 @@ describe('global upload center navigation', () => {
             template: '<button class="auth-stub" @click="$emit(\'authed\', { id: 99, username: \'admin\', role: \'admin\' })">login</button>',
           },
           UiFeedback: true,
-          VideoUploadQueue: true,
-          BaseModal: true,
         },
       },
     })
@@ -357,8 +457,6 @@ describe('global upload center navigation', () => {
           },
           AuthView: true,
           UiFeedback: true,
-          VideoUploadQueue: true,
-          BaseModal: true,
         },
       },
     })

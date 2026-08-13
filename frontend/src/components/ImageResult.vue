@@ -283,7 +283,7 @@ async function saveName() {
   color: #71717a;
 }
 
-.preview-placeholder small { font-size: 11px; }
+.preview-placeholder small { font-size: 12px; }
 
 .visibility-marker {
   position: absolute;
@@ -297,7 +297,7 @@ async function saveName() {
   border-radius: 4px;
   background: rgb(255 255 255 / 90%);
   color: #52525b;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
   line-height: 1.3;
 }
@@ -310,7 +310,7 @@ async function saveName() {
   margin: 0;
   overflow: hidden;
   color: #27272a;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   line-height: 1.4;
   text-overflow: ellipsis;
@@ -324,7 +324,7 @@ async function saveName() {
   margin: 4px 0 0;
   overflow: hidden;
   color: #71717a;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -343,7 +343,7 @@ async function saveName() {
   min-height: 30px;
   flex: 1;
   padding: 5px 8px;
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .preview-retry {
@@ -352,7 +352,7 @@ async function saveName() {
   border: 0;
   background: transparent;
   color: #2563eb;
-  font-size: 11px;
+  font-size: 14px;
   cursor: pointer;
 }
 
@@ -367,7 +367,7 @@ async function saveName() {
   min-height: 28px;
   gap: 4px;
   padding: 4px 7px;
-  font-size: 10px;
+  font-size: 14px;
 }
 
 .rename-form {
@@ -376,7 +376,7 @@ async function saveName() {
 }
 
 .rename-form label {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 650;
 }
 
@@ -385,6 +385,7 @@ async function saveName() {
   border: 1px solid var(--border);
   border-radius: 5px;
   padding: 8px 10px;
+  font-size: 14px;
   outline: 0;
 }
 
@@ -395,6 +396,10 @@ async function saveName() {
 
 .rename-form p {
   margin: 3px 0 0;
-  font-size: 11px;
+  font-size: 13px;
+}
+
+@media (max-width: 580px) {
+  .rename-form input { font-size: 16px; }
 }
 </style>

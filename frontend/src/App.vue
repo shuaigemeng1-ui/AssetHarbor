@@ -9,9 +9,8 @@ import GalleryView from './components/GalleryView.vue'
 import HomeView from './components/HomeView.vue'
 import TeamsView from './components/TeamsView.vue'
 import UiFeedback from './components/UiFeedback.vue'
+import UploadCenterView from './components/UploadCenterView.vue'
 import VideoView from './components/VideoView.vue'
-import VideoUploadQueue from './components/VideoUploadQueue.vue'
-import BaseModal from './components/BaseModal.vue'
 import { fetchMe, getToken, setToken } from './api'
 import { activeVideoUploadCount, initializeVideoUploads, resetVideoUploads } from './stores/videoUploads'
 import { toast } from './stores/feedback'
@@ -19,13 +18,13 @@ import { toast } from './stores/feedback'
 const user = ref(null)
 const view = ref('overview')
 const authLoading = ref(Boolean(getToken()))
-const uploadCenterOpen = ref(false)
 const openImageUpload = ref(false)
 const accountCredentialBusy = ref(false)
 const isAdmin = computed(() => user.value?.role === 'admin')
 
 const viewMeta = {
   overview: { section: '资料库', title: '媒体概览' },
+  'upload-center': { section: '工作台', title: '视频上传中心' },
   images: { section: '个人空间', title: '我的图片' },
   'my-images': { section: '个人空间', title: '我的图片' },
   videos: { section: '个人空间', title: '我的视频' },
@@ -64,7 +63,6 @@ function authorizedView(next) {
 function onUnauthorized() {
   accountCredentialBusy.value = false
   resetVideoUploads()
-  uploadCenterOpen.value = false
   user.value = null
   view.value = 'overview'
 }
@@ -132,7 +130,6 @@ function logout() {
   }
   setToken(null)
   resetVideoUploads()
-  uploadCenterOpen.value = false
   user.value = null
   navigate('overview', { replace: true })
 }
@@ -168,9 +165,10 @@ function logout() {
                 <AppIcon name="overview" /><span>媒体概览</span>
               </button>
               <button
-                class="nav-upload-center"
-                :aria-label="activeVideoUploadCount ? `打开视频上传中心，${activeVideoUploadCount} 个进行中任务` : '打开视频上传中心'"
-                @click="uploadCenterOpen = true"
+                :class="['nav-upload-center', { active: view === 'upload-center' }]"
+                :aria-current="view === 'upload-center' ? 'page' : undefined"
+                :aria-label="activeVideoUploadCount ? `打开视频上传中心，${activeVideoUploadCount} 个未完成任务` : '打开视频上传中心'"
+                @click="navigate('upload-center')"
               >
                 <AppIcon name="upload" /><span>视频上传中心</span>
                 <span v-if="activeVideoUploadCount" class="nav-upload-count">{{ activeVideoUploadCount }}</span>
@@ -263,6 +261,7 @@ function logout() {
 
         <main class="page-content">
           <HomeView v-if="view === 'overview'" :user="user" @navigate="navigate" />
+          <UploadCenterView v-if="view === 'upload-center'" />
           <GalleryView
             v-if="view === 'images' || view === 'my-images'"
             :key="view"
@@ -290,9 +289,6 @@ function logout() {
       </div>
     </div>
 
-    <BaseModal v-if="uploadCenterOpen" title="全局上传中心" description="管理所有个人与团队空间的视频上传任务。" labelled-by="global-upload-center-title" wide @close="uploadCenterOpen = false">
-      <VideoUploadQueue all-scopes />
-    </BaseModal>
   </div>
 </template>
 
@@ -305,7 +301,7 @@ function logout() {
   gap: 13px;
   background: #f7f7f8;
   color: #71717a;
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .boot-logo {
