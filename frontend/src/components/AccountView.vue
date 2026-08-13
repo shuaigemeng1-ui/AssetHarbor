@@ -11,6 +11,7 @@ import {
 import { confirmAction, toast } from '../stores/feedback'
 import { copyText } from '../utils/clipboard'
 import AppIcon from './AppIcon.vue'
+import BaseModal from './BaseModal.vue'
 
 const oldPassword = ref('')
 const newPassword = ref('')
@@ -21,6 +22,8 @@ const changingPassword = ref(false)
 
 const keys = ref([])
 const keyName = ref('')
+const keyDialogOpen = ref(false)
+const keyCreateError = ref('')
 const newKey = ref(null)
 const keyError = ref('')
 const creatingKey = ref(false)
@@ -71,16 +74,35 @@ async function doChangePassword() {
   }
 }
 
-async function doCreateKey() {
-  newKey.value = null
+function openKeyDialog() {
+  keyName.value = ''
+  keyCreateError.value = ''
   keyError.value = ''
+  keyDialogOpen.value = true
+}
+
+function closeKeyDialog() {
+  if (creatingKey.value) return
+  keyDialogOpen.value = false
+  keyName.value = ''
+  keyCreateError.value = ''
+}
+
+async function doCreateKey() {
+  const name = keyName.value.trim()
+  keyCreateError.value = ''
+  if (!name) {
+    keyCreateError.value = '请输入密钥名称'
+    return
+  }
   creatingKey.value = true
   try {
-    newKey.value = await createApiKey(keyName.value.trim())
+    newKey.value = await createApiKey(name)
     keyName.value = ''
     await loadKeys()
+    keyDialogOpen.value = false
   } catch (err) {
-    keyError.value = err.message
+    keyCreateError.value = err.message
   } finally {
     creatingKey.value = false
   }
@@ -176,10 +198,9 @@ onBeforeUnmount(() => clearTimeout(copiedTimer))
           <div><h3>API Key</h3><p>让命令行、脚本和自动化工具安全访问媒体库。</p></div>
         </header>
 
-        <form class="key-create-row" @submit.prevent="doCreateKey">
-          <input v-model="keyName" placeholder="密钥名称，例如：备份脚本" maxlength="64" aria-label="API Key 名称" />
-          <button class="primary" :disabled="creatingKey">{{ creatingKey ? '生成中…' : '生成密钥' }}</button>
-        </form>
+        <div class="key-create-actions">
+          <button class="primary" type="button" :disabled="creatingKey" @click="openKeyDialog">生成密钥</button>
+        </div>
 
         <div v-if="newKey" class="key-reveal">
           <div class="key-warning"><strong>请立即保存</strong><span>完整密钥仅展示这一次，关闭后无法再次查看。</span></div>
@@ -206,6 +227,40 @@ onBeforeUnmount(() => clearTimeout(copiedTimer))
       </section>
     </div>
 
+    <BaseModal
+      v-if="keyDialogOpen"
+      title="生成 API Key"
+      description="输入一个便于识别的名称。生成后，完整密钥只会展示一次。"
+      labelled-by="create-api-key-title"
+      @close="closeKeyDialog"
+    >
+      <form id="create-api-key-form" class="key-create-form" @submit.prevent="doCreateKey">
+        <label for="create-api-key-name">密钥名称</label>
+        <input
+          id="create-api-key-name"
+          v-model="keyName"
+          autofocus
+          maxlength="64"
+          autocomplete="off"
+          placeholder="例如：备份脚本"
+          aria-label="API Key 名称"
+        />
+        <small>名称仅用于区分密钥用途，最多 64 个字符。</small>
+        <p v-if="keyCreateError" class="form-error" role="alert">{{ keyCreateError }}</p>
+      </form>
+      <template #footer>
+        <button class="ghost" type="button" :disabled="creatingKey" @click="closeKeyDialog">取消</button>
+        <button
+          class="primary"
+          type="submit"
+          form="create-api-key-form"
+          :disabled="creatingKey || !keyName.trim()"
+        >
+          {{ creatingKey ? '生成中…' : '确认生成' }}
+        </button>
+      </template>
+    </BaseModal>
+
     <section class="api-help">
       <div><strong>如何使用 API Key？</strong><p>通过标准 Bearer Token 或 X-API-Key 请求头调用图片、视频及分组接口。</p></div>
       <code>Authorization: Bearer &lt;your-key&gt;</code>
@@ -225,11 +280,15 @@ onBeforeUnmount(() => clearTimeout(copiedTimer))
 .account-panel-head p { margin: 0; color: #858d9e; font-size: 10px; }
 .security-form { display: grid; gap: 13px; }
 .security-form label { display: grid; gap: 5px; color: #4c5565; font-size: 10px; font-weight: 650; }
-.security-form input, .key-create-row input { width: 100%; min-height: 42px; border: 1px solid #dfe4ec; border-radius: 10px; padding: 8px 11px; background: #fff; color: #222b39; outline: 0; font-size: 12px; }
-.security-form input:focus, .key-create-row input:focus { border-color: #7474d8; box-shadow: 0 0 0 3px rgb(91 91 214 / 9%); }
+.security-form input, .key-create-form input { width: 100%; min-height: 42px; border: 1px solid #dfe4ec; border-radius: 10px; padding: 8px 11px; background: #fff; color: #222b39; outline: 0; font-size: 12px; }
+.security-form input:focus, .key-create-form input:focus { border-color: #7474d8; box-shadow: 0 0 0 3px rgb(91 91 214 / 9%); }
 .password-submit { width: fit-content; margin-top: 3px; }
 .security-form .form-error, .security-form .ok-msg { margin: 0; font-size: 10px; }
-.key-create-row { margin-bottom: 16px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.key-create-actions { margin-bottom: 16px; display: flex; justify-content: flex-end; }
+.key-create-form { display: grid; gap: 7px; }
+.key-create-form label { color: #4c5565; font-size: 12px; font-weight: 650; }
+.key-create-form small { color: #858d9e; font-size: 10px; }
+.key-create-form .form-error { margin: 4px 0 0; font-size: 11px; }
 .key-reveal { margin-bottom: 17px; border: 1px solid #f0d49b; border-radius: 13px; padding: 13px; background: #fff9ed; }
 .key-warning { display: grid; margin-bottom: 9px; }
 .key-warning strong { color: #8b5713; font-size: 11px; }
@@ -264,5 +323,4 @@ onBeforeUnmount(() => clearTimeout(copiedTimer))
   .api-help { grid-template-columns: 1fr; gap: 9px; }
   .api-help code { overflow-x: auto; }
 }
-@media (max-width: 430px) { .key-create-row { grid-template-columns: 1fr; } }
 </style>
