@@ -7,8 +7,10 @@ const baseCss = readFileSync(new URL('../style.css', import.meta.url), 'utf8')
 const collectionsView = readFileSync(new URL('../components/CollectionsView.vue', import.meta.url), 'utf8')
 const galleryView = readFileSync(new URL('../components/GalleryView.vue', import.meta.url), 'utf8')
 const videoView = readFileSync(new URL('../components/VideoView.vue', import.meta.url), 'utf8')
+const teamsView = readFileSync(new URL('../components/TeamsView.vue', import.meta.url), 'utf8')
 const mainEntry = readFileSync(new URL('../main.js', import.meta.url), 'utf8')
 const collectionsCss = collectionsView.match(/<style scoped>([\s\S]*?)<\/style>/)?.[1] || ''
+const teamsCss = teamsView.match(/<style scoped>([\s\S]*?)<\/style>/)?.[1] || ''
 
 const readableComponentStyles = [
   'AccountView.vue',
@@ -157,6 +159,17 @@ describe('responsive workspace layout contract', () => {
   it('keeps mobile form controls at a zoom-safe readable size', () => {
     const mobileBase = topLevelBlock(baseCss, '@media (max-width: 760px)')
     expectDeclaration(topLevelBlock(mobileBase, 'input,\n  select,\n  textarea'), 'font-size', '16px !important')
+  })
+
+  it('keeps team member management actions horizontal in the desktop sidebar', () => {
+    const memberActions = topLevelBlock(teamsCss, '.member-actions')
+    expectDeclaration(memberActions, 'width', 'max-content')
+    expectDeclaration(memberActions, 'flex-wrap', 'nowrap')
+    expectDeclaration(memberActions, 'white-space', 'nowrap')
+
+    const actionButton = topLevelBlock(teamsCss, '.member-actions button')
+    expectDeclaration(actionButton, 'flex', '0 0 auto')
+    expectDeclaration(actionButton, 'white-space', 'nowrap')
   })
 
   it('keeps the 1080p content width and progressively expands on wider displays', () => {

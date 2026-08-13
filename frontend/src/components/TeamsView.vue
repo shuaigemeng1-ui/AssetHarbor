@@ -688,10 +688,6 @@ onBeforeUnmount(() => {
   gap: 5px;
 }
 
-.member-actions button {
-  border-radius: 4px;
-}
-
 .role-badge {
   border: 0;
   padding: 3px 0;
@@ -781,11 +777,19 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
 }
 
-.member-role-row { position: relative; min-width: 64px; display: flex; align-items: center; justify-content: flex-end; }
+.member-role-row {
+  position: relative;
+  min-width: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
 .member-actions {
   position: absolute;
   right: 0;
   top: 50%;
+  width: max-content;
   flex-wrap: nowrap;
   justify-content: flex-end;
   padding-left: 8px;
@@ -794,11 +798,22 @@ onBeforeUnmount(() => {
   pointer-events: none;
   transform: translateY(-50%);
   transition: opacity 120ms ease;
+  white-space: nowrap;
 }
+
 .member-list li:hover .member-actions,
 .member-list li:focus-within .member-actions { opacity: 1; pointer-events: auto; }
-.member-actions button { min-height: 30px; padding: 4px 8px; font-size: 12px; }
-.dissolve-team { width: 100%; min-height: 38px; margin-top: 20px; }
+
+.member-actions button {
+  min-height: 30px;
+  flex: 0 0 auto;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.dissolve-team { width: 100%; min-height: 38px; margin-top: 20px; white-space: nowrap; }
 
 .space-tabs {
   width: 100%;
