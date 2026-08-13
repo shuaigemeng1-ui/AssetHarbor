@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { WORKSPACE_DRAWER_MAX_WIDTH, WORKSPACE_DRAWER_MEDIA_QUERY } from '../utils/layout'
 
 const workspaceCss = readFileSync(new URL('../workspace.css', import.meta.url), 'utf8')
 const baseCss = readFileSync(new URL('../style.css', import.meta.url), 'utf8')
@@ -277,7 +278,7 @@ describe('responsive workspace layout contract', () => {
     )
   })
 
-  it('preserves the intentional 1080p grid and drawer breakpoints', () => {
+  it('switches drawers before the sidebar leaves less than 1160px for content', () => {
     expectDeclaration(
       topLevelBlock(workspaceCss, '.asset-grid'),
       'grid-template-columns',
@@ -294,15 +295,25 @@ describe('responsive workspace layout contract', () => {
       'repeat(3, minmax(0, 1fr))',
     )
 
+    const compactInlineGrid = topLevelBlock(
+      workspaceCss,
+      '@media (min-width: 1409px) and (max-width: 1573px)',
+    )
     expectDeclaration(
-      topLevelBlock(topLevelBlock(workspaceCss, '@media (max-width: 1320px)'), '.asset-grid'),
+      topLevelBlock(
+        compactInlineGrid,
+        '.workspace-main-library .asset-library:not(.asset-library-embedded) .asset-grid',
+      ),
       'grid-template-columns',
       'repeat(3, minmax(0, 1fr))',
     )
     expectDeclaration(
-      topLevelBlock(topLevelBlock(workspaceCss, '@media (max-width: 1160px)'), '.asset-grid'),
+      topLevelBlock(
+        topLevelBlock(workspaceCss, `@media (max-width: ${WORKSPACE_DRAWER_MAX_WIDTH}px)`),
+        '.asset-grid',
+      ),
       'grid-template-columns',
-      'repeat(4, minmax(0, 1fr))',
+      'repeat(auto-fill, minmax(220px, 1fr))',
     )
     expectDeclaration(
       topLevelBlock(topLevelBlock(workspaceCss, '@media (max-width: 960px)'), '.asset-grid'),
@@ -314,9 +325,30 @@ describe('responsive workspace layout contract', () => {
       'grid-template-columns',
       'repeat(2, minmax(0, 1fr))',
     )
-    const activeDrawerBreakpoint = /^\s*layoutMedia\s*=\s*window\.matchMedia\('\(max-width: 1160px\)'\)\s*;?\s*$/gm
-    expect(withoutJsComments(galleryView).match(activeDrawerBreakpoint)).toHaveLength(1)
-    expect(withoutJsComments(videoView).match(activeDrawerBreakpoint)).toHaveLength(1)
+    expect(WORKSPACE_DRAWER_MAX_WIDTH - 232 - 16).toBe(1160)
+    expect(WORKSPACE_DRAWER_MEDIA_QUERY).toBe('(max-width: 1408px)')
+    const drawerWorkspace = topLevelBlock(workspaceCss, '@media (max-width: 1408px)')
+    expectDeclaration(topLevelBlock(drawerWorkspace, '.asset-library'), 'grid-template-columns', '1fr')
+    expectDeclaration(
+      topLevelBlock(drawerWorkspace, '.asset-library:not(.asset-library-embedded) > .image-inspector'),
+      'position',
+      'fixed !important',
+    )
+    expectDeclaration(
+      topLevelBlock(drawerWorkspace, '.asset-library:not(.asset-library-embedded).inspector-open > .image-inspector'),
+      'transform',
+      'translateX(0)',
+    )
+    const activeDrawerQuery = /window\.matchMedia\(WORKSPACE_DRAWER_MEDIA_QUERY\)/g
+    expect(withoutJsComments(galleryView).match(activeDrawerQuery)).toHaveLength(1)
+    expect(withoutJsComments(videoView).match(activeDrawerQuery)).toHaveLength(1)
+    expect(withoutJsComments(teamsView).match(activeDrawerQuery)).toHaveLength(1)
+    const drawerTeams = topLevelBlock(teamsCss, '@media (max-width: 1408px)')
+    expectDeclaration(topLevelBlock(drawerTeams, '.teams-layout'), 'grid-template-columns', 'minmax(0, 1fr)')
+    expectDeclaration(topLevelBlock(drawerTeams, '.members-panel'), 'position', 'fixed')
+    expectDeclaration(topLevelBlock(drawerTeams, '.members-panel.open'), 'transform', 'translateX(0)')
+    expectDeclaration(topLevelBlock(drawerTeams, ".members-panel[aria-hidden='true']"), 'visibility', 'hidden')
+    expect([workspaceCss, galleryView, videoView, teamsView].join('\n')).not.toContain('(max-width: 1160px)')
   })
 
   it('preserves the stylesheet cascade used by workspace overrides', () => {

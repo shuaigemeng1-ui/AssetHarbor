@@ -124,6 +124,37 @@ describe('VideoView media group scope', () => {
     expect(wrapper.find('.inspector-stub').exists()).toBe(false)
   })
 
+  it('uses a drawer at 1366px after accounting for the persistent sidebar', async () => {
+    const originalInnerWidth = window.innerWidth
+    const originalMatchMedia = window.matchMedia
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1366 })
+    window.matchMedia = vi.fn(query => ({
+      matches: query === '(max-width: 1408px)',
+      media: query,
+      onchange: null,
+    }))
+    try {
+      api.listVideos.mockResolvedValue({
+        items: [{ code: 'sidebar-safe-video', owner_id: 1, visibility: 'public' }],
+        total: 1,
+      })
+      const wrapper = mountVideos()
+      await flushPromises()
+      expect(wrapper.get('.inspector-stub').attributes('aria-hidden')).toBe('true')
+      expect(wrapper.get('.inspector-stub').attributes('inert')).toBe('')
+      await wrapper.get('.video-card-stub').trigger('click')
+
+      expect(window.matchMedia).toHaveBeenCalledWith('(max-width: 1408px)')
+      expect(wrapper.get('.inspector-stub').attributes('role')).toBe('dialog')
+      expect(wrapper.get('.inspector-stub').attributes('aria-modal')).toBe('true')
+      expect(wrapper.get('.inspector-stub').attributes('aria-hidden')).toBeUndefined()
+      expect(wrapper.get('.inspector-stub').attributes('inert')).toBeUndefined()
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth })
+      window.matchMedia = originalMatchMedia
+    }
+  })
+
   it('keeps an administrator personal scope separate from the global list', async () => {
     const wrapper = mountVideos({ user: { id: 99, role: 'admin' }, scope: 'mine' })
     await flushPromises()

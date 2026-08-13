@@ -900,25 +900,13 @@ button.ghost:hover,
   }
 }
 
-@media (max-width: 1320px) {
-  .asset-library {
-    grid-template-columns: minmax(0, 1fr) 320px;
-  }
-
-  .asset-library > .image-inspector {
-    width: 320px !important;
-  }
-
-  .asset-grid {
+@media (min-width: 1409px) and (max-width: 1573px) {
+  .workspace-main-library .asset-library:not(.asset-library-embedded) .asset-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .asset-library-embedded .asset-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 1160px) {
+@media (max-width: 1408px) {
   .asset-library {
     grid-template-columns: 1fr;
   }
@@ -983,9 +971,7 @@ button.ghost:hover,
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .asset-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
+  .asset-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 
   .asset-library-embedded .asset-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));

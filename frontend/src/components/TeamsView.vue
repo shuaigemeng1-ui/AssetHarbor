@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   addTeamMember,
   changeTeamMemberRole,
@@ -10,6 +10,8 @@ import {
   removeTeamMember,
 } from '../api'
 import { confirmAction, toast } from '../stores/feedback'
+import { acquireModalLock, releaseModalLock } from '../stores/modalLock'
+import { WORKSPACE_DRAWER_MEDIA_QUERY } from '../utils/layout'
 import GalleryView from './GalleryView.vue'
 import CollectionsView from './CollectionsView.vue'
 import VideoView from './VideoView.vue'
@@ -35,11 +37,12 @@ const teamSwitcher = ref(null)
 const teamSwitcherButton = ref(null)
 const teamOptionButtons = ref([])
 const memberDrawerQuery = typeof window !== 'undefined' && window.matchMedia
-  ? window.matchMedia('(max-width: 1160px)')
+  ? window.matchMedia(WORKSPACE_DRAWER_MEDIA_QUERY)
   : null
 const isMemberDrawer = ref(memberDrawerQuery?.matches || false)
 let panelReturnFocus = null
 let openTeamGeneration = 0
+let memberDrawerLocked = false
 
 const myRole = computed(() => selected.value?.role)
 const canManageMembers = computed(() => (
@@ -48,6 +51,7 @@ const canManageMembers = computed(() => (
 const canChangeRoles = computed(() => myRole.value === 'owner' || props.user.role === 'admin')
 const canDissolve = computed(() => myRole.value === 'owner' || props.user.role === 'admin')
 const memberPanelHidden = computed(() => isMemberDrawer.value && !membersOpen.value)
+const memberDrawerActive = computed(() => Boolean(selected.value) && isMemberDrawer.value && membersOpen.value)
 const orderedMembers = computed(() => {
   const rank = { owner: 0, admin: 1, member: 2 }
   return [...(selected.value?.members || [])].sort((left, right) => (
@@ -126,6 +130,16 @@ function onMemberDrawerChange(event) {
   isMemberDrawer.value = event.matches
   if (!event.matches) membersOpen.value = false
 }
+
+watch(memberDrawerActive, active => {
+  if (active && !memberDrawerLocked) {
+    acquireModalLock()
+    memberDrawerLocked = true
+  } else if (!active && memberDrawerLocked) {
+    releaseModalLock()
+    memberDrawerLocked = false
+  }
+})
 
 function openCreatePanel() {
   teamMenuOpen.value = false
@@ -207,6 +221,9 @@ async function doRemove(member) {
     await removeTeamMember(selected.value.id, member.id)
     if (removingSelf) {
       openTeamGeneration++
+      membersOpen.value = false
+      inviteOpen.value = false
+      settingsOpen.value = false
       selected.value = null
       await loadTeams()
       toast('已退出团队', 'success')
@@ -248,6 +265,9 @@ async function doDeleteTeam() {
   try {
     await deleteTeam(selected.value.id)
     openTeamGeneration++
+    membersOpen.value = false
+    inviteOpen.value = false
+    settingsOpen.value = false
     selected.value = null
     await loadTeams()
     toast('团队已解散', 'success')
@@ -295,16 +315,20 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onPageKeydown)
   document.removeEventListener('pointerdown', onOutsidePointerDown)
   memberDrawerQuery?.removeEventListener?.('change', onMemberDrawerChange)
+  if (memberDrawerLocked) {
+    releaseModalLock()
+    memberDrawerLocked = false
+  }
 })
 </script>
 
 <template>
   <section class="teams-view">
-    <header class="teams-header">
+    <header class="teams-header" :inert="memberDrawerActive ? '' : undefined">
       <h2>团队</h2>
     </header>
 
-    <div class="team-topbar">
+    <div class="team-topbar" :inert="memberDrawerActive ? '' : undefined">
       <div class="team-switcher-wrap">
         <div v-if="teams.length" ref="teamSwitcher" class="team-switcher">
           <button
@@ -358,7 +382,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <form v-if="createOpen" id="team-create-panel" class="team-create-form" @submit.prevent="doCreate">
+    <form v-if="createOpen" id="team-create-panel" class="team-create-form" :inert="memberDrawerActive ? '' : undefined" @submit.prevent="doCreate">
       <div>
         <strong>创建新团队</strong>
         <span>设置名称和可选简介，创建后自动进入团队空间。</span>
@@ -372,14 +396,14 @@ onBeforeUnmount(() => {
     </form>
 
     <template v-if="selected">
-      <div class="space-tabs" role="tablist" aria-label="团队空间类型">
+      <div class="space-tabs" role="tablist" aria-label="团队空间类型" :inert="memberDrawerActive ? '' : undefined">
         <button id="team-tab-images" role="tab" aria-controls="team-panel-images" :aria-selected="spaceTab === 'images'" :class="{ active: spaceTab === 'images' }" @click="spaceTab = 'images'">图片</button>
         <button id="team-tab-videos" role="tab" aria-controls="team-panel-videos" :aria-selected="spaceTab === 'videos'" :class="{ active: spaceTab === 'videos' }" @click="spaceTab = 'videos'">视频</button>
         <button id="team-tab-groups" role="tab" aria-controls="team-panel-groups" :aria-selected="spaceTab === 'groups'" :class="{ active: spaceTab === 'groups' }" @click="spaceTab = 'groups'">分组</button>
       </div>
 
       <div class="teams-layout" :class="{ 'members-open': membersOpen }">
-        <section class="team-detail">
+        <section class="team-detail" :inert="memberDrawerActive ? '' : undefined">
           <h2 class="visually-hidden">{{ selected.name }}</h2>
 
           <div v-if="spaceTab === 'images'" id="team-panel-images" role="tabpanel" aria-labelledby="team-tab-images"><GalleryView :key="`images-${selected.id}`" :user="user" :team-id="selected.id" :can-manage="canManageMembers" embedded /></div>
@@ -881,7 +905,7 @@ onBeforeUnmount(() => {
   .create-form-actions { justify-content: flex-end; }
 }
 
-@media (max-width: 1160px) {
+@media (max-width: 1408px) {
   .teams-layout { grid-template-columns: minmax(0, 1fr); }
   .team-detail { padding-right: 0; }
   .members-panel {

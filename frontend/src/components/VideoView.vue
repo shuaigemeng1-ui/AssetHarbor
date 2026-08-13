@@ -5,6 +5,7 @@ import { confirmAction, toast } from '../stores/feedback'
 import { acquireModalLock, releaseModalLock } from '../stores/modalLock'
 import { addVideoFiles, VIDEO_ACCEPT, videoUploadState } from '../stores/videoUploads'
 import { formatBytes } from '../utils/format'
+import { WORKSPACE_DRAWER_MAX_WIDTH, WORKSPACE_DRAWER_MEDIA_QUERY } from '../utils/layout'
 import AppIcon from './AppIcon.vue'
 import BaseModal from './BaseModal.vue'
 import UploadDropzone from './UploadDropzone.vue'
@@ -40,7 +41,7 @@ const playerVideo = ref(null)
 const uploadOpen = ref(false)
 const inspectorOpen = ref(false)
 const inspectorPanel = ref(null)
-const isNarrowLayout = ref(typeof window !== 'undefined' && window.innerWidth <= 1160)
+const isNarrowLayout = ref(typeof window !== 'undefined' && window.innerWidth <= WORKSPACE_DRAWER_MAX_WIDTH)
 const publicConfig = ref(null)
 const PAGE_SIZE = 12
 let searchTimer
@@ -53,7 +54,9 @@ let previousInspectorFocus = null
 const isTeam = computed(() => props.teamId !== null && props.teamId !== undefined)
 const hasMore = computed(() => videos.value.length < total.value)
 const isGlobalAdmin = computed(() => props.user.role === 'admin' && !isTeam.value && props.scope === 'all')
-const drawerActive = computed(() => inspectorOpen.value && (props.embedded || isNarrowLayout.value))
+const inspectorDrawerMode = computed(() => props.embedded || isNarrowLayout.value)
+const drawerActive = computed(() => inspectorOpen.value && inspectorDrawerMode.value)
+const inspectorHidden = computed(() => inspectorDrawerMode.value && !inspectorOpen.value)
 const uploadButtonLabel = computed(() => (
   props.user.role === 'admin' && !isTeam.value ? '上传到我的个人空间' : '上传'
 ))
@@ -297,7 +300,7 @@ onMounted(() => {
   window.addEventListener('oss:video-upload-complete', onUploadComplete)
   window.addEventListener('keydown', onInspectorKeydown)
   if (window.matchMedia) {
-    layoutMedia = window.matchMedia('(max-width: 1160px)')
+    layoutMedia = window.matchMedia(WORKSPACE_DRAWER_MEDIA_QUERY)
     isNarrowLayout.value = layoutMedia.matches
     layoutMedia.onchange = event => { isNarrowLayout.value = event.matches }
   }
@@ -382,6 +385,8 @@ onBeforeUnmount(() => {
       tabindex="-1"
       :role="drawerActive ? 'dialog' : undefined"
       :aria-modal="drawerActive ? 'true' : undefined"
+      :aria-hidden="inspectorHidden ? 'true' : undefined"
+      :inert="inspectorHidden ? '' : undefined"
       :item="selectedVideo"
       :user="user"
       :can-manage="canDelete(selectedVideo)"
@@ -394,7 +399,13 @@ onBeforeUnmount(() => {
       @toggle-visibility="onToggleVisibility(selectedVideo)"
       @updated="Object.assign(selectedVideo, $event)"
     />
-    <aside v-else class="image-inspector image-inspector-empty" aria-label="视频详情">
+    <aside
+      v-else
+      class="image-inspector image-inspector-empty"
+      aria-label="视频详情"
+      :aria-hidden="inspectorHidden ? 'true' : undefined"
+      :inert="inspectorHidden ? '' : undefined"
+    >
       <AppIcon name="video" size="24" />
       <strong>视频详情</strong>
       <p>{{ loading ? '正在加载媒体库…' : '选择一个视频查看详情' }}</p>

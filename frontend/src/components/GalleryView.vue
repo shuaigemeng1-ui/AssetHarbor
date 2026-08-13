@@ -4,6 +4,7 @@ import { deleteImage, fetchPublicConfig, listImages, listTeamImages, updateImage
 import { confirmAction, toast } from '../stores/feedback'
 import { acquireModalLock, releaseModalLock } from '../stores/modalLock'
 import { formatBytes } from '../utils/format'
+import { WORKSPACE_DRAWER_MAX_WIDTH, WORKSPACE_DRAWER_MEDIA_QUERY } from '../utils/layout'
 import AppIcon from './AppIcon.vue'
 import BaseModal from './BaseModal.vue'
 import ImageInspector from './ImageInspector.vue'
@@ -37,7 +38,7 @@ const uploadOpen = ref(props.openUpload)
 const selectedImage = ref(null)
 const inspectorOpen = ref(false)
 const inspectorPanel = ref(null)
-const isNarrowLayout = ref(typeof window !== 'undefined' && window.innerWidth <= 1160)
+const isNarrowLayout = ref(typeof window !== 'undefined' && window.innerWidth <= WORKSPACE_DRAWER_MAX_WIDTH)
 // Omitted visibility is a fixed public API contract. Users must explicitly
 // select "private" when they want restricted access.
 const uploadVisibility = ref('public')
@@ -57,7 +58,9 @@ let activeUploadCount = 0
 const isTeam = computed(() => props.teamId !== null && props.teamId !== undefined)
 const hasMore = computed(() => images.value.length < total.value)
 const isGlobalAdmin = computed(() => props.user.role === 'admin' && !isTeam.value && props.scope === 'all')
-const drawerActive = computed(() => inspectorOpen.value && (props.embedded || isNarrowLayout.value))
+const inspectorDrawerMode = computed(() => props.embedded || isNarrowLayout.value)
+const drawerActive = computed(() => inspectorOpen.value && inspectorDrawerMode.value)
+const inspectorHidden = computed(() => inspectorDrawerMode.value && !inspectorOpen.value)
 const uploadButtonLabel = computed(() => (
   props.user.role === 'admin' && !isTeam.value ? '上传到我的个人空间' : '上传'
 ))
@@ -367,7 +370,7 @@ watch(drawerActive, async active => {
 onMounted(async () => {
   window.addEventListener('keydown', onInspectorKeydown)
   if (window.matchMedia) {
-    layoutMedia = window.matchMedia('(max-width: 1160px)')
+    layoutMedia = window.matchMedia(WORKSPACE_DRAWER_MEDIA_QUERY)
     isNarrowLayout.value = layoutMedia.matches
     layoutMedia.onchange = event => { isNarrowLayout.value = event.matches }
   }
@@ -452,6 +455,8 @@ onBeforeUnmount(() => {
       tabindex="-1"
       :role="drawerActive ? 'dialog' : undefined"
       :aria-modal="drawerActive ? 'true' : undefined"
+      :aria-hidden="inspectorHidden ? 'true' : undefined"
+      :inert="inspectorHidden ? '' : undefined"
       :item="selectedImage"
       :user="user"
       :can-manage="canDelete(selectedImage)"
@@ -463,7 +468,13 @@ onBeforeUnmount(() => {
       @toggle-visibility="onToggleVisibility(selectedImage)"
       @updated="Object.assign(selectedImage, $event)"
     />
-    <aside v-else class="image-inspector image-inspector-empty" aria-label="图片详情">
+    <aside
+      v-else
+      class="image-inspector image-inspector-empty"
+      aria-label="图片详情"
+      :aria-hidden="inspectorHidden ? 'true' : undefined"
+      :inert="inspectorHidden ? '' : undefined"
+    >
       <AppIcon name="image" size="24" />
       <strong>图片详情</strong>
       <p>{{ loading ? '正在加载媒体库…' : '选择一张图片查看详情' }}</p>

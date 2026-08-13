@@ -255,6 +255,37 @@ describe('GalleryView image uploads', () => {
     expect(wrapper.classes()).not.toContain('inspector-open')
   })
 
+  it('uses a drawer at 1366px after accounting for the persistent sidebar', async () => {
+    const originalInnerWidth = window.innerWidth
+    const originalMatchMedia = window.matchMedia
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1366 })
+    window.matchMedia = vi.fn(query => ({
+      matches: query === '(max-width: 1408px)',
+      media: query,
+      onchange: null,
+    }))
+    try {
+      api.listImages.mockResolvedValue({
+        items: [{ code: 'sidebar-safe-image', owner_id: 1, visibility: 'public' }],
+        total: 1,
+      })
+      const wrapper = mountGallery()
+      await flushPromises()
+      expect(wrapper.get('.inspector-stub').attributes('aria-hidden')).toBe('true')
+      expect(wrapper.get('.inspector-stub').attributes('inert')).toBe('')
+      await wrapper.get('.image-result-stub').trigger('click')
+
+      expect(window.matchMedia).toHaveBeenCalledWith('(max-width: 1408px)')
+      expect(wrapper.get('.inspector-stub').attributes('role')).toBe('dialog')
+      expect(wrapper.get('.inspector-stub').attributes('aria-modal')).toBe('true')
+      expect(wrapper.get('.inspector-stub').attributes('aria-hidden')).toBeUndefined()
+      expect(wrapper.get('.inspector-stub').attributes('inert')).toBeUndefined()
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth })
+      window.matchMedia = originalMatchMedia
+    }
+  })
+
   it('rejects an oversized image before making an upload request', async () => {
     const wrapper = mountGallery()
     await flushPromises()

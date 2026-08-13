@@ -1,4 +1,4 @@
-# 2K 工作区布局修复 Design QA
+# 工作区宽屏与 1K 刷新布局修复 Design QA
 
 - 源视觉真值：`C:\Users\user\AppData\Local\Temp\codex-clipboard-04dbcb9d-af6e-4d41-88c5-24d11d2fd7be.png`
 - 同视口修复前截图：`C:\Users\user\Desktop\oss\frontend\audit\layout-fix\01-before-2048x1024.png`
@@ -58,9 +58,20 @@
 
 ## 自动化验证
 
-- `npm test -- --run`：29 个测试文件、161 项测试通过。
+- `npm test -- --run`：29 个测试文件、164 项测试通过。
 - `npm run build`：Vite 生产构建成功。
 - `git diff --check`：通过，仅有 Git 的 LF/CRLF 提示。
 - 未启动前端或后端服务。
+
+## 1K 刷新裁切复盘（2026-08-13）
+
+- 异常源图：`C:\Users\user\.codex\attachments\5c8aec64-5ffe-4404-ab4a-083542452815\image-1.png`。
+- 清理后截图：`C:\Users\user\Desktop\oss\frontend\audit\layout-fix\03-after-1k-viewport-reset.png`。
+- 根因：上一轮 2K 验收遗留了 2048 × 1024 浏览器设备指标覆盖。附件实际窗口约 1916px，但详情栏仍从 x=1688 开始，严格符合 2048px 布局公式；右侧 132–136px 和底部约 108px 被浏览器物理窗口裁掉。应用没有保存 viewport、zoom 或缩放状态。
+- 现场修复：已清除设备指标覆盖。刷新后 `innerWidth=1912`、`documentElement.clientWidth=1912`、`visualViewport.width=1912`、`scrollWidth=1912`，视频详情栏完整显示。
+- 全路由验证：在真实 1912px 视口以及 1024 × 768 视口下，逐一刷新 overview、upload-center、images、my-images、videos、my-videos、groups、teams、admin、account；每页 `documentElement.scrollWidth === clientWidth`，shell、main、page、媒体库与团队页右边界均未越过视口。
+- 代码加固：图片详情、视频详情和团队成员面板统一在 1408px 进入抽屉模式。该阈值扣除 232px 固定侧栏及约 16px 系统滚动条后，为主内容保留 1160px；1366px 常见屏幕不再把详情栏硬塞进过窄主区。1409–1573px 的内联媒体库使用三列，1574px 起四列的单卡宽度仍不少于约 220px，消除了断点处骤缩。
+- 可访问性：关闭的图片/视频详情抽屉使用 `aria-hidden + inert`；团队成员抽屉打开时锁定背景滚动并将背景设为 inert，关闭、跨阈值和卸载都会释放锁。
+- 回归保护：新增图片、视频、团队三个 1366px 抽屉行为测试，并由布局合同锁定 CSS 与 JavaScript 使用同一阈值、抽屉定位和过渡列数。
 
 final result: passed

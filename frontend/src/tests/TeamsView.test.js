@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const api = vi.hoisted(() => ({
   addTeamMember: vi.fn(),
@@ -29,11 +29,15 @@ const detail = {
 }
 
 function mountView() {
-  return mount(TeamsView, {
+  const wrapper = mount(TeamsView, {
     props: { user: { id: 7, username: 'alice', role: 'user' } },
     global: { stubs: { GalleryView: true, VideoView: true, CollectionsView: true } },
   })
+  mountedWrappers.push(wrapper)
+  return wrapper
 }
+
+const mountedWrappers = []
 
 describe('TeamsView permissions', () => {
   beforeEach(() => {
@@ -41,6 +45,11 @@ describe('TeamsView permissions', () => {
     api.listTeams.mockResolvedValue([team])
     api.getTeam.mockResolvedValue(detail)
     feedback.confirmAction.mockResolvedValue(true)
+  })
+
+  afterEach(() => {
+    mountedWrappers.splice(0).forEach(wrapper => wrapper.unmount())
+    document.body.classList.remove('modal-open')
   })
 
   it('lets a team admin manage members but not roles or team dissolution', async () => {
@@ -96,5 +105,44 @@ describe('TeamsView permissions', () => {
     await flushPromises()
 
     expect(wrapper.get('.team-detail h2').text()).toBe('研发团队')
+  })
+
+  it('uses the member drawer at 1366px after accounting for the sidebar', async () => {
+    api.removeTeamMember.mockResolvedValue(undefined)
+    api.listTeams.mockResolvedValueOnce([team]).mockResolvedValueOnce([])
+    const originalMatchMedia = window.matchMedia
+    const mediaQuery = {
+      matches: true,
+      media: '(max-width: 1408px)',
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }
+    window.matchMedia = vi.fn(() => mediaQuery)
+    let wrapper
+    try {
+      wrapper = mountView()
+      await flushPromises()
+      await wrapper.get('.team-cards button').trigger('click')
+      await flushPromises()
+      await wrapper.get('.team-summary').trigger('click')
+      await flushPromises()
+
+      expect(window.matchMedia).toHaveBeenCalledWith('(max-width: 1408px)')
+      expect(wrapper.get('.members-panel').attributes('role')).toBe('dialog')
+      expect(wrapper.get('.members-panel').attributes('aria-modal')).toBe('true')
+      expect(wrapper.get('.members-panel').attributes('aria-hidden')).toBeUndefined()
+      expect(document.body.classList.contains('modal-open')).toBe(true)
+      expect(wrapper.get('.team-detail').attributes('inert')).toBe('')
+      const selfRow = wrapper.findAll('.member-list li').find(row => row.text().includes('alice'))
+      await selfRow.findAll('button').find(button => button.text() === '退出团队').trigger('click')
+      await flushPromises()
+
+      expect(api.removeTeamMember).toHaveBeenCalledWith(3, 11)
+      expect(wrapper.text()).toContain('选择一个团队')
+      expect(document.body.classList.contains('modal-open')).toBe(false)
+      expect(wrapper.get('.team-topbar').attributes('inert')).toBeUndefined()
+    } finally {
+      window.matchMedia = originalMatchMedia
+    }
   })
 })
