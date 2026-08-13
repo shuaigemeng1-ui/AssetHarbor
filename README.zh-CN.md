@@ -165,7 +165,7 @@ Pydantic `ValidationError`。
 |---|---|---|
 | POST | `/api/upload` | multipart `file`，可选 `name`、`visibility`、`team_id`（未传 `visibility` 默认 `public`） |
 | GET | `/i/{code}` | 获取图片（公开：任何人；私密：属主/团队成员/管理员/签名链接） |
-| GET | `/api/images?limit&offset&q` | 列出我的图片（仅管理员 JWT 看全部；管理员 API Key 仍按属主/团队隔离），按名称/文件名/短码搜索 |
+| GET | `/api/images?limit&offset&q&scope` | 图片列表；`scope=mine` 查询当前账号个人空间，`scope=all` 查询仅管理员 JWT 可用的全站视图（省略时保持管理员默认全站、其他身份默认个人空间的兼容行为） |
 | PATCH | `/api/images/{code}` | 修改 `name` / `visibility`（属主/管理员/团队管理员） |
 | DELETE | `/api/images/{code}` | 删除图片（属主/管理员/团队管理员） |
 | GET | `/api/images/{code}/link?ttl` | 生成限时签名链接（属主/团队成员/管理员） |
@@ -182,7 +182,7 @@ Pydantic `ValidationError`。
 | PUT | `/api/video-uploads/{upload_id}/parts/{part_number}` | 原始二进制，请求头必须含 `Content-Range` 与 `X-Chunk-SHA256`；相同内容重复提交幂等成功 |
 | POST | `/api/video-uploads/{upload_id}/complete` | 校验全部分片、快速指纹和真实容器格式后原子发布 |
 | DELETE | `/api/video-uploads/{upload_id}` | 取消未完成会话并清理临时文件 |
-| GET | `/api/videos?limit&offset&q` | 个人视频列表（仅管理员 JWT 查看全部；管理员 API Key 仍按属主/团队隔离） |
+| GET | `/api/videos?limit&offset&q&scope` | 视频列表；`scope=mine` 查询当前账号个人空间，`scope=all` 查询仅管理员 JWT 可用的全站视图（管理员 API Key 不能使用 `all`） |
 | PATCH | `/api/videos/{code}` | 修改 `name` / `visibility` |
 | DELETE | `/api/videos/{code}` | 删除正式视频 |
 | GET | `/api/videos/{code}/link?ttl` | 生成限时签名链接 |

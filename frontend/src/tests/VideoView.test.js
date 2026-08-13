@@ -73,10 +73,12 @@ describe('VideoView media group scope', () => {
       ],
       total: 3,
     })
-    const wrapper = mountVideos({ user: { id: 99, role: 'admin' } })
+    const wrapper = mountVideos({ user: { id: 99, role: 'admin' }, scope: 'all' })
     await flushPromises()
     expect(wrapper.classes()).toContain('asset-library')
     expect(wrapper.get('.library-title h1').text()).toBe('全站视频')
+    expect(wrapper.get('.library-upload-button').text()).toContain('上传到我的个人空间')
+    expect(api.listVideos).toHaveBeenCalledWith({ limit: 12, offset: 0, q: '', scope: 'all' })
     expect(wrapper.get('.media-grid.asset-grid').attributes('aria-label')).toBe('视频列表')
 
     const cards = wrapper.findAll('.video-card-stub')
@@ -106,5 +108,25 @@ describe('VideoView media group scope', () => {
     await wrapper.get('.library-upload-button').trigger('click')
     expect(document.body.querySelector('[aria-label="选择或拖拽视频上传"]')).not.toBeNull()
     expect(document.body.querySelector('.vis-select').value).toBe('public')
+  })
+
+  it('keeps an administrator personal scope separate from the global list', async () => {
+    const wrapper = mountVideos({ user: { id: 99, role: 'admin' }, scope: 'mine' })
+    await flushPromises()
+
+    expect(wrapper.get('.library-title h1').text()).toBe('我的视频')
+    expect(api.listVideos).toHaveBeenCalledWith({ limit: 12, offset: 0, q: '', scope: 'mine' })
+  })
+
+  it('refreshes the administrator global list when a team upload completes', async () => {
+    const wrapper = mountVideos({ user: { id: 99, role: 'admin' }, scope: 'all' })
+    await flushPromises()
+    expect(api.listVideos).toHaveBeenCalledTimes(1)
+
+    window.dispatchEvent(new CustomEvent('oss:video-upload-complete', { detail: { team_id: 42 } }))
+    await flushPromises()
+
+    expect(api.listVideos).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('.library-title h1').text()).toBe('全站视频')
   })
 })

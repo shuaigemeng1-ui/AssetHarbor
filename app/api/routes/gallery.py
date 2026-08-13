@@ -1,6 +1,7 @@
 """Gallery API: list images with per-user isolation, search, pagination, signed links."""
 
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
@@ -21,9 +22,11 @@ router = APIRouter(prefix="/api", tags=["gallery"])
 @router.get(
     "/images",
     response_model=ImageListResponse,
-    summary="List images (your own, or all with an administrator JWT)",
+    summary="List images in a personal or administrator global scope",
     description="Newest first. Regular users and API keys only see their owner/team scope; "
-    "an administrator JWT sees everything. Supports ?q= and limit/offset pagination.",
+    "an administrator JWT sees everything by default. Use scope=mine for the current "
+    "account's personal space or scope=all for the administrator-only global view. "
+    "Supports ?q= and limit/offset pagination.",
 )
 def list_images(
     request: Request,
@@ -31,10 +34,21 @@ def list_images(
     limit: int = Query(20, ge=1, le=100, description="Max items to return"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     q: str = Query("", max_length=100, description="Search name / filename / code"),
+    scope: Literal["mine", "all"] | None = Query(
+        default=None,
+        description="mine=current account personal space; all=site-wide administrator JWT view",
+    ),
     db: Session = Depends(get_db),
 ) -> ImageListResponse:
     filters = [Image.media_kind == "image"]
-    if not has_global_admin_scope(current_user):
+    global_scope_allowed = has_global_admin_scope(current_user)
+    if scope == "all" and not global_scope_allowed:
+        raise HTTPException(
+            status_code=403,
+            detail="global media scope requires administrator JWT authentication",
+        )
+    list_all = global_scope_allowed if scope is None else scope == "all"
+    if not list_all:
         filters.append(Image.owner_id == current_user.id)
         filters.append(Image.team_id.is_(None))  # team images live in the team space
     if q:

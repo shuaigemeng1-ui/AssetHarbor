@@ -25,6 +25,7 @@ const isAdmin = computed(() => user.value?.role === 'admin')
 const viewMeta = {
   overview: { section: '资料库', title: '媒体概览' },
   images: { section: '个人空间', title: '我的图片' },
+  'my-images': { section: '个人空间', title: '我的图片' },
   videos: { section: '个人空间', title: '我的视频' },
   groups: { section: '资料库', title: '分组' },
   teams: { section: '团队空间', title: '团队' },
@@ -32,8 +33,13 @@ const viewMeta = {
   account: { section: '设置', title: '账户与密钥' },
 }
 
-const currentMeta = computed(() => viewMeta[view.value] || viewMeta.overview)
+const currentMeta = computed(() => {
+  if (isAdmin.value && view.value === 'images') return { section: '全站媒体库', title: '全站图片' }
+  if (isAdmin.value && view.value === 'videos') return { section: '全站媒体库', title: '全站视频' }
+  return viewMeta[view.value] || viewMeta.overview
+})
 const isSettingsView = computed(() => view.value === 'admin' || view.value === 'account')
+const adminOnlyViews = new Set(['admin', 'my-images'])
 
 function viewFromHash() {
   const candidate = window.location.hash.replace(/^#\/?/, '').split(/[?&]/, 1)[0]
@@ -45,6 +51,12 @@ function startUserSession(value) {
   if (value?.id != null) initializeVideoUploads(value.id)
 }
 
+function authorizedView(next) {
+  if (!user.value) return next
+  if (!adminOnlyViews.has(next) || isAdmin.value) return next
+  return next === 'my-images' ? 'images' : 'overview'
+}
+
 function onUnauthorized() {
   resetVideoUploads()
   uploadCenterOpen.value = false
@@ -54,10 +66,10 @@ function onUnauthorized() {
 
 function navigate(next, { replace = false, upload = false } = {}) {
   if (!viewMeta[next]) return
-  if (next === 'admin' && !isAdmin.value) return
-  openImageUpload.value = next === 'images' && upload
-  view.value = next
-  const hash = `#/${next}`
+  const target = authorizedView(next)
+  openImageUpload.value = ['images', 'my-images'].includes(target) && upload
+  view.value = target
+  const hash = `#/${target}`
   if (window.location.hash !== hash) {
     if (replace) window.history.replaceState(null, '', hash)
     else window.location.hash = hash
@@ -67,7 +79,9 @@ function navigate(next, { replace = false, upload = false } = {}) {
 
 function onHashChange() {
   const next = viewFromHash()
-  view.value = next === 'admin' && !isAdmin.value ? 'overview' : next
+  const target = authorizedView(next)
+  view.value = target
+  if (target !== next) window.history.replaceState(null, '', `#/${target}`)
 }
 
 onMounted(async () => {
@@ -128,7 +142,7 @@ function logout() {
 
         <nav class="rail-nav" aria-label="主要功能">
           <button
-            :class="{ active: ['images', 'videos', 'groups'].includes(view) }"
+            :class="{ active: ['images', 'my-images', 'videos', 'groups'].includes(view) }"
             aria-label="媒体库"
             title="媒体库"
             @click="navigate('images')"
@@ -183,13 +197,40 @@ function logout() {
 
         <div class="sidebar-nav-scroll">
           <template v-if="!isSettingsView">
+            <div v-if="isAdmin" class="sidebar-nav-group">
+              <span class="sidebar-section-label">全站媒体库</span>
+              <nav class="side-nav" aria-label="全站媒体库导航">
+                <button :class="{ active: view === 'images' }" :aria-current="view === 'images' ? 'page' : undefined" @click="navigate('images')">
+                  <AppIcon name="image" /><span>全站图片</span>
+                </button>
+                <div class="nav-video-row">
+                  <button :class="{ active: view === 'videos' }" :aria-current="view === 'videos' ? 'page' : undefined" @click="navigate('videos')">
+                    <AppIcon name="video" /><span>全站视频</span>
+                  </button>
+                  <button
+                    class="nav-upload-center"
+                    :aria-label="activeVideoUploadCount ? `打开全局上传中心，${activeVideoUploadCount} 个进行中任务` : '打开全局上传中心'"
+                    title="全局上传中心"
+                    @click="uploadCenterOpen = true"
+                  >
+                    <AppIcon name="upload" size="14" />
+                    <span v-if="activeVideoUploadCount" class="nav-upload-count">{{ activeVideoUploadCount }}</span>
+                  </button>
+                </div>
+              </nav>
+            </div>
+
             <div class="sidebar-nav-group">
               <span class="sidebar-section-label">个人空间</span>
               <nav class="side-nav" aria-label="个人空间导航">
-                <button :class="{ active: view === 'images' }" :aria-current="view === 'images' ? 'page' : undefined" @click="navigate('images')">
+                <button
+                  :class="{ active: view === (isAdmin ? 'my-images' : 'images') }"
+                  :aria-current="view === (isAdmin ? 'my-images' : 'images') ? 'page' : undefined"
+                  @click="navigate(isAdmin ? 'my-images' : 'images')"
+                >
                   <AppIcon name="image" /><span>我的图片</span>
                 </button>
-                <div class="nav-video-row">
+                <div v-if="!isAdmin" class="nav-video-row">
                   <button :class="{ active: view === 'videos' }" :aria-current="view === 'videos' ? 'page' : undefined" @click="navigate('videos')">
                     <AppIcon name="video" /><span>我的视频</span>
                   </button>
@@ -248,7 +289,7 @@ function logout() {
         </div>
       </aside>
 
-      <div class="workspace-main" :class="{ 'workspace-main-library': ['images', 'videos'].includes(view) }">
+      <div class="workspace-main" :class="{ 'workspace-main-library': ['images', 'my-images', 'videos'].includes(view) }">
         <header class="workspace-topbar">
           <div class="workspace-context">
             <small>{{ currentMeta.section }}</small>
@@ -263,8 +304,15 @@ function logout() {
 
         <main class="page-content">
           <HomeView v-if="view === 'overview'" :user="user" @navigate="navigate" />
-          <GalleryView v-if="view === 'images'" :user="user" :open-upload="openImageUpload" @upload-request-consumed="openImageUpload = false" />
-          <VideoView v-if="view === 'videos'" :user="user" />
+          <GalleryView
+            v-if="view === 'images' || view === 'my-images'"
+            :key="view"
+            :user="user"
+            :scope="isAdmin && view === 'images' ? 'all' : 'mine'"
+            :open-upload="openImageUpload"
+            @upload-request-consumed="openImageUpload = false"
+          />
+          <VideoView v-if="view === 'videos'" :user="user" :scope="isAdmin ? 'all' : 'mine'" />
           <CollectionsView v-if="view === 'groups'" :user="user" />
           <TeamsView v-if="view === 'teams'" :user="user" />
           <AdminView v-if="view === 'admin' && isAdmin" :user="user" />

@@ -2,7 +2,7 @@
 
 import pytest
 
-from conftest import auth, new_user, upload
+from conftest import auth, login, new_user, upload
 
 
 def test_gallery_requires_auth(client):
@@ -60,6 +60,43 @@ def test_gallery_newest_first(client):
     items = client.get("/api/images?limit=2", headers=h).json()["items"]
     assert items[0]["code"] == second
     assert items[1]["code"] == first
+
+
+def test_administrator_can_switch_between_global_and_personal_image_scopes(client):
+    admin_token = login(client, "admin", "admin-pass")
+    admin_image = upload(client, admin_token, filename="admin-personal.png").json()
+    _, other_token = new_user(client)
+    other_image = upload(client, other_token, filename="other-personal.png").json()
+    team_id = client.post(
+        "/api/teams", headers=auth(admin_token), json={"name": "admin-image-scope"}
+    ).json()["id"]
+    team_image = upload(
+        client,
+        admin_token,
+        filename="admin-team.png",
+        data={"team_id": str(team_id)},
+    ).json()
+
+    mine = client.get("/api/images?scope=mine&limit=100", headers=auth(admin_token))
+    assert mine.status_code == 200, mine.text
+    mine_codes = {item["code"] for item in mine.json()["items"]}
+    assert admin_image["code"] in mine_codes
+    assert other_image["code"] not in mine_codes
+    assert team_image["code"] not in mine_codes
+
+    global_view = client.get("/api/images?scope=all&limit=100", headers=auth(admin_token))
+    assert global_view.status_code == 200, global_view.text
+    global_codes = {item["code"] for item in global_view.json()["items"]}
+    assert {admin_image["code"], other_image["code"], team_image["code"]} <= global_codes
+
+    default_codes = {
+        item["code"]
+        for item in client.get("/api/images?limit=100", headers=auth(admin_token)).json()["items"]
+    }
+    assert global_codes == default_codes
+
+    assert client.get("/api/images?scope=all", headers=auth(other_token)).status_code == 403
+    assert client.get("/api/images?scope=unknown", headers=auth(admin_token)).status_code == 422
 
 
 def test_healthz(client):

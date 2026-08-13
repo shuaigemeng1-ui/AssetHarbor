@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
@@ -271,17 +272,34 @@ def _list_videos(
     )
 
 
-@router.get("/api/videos", response_model=VideoListResponse, summary="List videos")
+@router.get(
+    "/api/videos",
+    response_model=VideoListResponse,
+    summary="List videos in a personal or administrator global scope",
+    description="An administrator JWT sees everything by default. Use scope=mine for the "
+    "current account's personal space or scope=all for the administrator-only global view.",
+)
 def list_videos(
     request: Request,
     current_user: User = Depends(get_current_user),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     q: str = Query("", max_length=100),
+    scope: Literal["mine", "all"] | None = Query(
+        default=None,
+        description="mine=current account personal space; all=site-wide administrator JWT view",
+    ),
     db: Session = Depends(get_db),
 ) -> VideoListResponse:
     filters = []
-    if not has_global_admin_scope(current_user):
+    global_scope_allowed = has_global_admin_scope(current_user)
+    if scope == "all" and not global_scope_allowed:
+        raise HTTPException(
+            status_code=403,
+            detail="global media scope requires administrator JWT authentication",
+        )
+    list_all = global_scope_allowed if scope is None else scope == "all"
+    if not list_all:
         filters.extend((Image.owner_id == current_user.id, Image.team_id.is_(None)))
     if q:
         like = f"%{q}%"

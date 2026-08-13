@@ -169,7 +169,7 @@ Media data-plane endpoints accept `Authorization: Bearer <JWT or API key>`; API 
 |---|---|---|
 | POST | `/api/upload` | multipart `file`, optional `name`, `visibility`, `team_id` (`visibility` defaults to `public`) |
 | GET | `/i/{code}` | fetch image (public: anyone; private: owner/team/admin/signed link) |
-| GET | `/api/images?limit&offset&q` | list my images (administrator JWT sees all; administrator API keys remain owner/team scoped), search by name/filename/code |
+| GET | `/api/images?limit&offset&q&scope` | list images; `scope=mine` selects the current account's personal space and `scope=all` selects the site-wide administrator JWT view (omitting it preserves the existing administrator-global/default-personal behavior) |
 | PATCH | `/api/images/{code}` | update `name` / `visibility` (owner/admin/team-manager) |
 | DELETE | `/api/images/{code}` | delete (owner/admin/team-manager) |
 | GET | `/api/images/{code}/link?ttl` | expiring signed link (owner/admin/team-member) |
@@ -186,7 +186,7 @@ Compute SHA-256 for up to 1 MiB at the start, middle, and end, then set `fingerp
 | PUT | `/api/video-uploads/{upload_id}/parts/{part_number}` | raw bytes with `Content-Range` and `X-Chunk-SHA256`; identical replay is idempotent |
 | POST | `/api/video-uploads/{upload_id}/complete` | verify all parts, fingerprint and real container type, then atomically publish |
 | DELETE | `/api/video-uploads/{upload_id}` | cancel an unfinished session and remove its temporary data |
-| GET | `/api/videos?limit&offset&q` | list personal videos (administrator JWT sees all; administrator API keys remain owner/team scoped) |
+| GET | `/api/videos?limit&offset&q&scope` | list videos; `scope=mine` selects the current account's personal space and `scope=all` selects the site-wide administrator JWT view (administrator API keys cannot use `all`) |
 | PATCH | `/api/videos/{code}` | update `name` / `visibility` |
 | DELETE | `/api/videos/{code}` | delete the stored video |
 | GET | `/api/videos/{code}/link?ttl` | create a signed link |

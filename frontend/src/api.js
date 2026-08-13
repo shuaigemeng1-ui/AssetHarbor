@@ -165,9 +165,10 @@ export function uploadFile(file, { name = '', visibility = 'public', teamId = nu
   return request('/api/upload', { method: 'POST', body: fd })
 }
 
-export function listImages({ limit = 20, offset = 0, q = '' } = {}) {
+export function listImages({ limit = 20, offset = 0, q = '', scope } = {}) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
   if (q) params.set('q', q)
+  if (scope) params.set('scope', scope)
   return request(`/api/images?${params}`)
 }
 
@@ -280,9 +281,10 @@ export function uploadVideoPart(uploadId, partNumber, blob, {
   return { promise, abort: () => xhr.abort() }
 }
 
-export function listVideos({ limit = 12, offset = 0, q = '' } = {}) {
+export function listVideos({ limit = 12, offset = 0, q = '', scope } = {}) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
   if (q) params.set('q', q)
+  if (scope) params.set('scope', scope)
   return request(`/api/videos?${params}`)
 }
 

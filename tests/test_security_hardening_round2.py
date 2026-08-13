@@ -352,6 +352,8 @@ def test_admin_api_key_is_tenant_scoped_across_the_entire_media_data_plane(clien
     video_list = client.get("/api/videos", headers=key_headers)
     assert personal_image["code"] not in {item["code"] for item in image_list.json()["items"]}
     assert personal_video["code"] not in {item["code"] for item in video_list.json()["items"]}
+    assert client.get("/api/images?scope=all", headers=key_headers).status_code == 403
+    assert client.get("/api/videos?scope=all", headers=key_headers).status_code == 403
     for path in (
         f"/i/{personal_image['code']}",
         f"/v/{personal_video['code']}",

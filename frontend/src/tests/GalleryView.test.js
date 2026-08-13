@@ -85,6 +85,23 @@ describe('GalleryView image uploads', () => {
     expect(wrapper.emitted('upload-request-consumed')).toHaveLength(1)
   })
 
+  it('requests and labels administrator global and personal scopes explicitly', async () => {
+    const admin = { id: 99, username: 'admin', role: 'admin' }
+    const globalView = mountGallery({ user: admin, scope: 'all' })
+    await flushPromises()
+
+    expect(globalView.get('.library-title h1').text()).toBe('全站图片')
+    expect(globalView.get('.library-upload-button').text()).toContain('上传到我的个人空间')
+    expect(api.listImages).toHaveBeenCalledWith({ limit: 12, offset: 0, q: '', scope: 'all' })
+
+    const personalView = mountGallery({ user: admin, scope: 'mine' })
+    await flushPromises()
+
+    expect(personalView.get('.library-title h1').text()).toBe('我的图片')
+    expect(personalView.get('.library-upload-button').text()).toContain('上传到我的个人空间')
+    expect(api.listImages).toHaveBeenCalledWith({ limit: 12, offset: 0, q: '', scope: 'mine' })
+  })
+
   it('reactively removes the temporary card when the upload completes', async () => {
     let finishUpload
     api.uploadFile.mockImplementation(() => new Promise(resolve => { finishUpload = resolve }))

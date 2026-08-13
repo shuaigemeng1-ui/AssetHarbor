@@ -456,6 +456,42 @@ def test_video_and_image_routes_and_lists_stay_separate(client):
     assert client.get(f"/v/{image_code}").status_code == 404
 
 
+def test_administrator_can_switch_between_global_and_personal_video_scopes(client):
+    from conftest import login
+
+    admin_token = login(client, "admin", "admin-pass")
+    _, admin_video = upload_video(client, admin_token, filename="admin-personal.mp4")
+    _, other_token = new_user(client)
+    _, other_video = upload_video(client, other_token, filename="other-personal.mp4")
+    team_id = client.post(
+        "/api/teams", headers=auth(admin_token), json={"name": "admin-video-scope"}
+    ).json()["id"]
+    _, team_video = upload_video(
+        client, admin_token, filename="admin-team.mp4", team_id=team_id
+    )
+
+    mine = client.get("/api/videos?scope=mine&limit=100", headers=auth(admin_token))
+    assert mine.status_code == 200, mine.text
+    mine_codes = {item["code"] for item in mine.json()["items"]}
+    assert admin_video["code"] in mine_codes
+    assert other_video["code"] not in mine_codes
+    assert team_video["code"] not in mine_codes
+
+    global_view = client.get("/api/videos?scope=all&limit=100", headers=auth(admin_token))
+    assert global_view.status_code == 200, global_view.text
+    global_codes = {item["code"] for item in global_view.json()["items"]}
+    assert {admin_video["code"], other_video["code"], team_video["code"]} <= global_codes
+
+    default_codes = {
+        item["code"]
+        for item in client.get("/api/videos?limit=100", headers=auth(admin_token)).json()["items"]
+    }
+    assert global_codes == default_codes
+
+    assert client.get("/api/videos?scope=all", headers=auth(other_token)).status_code == 403
+    assert client.get("/api/videos?scope=unknown", headers=auth(admin_token)).status_code == 422
+
+
 def test_team_video_permissions_space_and_disband_transfer(client):
     _, owner = new_user(client)
     member_name, member = new_user(client)

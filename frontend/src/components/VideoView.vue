@@ -18,6 +18,11 @@ const props = defineProps({
   teamId: { type: [Number, String], default: null },
   canManage: { type: Boolean, default: false },
   embedded: { type: Boolean, default: false },
+  scope: {
+    type: String,
+    default: 'mine',
+    validator: value => ['mine', 'all'].includes(value),
+  },
 })
 
 const videos = ref([])
@@ -47,8 +52,19 @@ let previousInspectorFocus = null
 
 const isTeam = computed(() => props.teamId !== null && props.teamId !== undefined)
 const hasMore = computed(() => videos.value.length < total.value)
-const isGlobalAdmin = computed(() => props.user.role === 'admin' && !isTeam.value)
+const isGlobalAdmin = computed(() => props.user.role === 'admin' && !isTeam.value && props.scope === 'all')
 const drawerActive = computed(() => inspectorOpen.value && (props.embedded || isNarrowLayout.value))
+const uploadButtonLabel = computed(() => (
+  props.user.role === 'admin' && !isTeam.value ? '上传到我的个人空间' : '上传'
+))
+const uploadModalTitle = computed(() => (
+  props.user.role === 'admin' && !isTeam.value ? '上传视频到我的个人空间' : '上传视频'
+))
+const uploadModalDescription = computed(() => (
+  isTeam.value
+    ? '视频会保存到当前团队空间；支持分片传输和断点续传。'
+    : '视频会保存到当前账号的个人空间；支持分片传输和断点续传。'
+))
 const uploadTasks = computed(() => videoUploadState.tasks.filter(task => {
   if (isTeam.value) return String(task.teamId) === String(props.teamId)
   return task.teamId === null || task.teamId === undefined
@@ -70,7 +86,7 @@ const uploadDescription = computed(() => {
 
 async function loadVideos({ append = false } = {}) {
   const generation = ++loadGeneration
-  const scope = String(props.teamId ?? 'personal')
+  const requestScope = isTeam.value ? `team:${props.teamId}` : props.scope
   const requestQuery = query.value.trim()
   const offset = append ? videos.value.length : 0
   if (append) loadingMore.value = true
@@ -79,8 +95,9 @@ async function loadVideos({ append = false } = {}) {
   try {
     const response = isTeam.value
       ? await listTeamVideos(props.teamId, { limit: PAGE_SIZE, offset, q: requestQuery })
-      : await listVideos({ limit: PAGE_SIZE, offset, q: requestQuery })
-    if (generation !== loadGeneration || scope !== String(props.teamId ?? 'personal') || requestQuery !== query.value.trim()) return
+      : await listVideos({ limit: PAGE_SIZE, offset, q: requestQuery, scope: props.scope })
+    const currentScope = isTeam.value ? `team:${props.teamId}` : props.scope
+    if (generation !== loadGeneration || requestScope !== currentScope || requestQuery !== query.value.trim()) return
     const incoming = response.items || []
     videos.value = append ? [...videos.value, ...incoming] : incoming
     total.value = Number(response.total || 0)
@@ -242,11 +259,11 @@ function onUploadComplete(event) {
   const uploadedTeamId = event.detail?.team_id
   const belongsHere = isTeam.value
     ? String(uploadedTeamId) === String(props.teamId)
-    : uploadedTeamId === null || uploadedTeamId === undefined
+    : isGlobalAdmin.value || uploadedTeamId === null || uploadedTeamId === undefined
   if (belongsHere) loadVideos()
 }
 
-watch(() => props.teamId, () => {
+watch(() => [props.teamId, props.scope], () => {
   query.value = ''
   selectedVideo.value = null
   inspectorOpen.value = false
@@ -323,7 +340,7 @@ onBeforeUnmount(() => {
         </button>
         <button class="primary library-upload-button" type="button" @click="uploadOpen = true">
           <AppIcon name="upload" size="16" />
-          上传
+          {{ uploadButtonLabel }}
         </button>
       </div>
 
@@ -347,7 +364,7 @@ onBeforeUnmount(() => {
           <div class="empty-icon"><AppIcon name="video" size="22" /></div>
           <h3>{{ query ? '没有找到匹配视频' : '这里还没有视频' }}</h3>
           <p>{{ query ? '换个关键词试试看。' : '上传第一个视频，开始建立媒体库。' }}</p>
-          <button v-if="!query" class="primary" type="button" @click="uploadOpen = true">上传视频</button>
+          <button v-if="!query" class="primary" type="button" @click="uploadOpen = true">{{ uploadButtonLabel }}</button>
         </div>
         <div v-if="hasMore" class="load-more-wrap">
           <button class="secondary" :disabled="loadingMore" @click="loadVideos({ append: true })">
@@ -387,8 +404,8 @@ onBeforeUnmount(() => {
 
     <BaseModal
       v-if="uploadOpen"
-      title="上传视频"
-      description="大文件分片传输，断网或刷新后仍可继续。"
+      :title="uploadModalTitle"
+      :description="uploadModalDescription"
       labelled-by="video-upload-title"
       wide
       @close="uploadOpen = false"

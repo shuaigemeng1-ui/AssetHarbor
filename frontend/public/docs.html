@@ -646,14 +646,14 @@ print(video["code"], video["url"], video["visibility"])</code></pre></div>
         <tr><td><span class="method m-get">GET</span></td><td><code>/api/auth/config</code></td><td>公开客户端上传、会话、并发与容量限制</td></tr>
         <tr><td><span class="method m-get">GET</span></td><td><code>/api/keys</code></td><td>JWT-only：列出自己的 API Key 前缀</td></tr>
         <tr><td><span class="method m-post">POST</span></td><td><code>/api/keys</code></td><td>JWT-only：创建仅展示一次的 API Key</td></tr>
-        <tr><td><span class="method m-get">GET</span></td><td><code>/api/images?limit&amp;offset&amp;q</code></td><td>个人图片；仅管理员 JWT 为全局视图，管理员 API Key 仍按属主/团队范围</td></tr>
+        <tr><td><span class="method m-get">GET</span></td><td><code>/api/images?limit&amp;offset&amp;q&amp;scope</code></td><td><code>scope=mine</code> 为当前账号个人空间；<code>scope=all</code> 为仅管理员 JWT 可用的全站视图</td></tr>
         <tr><td><span class="method m-get">GET</span></td><td><code>/api/media/{code}</code></td><td>公开媒体匿名元数据（隐藏属主、团队和原文件名）；私密媒体仅有权身份可读，越权返回 404</td></tr>
         <tr><td><span class="method m-get">GET</span></td><td><code>/api/media/{code}/link?ttl=3600</code></td><td>公开媒体可匿名取得规范直链；私密媒体需有权 JWT/API Key 并返回限时签名链接</td></tr>
         <tr><td><span class="method m-patch">PATCH</span></td><td><code>/api/images/{code}</code></td><td>更新名称或可见性</td></tr>
         <tr><td><span class="method m-delete">DELETE</span></td><td><code>/api/images/{code}</code></td><td>属主、团队管理员或管理员 JWT 删除；管理员 API Key 无全局越权</td></tr>
         <tr><td><span class="method m-get">GET</span></td><td><code>/api/video-uploads</code></td><td>找回当前用户可续传会话及动态并发上限</td></tr>
         <tr><td><span class="method m-delete">DELETE</span></td><td><code>/api/video-uploads/{upload_id}</code></td><td>取消未完成会话，不删除已发布视频</td></tr>
-        <tr><td><span class="method m-get">GET</span></td><td><code>/api/videos?limit&amp;offset&amp;q</code></td><td>个人视频；仅管理员 JWT 为全局视图，管理员 API Key 仍按属主/团队范围</td></tr>
+        <tr><td><span class="method m-get">GET</span></td><td><code>/api/videos?limit&amp;offset&amp;q&amp;scope</code></td><td><code>scope=mine</code> 为当前账号个人空间；<code>scope=all</code> 为仅管理员 JWT 可用的全站视图</td></tr>
         <tr><td><span class="method m-patch">PATCH</span></td><td><code>/api/videos/{code}</code></td><td>更新名称或可见性</td></tr>
         <tr><td><span class="method m-get">GET</span></td><td><code>/api/media-groups</code></td><td>JWT-only：个人或有权团队分组与 items 管理</td></tr>
         <tr><td><span class="method m-get">GET</span></td><td><code>/api/teams/{id}/images</code></td><td>JWT / API Key：有权团队成员；仅管理员 JWT 可全局越权</td></tr>

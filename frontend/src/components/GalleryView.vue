@@ -16,6 +16,11 @@ const props = defineProps({
   canManage: { type: Boolean, default: false },
   embedded: { type: Boolean, default: false },
   openUpload: { type: Boolean, default: false },
+  scope: {
+    type: String,
+    default: 'mine',
+    validator: value => ['mine', 'all'].includes(value),
+  },
 })
 
 const emit = defineEmits(['upload-request-consumed'])
@@ -51,8 +56,19 @@ let activeUploadCount = 0
 
 const isTeam = computed(() => props.teamId !== null && props.teamId !== undefined)
 const hasMore = computed(() => images.value.length < total.value)
-const isGlobalAdmin = computed(() => props.user.role === 'admin' && !isTeam.value)
+const isGlobalAdmin = computed(() => props.user.role === 'admin' && !isTeam.value && props.scope === 'all')
 const drawerActive = computed(() => inspectorOpen.value && (props.embedded || isNarrowLayout.value))
+const uploadButtonLabel = computed(() => (
+  props.user.role === 'admin' && !isTeam.value ? '上传到我的个人空间' : '上传'
+))
+const uploadModalTitle = computed(() => (
+  props.user.role === 'admin' && !isTeam.value ? '上传图片到我的个人空间' : '上传图片'
+))
+const uploadModalDescription = computed(() => (
+  isTeam.value
+    ? '图片会保存到当前团队空间，并生成可分享的短链接。'
+    : '图片会保存到当前账号的个人空间，并生成可分享的短链接。'
+))
 const uploadDescription = computed(() => {
   const parts = ['支持 JPG、PNG、GIF、WebP、SVG、AVIF 等常用格式']
   if (Number(publicConfig.value?.max_upload_size_mb) > 0) {
@@ -67,7 +83,7 @@ const uploadDescription = computed(() => {
 
 async function loadGallery({ append = false } = {}) {
   const generation = ++loadGeneration
-  const scope = String(props.teamId ?? 'personal')
+  const requestScope = isTeam.value ? `team:${props.teamId}` : props.scope
   const requestQuery = query.value.trim()
   const offset = append ? images.value.length : 0
   if (append) loadingMore.value = true
@@ -76,8 +92,9 @@ async function loadGallery({ append = false } = {}) {
   try {
     const response = isTeam.value
       ? await listTeamImages(props.teamId, { limit: PAGE_SIZE, offset, q: requestQuery })
-      : await listImages({ limit: PAGE_SIZE, offset, q: requestQuery })
-    if (generation !== loadGeneration || scope !== String(props.teamId ?? 'personal') || requestQuery !== query.value.trim()) return
+      : await listImages({ limit: PAGE_SIZE, offset, q: requestQuery, scope: props.scope })
+    const currentScope = isTeam.value ? `team:${props.teamId}` : props.scope
+    if (generation !== loadGeneration || requestScope !== currentScope || requestQuery !== query.value.trim()) return
     const incoming = response.items || []
     images.value = append ? [...images.value, ...incoming] : incoming
     total.value = Number(response.total || 0)
@@ -311,7 +328,7 @@ function clearSearch() {
   loadGallery()
 }
 
-watch(() => props.teamId, () => {
+watch(() => [props.teamId, props.scope], () => {
   query.value = ''
   uploads.value = []
   selectedImage.value = null
@@ -395,7 +412,7 @@ onBeforeUnmount(() => {
         </button>
         <button class="primary library-upload-button" type="button" @click="uploadOpen = true">
           <AppIcon name="upload" size="16" />
-          上传
+          {{ uploadButtonLabel }}
         </button>
       </div>
 
@@ -419,7 +436,7 @@ onBeforeUnmount(() => {
           <div class="empty-icon"><AppIcon name="image" size="22" /></div>
           <h3>{{ query ? '没有找到匹配图片' : '这里还没有图片' }}</h3>
           <p>{{ query ? '换个关键词试试看。' : '上传第一张图片，开始建立媒体库。' }}</p>
-          <button v-if="!query" class="primary" type="button" @click="uploadOpen = true">上传图片</button>
+          <button v-if="!query" class="primary" type="button" @click="uploadOpen = true">{{ uploadButtonLabel }}</button>
         </div>
         <div v-if="hasMore" class="load-more-wrap">
           <button class="secondary" :disabled="loadingMore" @click="loadGallery({ append: true })">
@@ -458,8 +475,8 @@ onBeforeUnmount(() => {
 
     <BaseModal
       v-if="uploadOpen"
-      title="上传图片"
-      description="上传原图并获得可分享的短链接。"
+      :title="uploadModalTitle"
+      :description="uploadModalDescription"
       labelled-by="image-upload-title"
       wide
       @close="uploadOpen = false"
