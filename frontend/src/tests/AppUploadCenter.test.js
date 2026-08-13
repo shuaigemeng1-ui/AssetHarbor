@@ -55,4 +55,29 @@ describe('global upload center navigation', () => {
     expect(wrapper.find('.queue-stub').exists()).toBe(true)
     expect(wrapper.get('.rail-upload-center').attributes('aria-label')).toBe('打开视频上传中心')
   })
+
+  it.each(['images', 'videos'])('renders #/%s with the full-width library shell', async route => {
+    window.location.hash = `#/${route}`
+    const wrapper = mount(App, {
+      global: {
+        stubs: {
+          AppIcon: { template: '<i />' },
+          HomeView: true,
+          GalleryView: true,
+          VideoView: true,
+          CollectionsView: true,
+          TeamsView: true,
+          AdminView: true,
+          AccountView: true,
+          AuthView: true,
+          UiFeedback: true,
+          VideoUploadQueue: true,
+          BaseModal: true,
+        },
+      },
+    })
+    await flushPromises()
+    expect(wrapper.get('.workspace-main').classes()).toContain('workspace-main-library')
+    wrapper.unmount()
+  })
 })

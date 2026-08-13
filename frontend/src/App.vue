@@ -248,7 +248,7 @@ function logout() {
         </div>
       </aside>
 
-      <div class="workspace-main" :class="{ 'workspace-main-library': view === 'images' }">
+      <div class="workspace-main" :class="{ 'workspace-main-library': ['images', 'videos'].includes(view) }">
         <header class="workspace-topbar">
           <div class="workspace-context">
             <small>{{ currentMeta.section }}</small>

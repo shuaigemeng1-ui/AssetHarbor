@@ -576,6 +576,10 @@ body {
   object-fit: cover;
 }
 
+.asset-library > .video-inspector .inspector-preview {
+  aspect-ratio: 4 / 3;
+}
+
 .asset-library > .image-inspector .inspector-section {
   padding: 0 24px 18px;
 }
@@ -837,13 +841,13 @@ body {
   color: var(--accent);
 }
 
-.workspace-main .media-card:not(.image-card) {
+.workspace-main .media-card:not(.image-card):not(.video-card.selectable) {
   border-color: var(--border);
   border-radius: 7px;
   box-shadow: none;
 }
 
-.workspace-main .media-card:not(.image-card):hover {
+.workspace-main .media-card:not(.image-card):not(.video-card.selectable):hover {
   border-color: var(--border-strong);
   box-shadow: none;
   transform: none;

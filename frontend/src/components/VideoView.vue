@@ -1,12 +1,15 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { deleteVideo, fetchPublicConfig, listTeamVideos, listVideos, updateVideo } from '../api'
 import { confirmAction, toast } from '../stores/feedback'
-import { addVideoFiles, VIDEO_ACCEPT } from '../stores/videoUploads'
+import { acquireModalLock, releaseModalLock } from '../stores/modalLock'
+import { addVideoFiles, VIDEO_ACCEPT, videoUploadState } from '../stores/videoUploads'
 import { formatBytes } from '../utils/format'
+import AppIcon from './AppIcon.vue'
+import BaseModal from './BaseModal.vue'
 import UploadDropzone from './UploadDropzone.vue'
-import CollectionPickerModal from './CollectionPickerModal.vue'
 import VideoCard from './VideoCard.vue'
+import VideoInspector from './VideoInspector.vue'
 import VideoPlayerModal from './VideoPlayerModal.vue'
 import VideoUploadQueue from './VideoUploadQueue.vue'
 
@@ -14,6 +17,7 @@ const props = defineProps({
   user: { type: Object, required: true },
   teamId: { type: [Number, String], default: null },
   canManage: { type: Boolean, default: false },
+  embedded: { type: Boolean, default: false },
 })
 
 const videos = ref([])
@@ -27,17 +31,28 @@ const uploadName = ref('')
 // select "private" when they want restricted access.
 const uploadVisibility = ref('public')
 const selectedVideo = ref(null)
-const groupTarget = ref(null)
+const playerVideo = ref(null)
+const uploadOpen = ref(false)
+const inspectorOpen = ref(false)
+const inspectorPanel = ref(null)
+const isNarrowLayout = ref(typeof window !== 'undefined' && window.innerWidth <= 1160)
 const publicConfig = ref(null)
 const PAGE_SIZE = 12
 let searchTimer
 let loadGeneration = 0
 let publicConfigPromise = null
+let layoutMedia = null
+let drawerLocked = false
+let previousInspectorFocus = null
 
 const isTeam = computed(() => props.teamId !== null && props.teamId !== undefined)
 const hasMore = computed(() => videos.value.length < total.value)
-const groupTargetTeamId = computed(() => groupTarget.value?.team_id ?? props.teamId)
 const isGlobalAdmin = computed(() => props.user.role === 'admin' && !isTeam.value)
+const drawerActive = computed(() => inspectorOpen.value && (props.embedded || isNarrowLayout.value))
+const uploadTasks = computed(() => videoUploadState.tasks.filter(task => {
+  if (isTeam.value) return String(task.teamId) === String(props.teamId)
+  return task.teamId === null || task.teamId === undefined
+}))
 const uploadDescription = computed(() => {
   const parts = ['支持 MP4、MOV、WebM、MKV、AVI、MPEG、TS、OGV、3GP、FLV、WMV']
   if (Number(publicConfig.value?.max_video_size_mb) > 0) {
@@ -66,8 +81,14 @@ async function loadVideos({ append = false } = {}) {
       ? await listTeamVideos(props.teamId, { limit: PAGE_SIZE, offset, q: requestQuery })
       : await listVideos({ limit: PAGE_SIZE, offset, q: requestQuery })
     if (generation !== loadGeneration || scope !== String(props.teamId ?? 'personal') || requestQuery !== query.value.trim()) return
-    videos.value = append ? [...videos.value, ...(response.items || [])] : (response.items || [])
+    const incoming = response.items || []
+    videos.value = append ? [...videos.value, ...incoming] : incoming
     total.value = Number(response.total || 0)
+    if (!append) {
+      const selectedCode = selectedVideo.value?.code
+      selectedVideo.value = incoming.find(item => item.code === selectedCode) || incoming[0] || null
+      if (!selectedVideo.value) inspectorOpen.value = false
+    }
   } catch (error) {
     if (generation === loadGeneration) loadError.value = error.message
   } finally {
@@ -126,8 +147,13 @@ async function onDelete(item) {
   if (!ok) return
   try {
     await deleteVideo(item.code)
+    const deletedIndex = videos.value.findIndex(video => video.code === item.code)
     videos.value = videos.value.filter(video => video.code !== item.code)
     total.value = Math.max(0, total.value - 1)
+    if (selectedVideo.value?.code === item.code) {
+      selectedVideo.value = videos.value[deletedIndex] || videos.value[deletedIndex - 1] || null
+      if (!selectedVideo.value) inspectorOpen.value = false
+    }
     toast('视频已删除', 'success')
   } catch (error) {
     toast(`删除失败：${error.message}`, 'error')
@@ -169,6 +195,49 @@ function clearSearch() {
   loadVideos()
 }
 
+function selectVideo(item) {
+  selectedVideo.value = item
+  inspectorOpen.value = true
+}
+
+function closeInspector() {
+  inspectorOpen.value = false
+}
+
+function onInspectorKeydown(event) {
+  if (!drawerActive.value || document.querySelector('.base-modal-panel')) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeInspector()
+    return
+  }
+  if (event.key !== 'Tab') return
+  const root = inspectorPanel.value?.getElement?.()
+  if (!root) return
+  const focusable = [...root.querySelectorAll(
+    'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [href], [tabindex]:not([tabindex="-1"])',
+  )]
+  const closeButton = root.parentElement?.querySelector('.inspector-mobile-close')
+  if (closeButton && !closeButton.disabled) focusable.push(closeButton)
+  if (!focusable.length) {
+    event.preventDefault()
+    root.focus()
+    return
+  }
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (event.shiftKey && (document.activeElement === first || document.activeElement === root)) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  } else if (!root.contains(document.activeElement)) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
 function onUploadComplete(event) {
   const uploadedTeamId = event.detail?.team_id
   const belongsHere = isTeam.value
@@ -180,281 +249,178 @@ function onUploadComplete(event) {
 watch(() => props.teamId, () => {
   query.value = ''
   selectedVideo.value = null
+  inspectorOpen.value = false
+  uploadOpen.value = false
   loadVideos()
+})
+
+watch(drawerActive, async active => {
+  if (active) {
+    previousInspectorFocus = document.activeElement
+    if (!drawerLocked) {
+      acquireModalLock()
+      drawerLocked = true
+    }
+    await nextTick()
+    inspectorPanel.value?.focus?.()
+  } else {
+    if (drawerLocked) {
+      releaseModalLock()
+      drawerLocked = false
+    }
+    await nextTick()
+    previousInspectorFocus?.focus?.()
+    previousInspectorFocus = null
+  }
 })
 
 onMounted(() => {
   window.addEventListener('oss:video-upload-complete', onUploadComplete)
+  window.addEventListener('keydown', onInspectorKeydown)
+  if (window.matchMedia) {
+    layoutMedia = window.matchMedia('(max-width: 1160px)')
+    isNarrowLayout.value = layoutMedia.matches
+    layoutMedia.onchange = event => { isNarrowLayout.value = event.matches }
+  }
   loadVideos()
   ensurePublicConfig().catch(() => {})
 })
 onBeforeUnmount(() => {
   clearTimeout(searchTimer)
   window.removeEventListener('oss:video-upload-complete', onUploadComplete)
+  window.removeEventListener('keydown', onInspectorKeydown)
+  if (layoutMedia) layoutMedia.onchange = null
+  if (drawerLocked) {
+    releaseModalLock()
+    drawerLocked = false
+  }
 })
 </script>
 
 <template>
-  <section class="library-view video-library-view">
-    <div class="section-heading video-heading">
-      <div>
-        <p class="eyebrow">{{ isTeam ? '团队媒体库' : isGlobalAdmin ? '全站媒体库' : '断点续传' }}</p>
-        <h2>{{ isTeam ? '团队视频' : isGlobalAdmin ? '全站视频' : '我的视频' }}</h2>
-        <p>大文件分片传输，断网或刷新后仍可继续。</p>
-      </div>
-      <span class="total-badge">{{ total }} 个</span>
-    </div>
+  <section class="asset-library video-library" :class="{ 'asset-library-embedded': embedded, 'inspector-open': inspectorOpen }">
+    <div class="asset-library-main" :inert="drawerActive ? '' : undefined">
+      <header class="library-heading">
+        <div class="library-title">
+          <p>{{ isTeam ? '团队媒体库' : isGlobalAdmin ? '全站媒体库' : '个人媒体库' }}</p>
+          <div>
+            <h1>{{ isTeam ? '团队视频' : isGlobalAdmin ? '全站视频' : '我的视频' }}</h1>
+            <span>{{ total }} 个</span>
+          </div>
+        </div>
+      </header>
 
-    <div class="upload-panel video-upload-panel">
-      <div class="options">
-        <input v-model="uploadName" class="name-input" placeholder="视频命名（可选，多文件自动加序号）" maxlength="255" aria-label="视频显示名称" />
-        <select v-model="uploadVisibility" class="vis-select" aria-label="视频可见性">
-          <option value="private">私密 · 仅自己/团队可见</option>
-          <option value="public">公开 · 任何人可访问</option>
-        </select>
-      </div>
-      <UploadDropzone
-        :accept="VIDEO_ACCEPT"
-        label="选择视频，或拖拽到这里"
-        :description="uploadDescription"
-        aria-label="选择或拖拽视频上传"
-        @files="handleFiles"
-      />
-    </div>
-
-    <VideoUploadQueue :team-id="teamId" />
-
-    <div class="library-toolbar video-toolbar">
-      <div class="search-row">
-        <input v-model="query" class="search" type="search" placeholder="搜索名称、文件名或短码" aria-label="搜索视频" @input="onQueryInput" />
-        <button v-if="query" class="clear" aria-label="清除搜索" @click="clearSearch">清除</button>
-      </div>
-    </div>
-
-    <p v-if="loading" class="status loading-state" aria-live="polite">正在加载视频…</p>
-    <div v-else-if="loadError" class="status error" role="alert">加载失败：{{ loadError }} <button class="secondary" @click="loadVideos()">重试</button></div>
-    <template v-else>
-      <div v-if="videos.length" class="media-grid">
-        <VideoCard
-          v-for="item in videos"
-          :key="`${item.code}-${item.visibility}`"
-          :item="item"
-          :deletable="canDelete(item)"
-          :show-scope="isGlobalAdmin"
-          :groupable="canGroup(item)"
-          @add-to-group="groupTarget = item"
-          @play="selectedVideo = item"
-          @delete="onDelete(item)"
-          @toggle-visibility="onToggleVisibility(item)"
-        />
-      </div>
-      <div v-else class="empty-state">
-        <h3>{{ query ? '没有找到匹配视频' : '这里还没有视频' }}</h3>
-        <p>{{ query ? '换个关键词试试看。' : '从上方上传第一个视频吧。' }}</p>
-      </div>
-      <div v-if="hasMore" class="load-more-wrap">
-        <button class="secondary" :disabled="loadingMore" @click="loadVideos({ append: true })">
-          {{ loadingMore ? '加载中…' : `加载更多（还有 ${total - videos.length} 个）` }}
+      <div class="library-toolbar">
+        <div class="search-row">
+          <AppIcon name="search" size="17" />
+          <input v-model="query" class="search" type="search" placeholder="搜索名称、文件名或短码" aria-label="搜索视频" @input="onQueryInput" />
+          <button v-if="query" class="clear" type="button" aria-label="清除搜索" @click="clearSearch">
+            <AppIcon name="close" size="15" />
+          </button>
+        </div>
+        <button v-if="uploadTasks.length" class="upload-activity" type="button" @click="uploadOpen = true">
+          {{ uploadTasks.length }} 个上传任务
+        </button>
+        <button class="primary library-upload-button" type="button" @click="uploadOpen = true">
+          <AppIcon name="upload" size="16" />
+          上传
         </button>
       </div>
-    </template>
 
-    <VideoPlayerModal v-if="selectedVideo" :item="selectedVideo" @close="selectedVideo = null" />
-    <CollectionPickerModal
-      v-if="groupTarget"
-      :media="groupTarget"
-      :team-id="groupTargetTeamId"
-      :user-id="user.id"
-      :can-manage="canManage || user.role === 'admin'"
-      @close="groupTarget = null"
+      <p v-if="loading" class="status loading-state" aria-live="polite">正在加载视频…</p>
+      <div v-else-if="loadError" class="status error" role="alert">
+        <span>加载失败：{{ loadError }}</span>
+        <button class="secondary" @click="loadVideos()">重试</button>
+      </div>
+      <template v-else>
+        <div v-if="videos.length" class="media-grid asset-grid" role="list" aria-label="视频列表">
+          <VideoCard
+            v-for="item in videos"
+            :key="`${item.code}-${item.visibility}`"
+            :item="item"
+            selectable
+            :selected="selectedVideo?.code === item.code"
+            @select="selectVideo(item)"
+          />
+        </div>
+        <div v-else class="empty-state">
+          <div class="empty-icon"><AppIcon name="video" size="22" /></div>
+          <h3>{{ query ? '没有找到匹配视频' : '这里还没有视频' }}</h3>
+          <p>{{ query ? '换个关键词试试看。' : '上传第一个视频，开始建立媒体库。' }}</p>
+          <button v-if="!query" class="primary" type="button" @click="uploadOpen = true">上传视频</button>
+        </div>
+        <div v-if="hasMore" class="load-more-wrap">
+          <button class="secondary" :disabled="loadingMore" @click="loadVideos({ append: true })">
+            {{ loadingMore ? '加载中…' : `加载更多（还有 ${total - videos.length} 个）` }}
+          </button>
+        </div>
+      </template>
+    </div>
+
+    <VideoInspector
+      v-if="selectedVideo"
+      ref="inspectorPanel"
+      tabindex="-1"
+      :role="drawerActive ? 'dialog' : undefined"
+      :aria-modal="drawerActive ? 'true' : undefined"
+      :item="selectedVideo"
+      :user="user"
+      :can-manage="canDelete(selectedVideo)"
+      :can-manage-groups="canManage || user.role === 'admin'"
+      :is-global-admin="isGlobalAdmin"
+      :team-id="selectedVideo.team_id ?? teamId"
+      :groupable="canGroup(selectedVideo)"
+      @play="playerVideo = selectedVideo"
+      @delete="onDelete(selectedVideo)"
+      @toggle-visibility="onToggleVisibility(selectedVideo)"
+      @updated="Object.assign(selectedVideo, $event)"
     />
+    <aside v-else class="image-inspector image-inspector-empty" aria-label="视频详情">
+      <AppIcon name="video" size="24" />
+      <strong>视频详情</strong>
+      <p>{{ loading ? '正在加载媒体库…' : '选择一个视频查看详情' }}</p>
+    </aside>
+    <button v-if="inspectorOpen" class="inspector-mobile-backdrop" type="button" tabindex="-1" aria-label="关闭视频详情" @click="closeInspector" />
+    <button v-if="inspectorOpen" class="inspector-mobile-close" type="button" aria-label="关闭视频详情" @click="closeInspector">
+      <AppIcon name="close" size="17" />
+    </button>
+
+    <BaseModal
+      v-if="uploadOpen"
+      title="上传视频"
+      description="大文件分片传输，断网或刷新后仍可继续。"
+      labelled-by="video-upload-title"
+      wide
+      @close="uploadOpen = false"
+    >
+      <div class="image-upload-dialog video-upload-dialog">
+        <div class="upload-settings">
+          <label>
+            <span>视频命名</span>
+            <input v-model="uploadName" class="name-input" type="text" placeholder="可选，多个视频会自动添加序号" maxlength="255" />
+          </label>
+          <label>
+            <span>可见性</span>
+            <select v-model="uploadVisibility" class="vis-select">
+              <option value="private">私密 · 仅自己/团队可见</option>
+              <option value="public">公开 · 任何人可访问</option>
+            </select>
+          </label>
+        </div>
+        <UploadDropzone
+          :accept="VIDEO_ACCEPT"
+          label="选择视频，或拖拽到这里"
+          :description="uploadDescription"
+          aria-label="选择或拖拽视频上传"
+          @files="handleFiles"
+        />
+        <VideoUploadQueue :team-id="teamId" />
+      </div>
+      <template #footer>
+        <button class="ghost" type="button" @click="uploadOpen = false">关闭</button>
+      </template>
+    </BaseModal>
+
+    <VideoPlayerModal v-if="playerVideo" :item="playerVideo" @close="playerVideo = null" />
   </section>
 </template>
-
-<style scoped>
-.video-library-view {
-  color: var(--text);
-}
-
-.video-heading {
-  margin-bottom: 20px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid var(--border);
-}
-
-.video-heading h2 {
-  margin: 0 0 5px;
-  font-size: 24px;
-  font-weight: 680;
-  letter-spacing: -.025em;
-}
-
-.video-heading .eyebrow {
-  margin-bottom: 5px;
-  color: var(--muted);
-  font-size: 10px;
-  letter-spacing: .1em;
-}
-
-.video-heading p:not(.eyebrow) {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.total-badge {
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 5px 9px;
-  background: var(--panel-soft);
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 550;
-}
-
-.video-upload-panel {
-  margin-bottom: 16px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 16px;
-  background: #fff;
-  box-shadow: none;
-}
-
-.options {
-  margin-bottom: 12px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 230px;
-  gap: 8px;
-}
-
-.name-input,
-.vis-select {
-  min-height: 40px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 0 11px;
-  background: #fff;
-  color: var(--text);
-  box-shadow: none;
-  font-size: 12px;
-  outline: 0;
-}
-
-.name-input:focus,
-.vis-select:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgb(11 99 229 / 10%);
-}
-
-:deep(.drop) {
-  min-height: 126px;
-  border-radius: 6px;
-  background: var(--panel-soft);
-}
-
-:deep(.upload-queue) {
-  margin-bottom: 16px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: #fff;
-  box-shadow: none;
-}
-
-.video-toolbar {
-  margin: 18px 0;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border);
-}
-
-.search-row {
-  width: min(360px, 100%);
-  min-height: 40px;
-  display: flex;
-  align-items: center;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 0 6px 0 11px;
-  background: #fff;
-}
-
-.search-row:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgb(11 99 229 / 10%);
-}
-
-.search-row .search {
-  min-width: 0;
-  min-height: 38px;
-  flex: 1;
-  border: 0;
-  border-radius: 0;
-  padding: 0;
-  background: transparent;
-  box-shadow: none;
-  font-size: 12px;
-  outline: 0;
-}
-
-.search-row .clear {
-  border: 0;
-  border-radius: 4px;
-  padding: 5px 7px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 10px;
-}
-
-.search-row .clear:hover {
-  background: var(--panel-soft);
-  color: var(--text);
-}
-
-.media-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-}
-
-:deep(.video-card) {
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: #fff;
-  box-shadow: none;
-}
-
-:deep(.video-preview),
-:deep(.video-preview video),
-:deep(.video-placeholder) {
-  border-radius: 5px 5px 0 0;
-}
-
-.empty-state {
-  min-height: 260px;
-  border: 1px dashed var(--border);
-  border-radius: 6px;
-  background: var(--panel-soft);
-}
-
-.empty-state h3 {
-  margin: 0 0 5px;
-  font-size: 14px;
-  font-weight: 630;
-}
-
-.empty-state p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-@media (max-width: 980px) {
-  .media-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-@media (max-width: 620px) {
-  .video-heading { flex-direction: column; gap: 10px; }
-  .options { grid-template-columns: 1fr; }
-  .media-grid { grid-template-columns: 1fr; }
-}
-</style>

@@ -56,6 +56,28 @@ describe('media card editing', () => {
     expect(wrapper.emitted('select')).toEqual([[result], [result]])
   })
 
+  it('uses the same selectable, minimal-card contract for videos', async () => {
+    const item = {
+      code: 'video-code', name: '视频名称', original_filename: 'video.mp4', visibility: 'public',
+      size: 1024, content_type: 'video/mp4', url: '/v/video-code', created_at: '2026-08-12T00:00:00Z',
+    }
+    const wrapper = mount(VideoCard, {
+      props: { item, selectable: true, selected: true },
+    })
+    await flushPromises()
+
+    expect(wrapper.classes()).toContain('selected')
+    expect(wrapper.attributes('role')).toBe('button')
+    expect(wrapper.attributes('tabindex')).toBe('0')
+    expect(wrapper.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('.card-actions').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('video/mp4')
+
+    await wrapper.trigger('click')
+    await wrapper.trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('select')).toEqual([[item], [item]])
+  })
+
   it('keeps retry and remove controls for a failed upload', async () => {
     const wrapper = mount(ImageResult, {
       props: {

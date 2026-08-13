@@ -15,6 +15,7 @@ import {
   LogOut,
   Menu,
   Pencil,
+  Play,
   Plus,
   RefreshCw,
   Search,
@@ -58,6 +59,7 @@ const icons = {
   check: Check,
   retry: RefreshCw,
   preview: Eye,
+  play: Play,
   plus: Plus,
 }
 </script>
