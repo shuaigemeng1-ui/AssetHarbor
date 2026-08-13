@@ -1,4 +1,4 @@
-# oss · 自托管图片与视频存储
+# AssetHarbor · 自托管图片与视频存储
 
 [**English**](./README.md) | **简体中文**
 
@@ -23,7 +23,7 @@
 - 🔐 **认证与 RBAC**：JWT 登录、`admin`/`user` 双角色、管理员密码环境变量引导、注册策略可配（开放/邀请码/关闭）
 - 🔑 **API Key 鉴权**：为脚本/命令行生成鉴权 Key，可访问图片与视频 API；**明文只显示一次**（数据库仅存 SHA-256 哈希）、支持**轮换**（旧 Key 立即失效）与撤销
 - 🔏 **改密**：用户自助改密（校验旧密码）；管理员可重置任意用户密码
-- 👥 **用户隔离**：每个人只能看到自己的媒体；图片和视频均支持**公开/私密**
+- 👥 **用户隔离**：个人空间按用户隔离，团队私密媒体向团队成员共享；图片和视频均支持**公开/私密**
 - 🏢 **团队与团队空间**：建团队、按用户名邀请成员、成员角色（拥有者/管理员/成员）、团队图片/视频分栏及私密媒体共享
 - 🛠️ **管理员界面**：系统统计（用户/图片/视频/待完成上传/团队/存储）、用户与团队管理
 - 🗑️ **媒体删除**：属主/管理员/团队管理员可删除有权管理的图片或视频
@@ -33,7 +33,7 @@
 - 🔍 **搜索**：按名称/文件名/短码实时搜索（个人空间与团队空间均支持）
 - 🔒 **安全默认值**：非 root 运行、SVG 附件式下发（防存储型 XSS）、bcrypt 密码哈希、上传大小限制
 - 📦 **API 优先**：完整 REST API（后续兼容 PicGo / ShareX / uPic 客户端）
-- 🖥️ **Vue 3 前端**：浅色响应式 SPA（图片 / 视频 / 团队 / 管理 / 账户），与后端同容器交付
+- 🖥️ **Vue 3 前端**：极简响应式媒体工作台，覆盖图片、视频、分组、团队、管理与账户功能，与后端同容器交付
 
 ## 📚 目录
 
@@ -53,7 +53,7 @@
 
 ```bash
 # 1. 克隆
-git clone http://www.genkinet.net:10004/it_group/oss.git && cd oss
+git clone https://github.com/shuaigemeng1-ui/AssetHarbor.git && cd AssetHarbor
 
 # 2. 调整安全配置（英文注释模板为 .env.example）
 cp .env.zh-CN.example .env
@@ -64,7 +64,7 @@ cp .env.zh-CN.example .env
 # 3. 启动
 docker compose up -d
 
-# 4. 打开上传页
+# 4. 打开 Web 管理界面
 #    http://服务器IP:8080
 #    用 admin / $ADMIN_PASSWORD 登录。新安装默认关闭自助注册；
 #    确需公开注册时显式设置 ALLOW_REGISTRATION=open。
@@ -337,41 +337,43 @@ SQLite 数据库、`files` 下的正式媒体和 `uploads` 下的断点续传状
 
 ## 📁 项目结构
 
-现代分层布局（core → models → schemas → services → api），按域拆分文件，最大文件约 185 行：
+后端与前端均按领域拆分的分层结构：
 
 ```
-oss/
+AssetHarbor/
 ├── app/
 │   ├── main.py                 # 应用入口：装配路由 + SPA 托管 + 生命周期
 │   ├── core/                   # 基础设施层（无 HTTP 路由）
 │   │   ├── config.py           # 环境变量配置（OSS_* 前缀）
 │   │   ├── database.py         # SQLAlchemy engine/session/Base/迁移
 │   │   └── security.py         # bcrypt 密码、JWT、API Key 认证、RBAC 依赖
-│   ├── models/                 # ORM 模型，按域拆分
-│   │   ├── user.py  api_key.py  team.py  image.py
-│   ├── schemas/                # Pydantic 模型，按域拆分
-│   │   ├── auth.py  image.py  team.py  key.py  admin.py  meta.py
+│   ├── models/                 # 用户、团队、媒体、上传、分组、流量模型
+│   ├── schemas/                # 按领域拆分的 Pydantic 契约
 │   ├── services/               # 业务逻辑
-│   │   ├── images.py           # 魔数嗅探 + 上传/删除
+│   │   ├── images.py  videos.py  library.py
 │   │   ├── signing.py          # 短码 URL + 限时签名链接
-│   │   ├── teams.py  shortcode.py  ratelimit.py
+│   │   └── teams.py  storage_quota.py  traffic.py  ratelimit.py
 │   ├── api/                    # HTTP 层
 │   │   ├── deps.py             # 统一依赖出口
 │   │   └── routes/             # 按资源拆分的路由
-│   │       ├── auth.py  users.py  upload.py  gallery.py
-│   │       ├── images.py  keys.py  admin.py
+│   │       ├── auth.py  users.py  upload.py  gallery.py  library.py
+│   │       ├── images.py  videos.py  keys.py  admin.py
 │   │       └── teams/          # team.py  members.py  space.py
 │   └── static/                 # 前端构建产物（Docker 多阶段注入）
 ├── frontend/                   # Vue 3 + Vite 前端源码
 │   ├── src/
 │   │   ├── App.vue             # 导航壳 + 视图切换
-│   │   ├── components/         # 按视图拆分的组件
+│   │   ├── components/         # 媒体视图、卡片、检查器与弹窗
+│   │   ├── stores/             # 反馈与上传状态
+│   │   ├── tests/              # Vitest 组件与状态测试
 │   │   ├── api.js              # fetch 封装 + token 管理
-│   │   └── style.css
+│   │   ├── style.css            # 全局与认证页样式
+│   │   └── workspace.css        # 登录后工作台样式
 │   ├── vite.config.js  package.json
 ├── tests/                      # pytest，按域拆分
 ├── Dockerfile                  # 多阶段：node 构建前端 → python 运行时
 ├── docker-compose.yml
+├── .gitlab-ci.yml              # GitLab 镜像仓库的测试/构建/发布门禁
 ├── .env.example                # Docker Compose 英文配置模板
 └── .env.zh-CN.example          # Docker Compose 中文配置模板
 ```
@@ -382,7 +384,7 @@ oss/
 - **SVG = 潜在 XSS**：始终以附件下发，禁止内联渲染
 - **认证**：密码 bcrypt 哈希存储；JWT 签名（HS256）；`JWT_SECRET` 建议显式配置
 - **用户隔离**：列表接口强制按属主过滤；私密图对他人返回 404（不暴露存在性）
-- **私密图访问控制**：只能通过（a）属主/团队成员/管理员登录态，或（b）**限时签名链接**访问。签名 = HMAC-SHA256(code:expires)，绑定单图、防篡改、到期失效；但持有者可在有效期内重复访问，因此必须像临时密码一样保护
+- **私密媒体访问控制**：只能通过（a）属主/团队成员/管理员登录态，或（b）**限时签名链接**访问。签名 = HMAC-SHA256(code:expires:signing_version)，绑定单个媒体、支持撤销、防篡改且到期失效；但持有者可在有效期内重复访问，因此必须像临时密码一样保护
 - **速率限制**（内存固定窗口，单容器适用；多副本需换共享存储）：
   - 登录：每 IP 20 次/分 + 每账号 5 次/分（防暴力破解）
   - 取图 `GET /i/{code}`：每 IP 240 次/分（防短码枚举）
@@ -397,7 +399,7 @@ oss/
 - [x] MVP：上传 API、短码 URL、SQLite、Docker 部署
 - [x] 前端升级：Vue 3 + Vite SPA，多阶段构建单容器交付
 - [x] 认证与角色：JWT 登录、admin/user、注册策略（开放/邀请码）、管理员密码环境变量
-- [x] 多租户隔离：用户独立命名空间，图片 private/public，私有图仅本人可见
+- [x] 多租户隔离：个人空间按用户隔离，团队私密媒体按成员共享，图片与视频均支持 private/public
 - [x] 上传命名 + 画廊搜索
 - [x] 鉴权增强：私密图限时签名链接（HMAC 防篡改、到期失效；有效期内可重放）、登录/取图/上传速率限制
 - [x] 团队与团队空间：建队、邀请成员、角色管理、团队共享图片库
@@ -416,4 +418,4 @@ oss/
 
 ## 📄 License
 
-[MIT](./LICENSE) © 2026 oss contributors
+[MIT](./LICENSE) © 2026 AssetHarbor contributors

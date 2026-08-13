@@ -1,4 +1,4 @@
-# oss · Self-hosted Image & Video Hosting
+# AssetHarbor · Self-hosted Image & Video Hosting
 
 **English** | [简体中文](./README.zh-CN.md)
 
@@ -23,7 +23,7 @@ A self-hosted media service for images and original video files. Videos use resu
 - 🔐 **Auth & RBAC**: JWT login, `admin`/`user` roles, admin bootstrapped from an env variable, configurable registration policy (open / invite / closed)
 - 🔑 **API keys**: scripts and CLIs can use both image and video APIs; **plaintext is shown exactly once** (DB stores only SHA-256 hashes), with rotation and revocation
 - 🔏 **Password management**: self-service password change (verifies the old password); admins can reset any user's password
-- 👥 **User isolation**: everyone sees only their own media; images and videos can both be `public` or `private`
+- 👥 **User isolation**: personal media is isolated per user, while private team media is shared with team members; images and videos can both be `public` or `private`
 - 🏢 **Teams & team spaces**: create teams, invite members, assign roles, and manage separate image/video tabs with private media shared inside the team
 - 🛠️ **Admin dashboard**: users, images, videos, pending uploads, teams and storage statistics, plus user and team management
 - 🗑️ **Media deletion**: owners, admins and team managers can delete media they manage
@@ -33,7 +33,7 @@ A self-hosted media service for images and original video files. Videos use resu
 - 🔍 **Search**: real-time search by name / filename / short code (personal space and team spaces)
 - 🔒 **Secure by default**: non-root container, SVG served as attachment (stored-XSS protection), bcrypt password hashing, upload size limits
 - 📦 **API-first**: complete REST API (PicGo / ShareX / uPic compatibility planned)
-- 🖥️ **Vue 3 SPA**: responsive light UI (Images / Videos / Teams / Admin / Account), delivered in the same container via multi-stage build
+- 🖥️ **Vue 3 SPA**: minimalist responsive media workspace for images, videos, groups, teams, administration, and account management, delivered in the same container via multi-stage build
 
 ## 📚 Table of Contents
 
@@ -53,7 +53,7 @@ A self-hosted media service for images and original video files. Videos use resu
 
 ```bash
 # 1. Clone
-git clone http://www.genkinet.net:10004/it_group/oss.git && cd oss
+git clone https://github.com/shuaigemeng1-ui/AssetHarbor.git && cd AssetHarbor
 
 # 2. Configure security (use .env.zh-CN.example for Chinese comments)
 cp .env.example .env
@@ -333,41 +333,43 @@ To restore, keep `oss` stopped, validate the selected backup before replacing da
 
 ## 📁 Project Structure
 
-A layered, domain-split layout (largest file ≈ 185 lines):
+A layered layout split by domain across the backend and frontend:
 
 ```
-oss/
+AssetHarbor/
 ├── app/
 │   ├── main.py                 # app assembly: routes + SPA hosting + lifespan
 │   ├── core/                   # infrastructure (no HTTP routes)
 │   │   ├── config.py           # settings (OSS_* env vars)
 │   │   ├── database.py         # SQLAlchemy engine/session/Base/migrations
 │   │   └── security.py         # bcrypt, JWT, API-key auth, RBAC deps
-│   ├── models/                 # ORM models, one module per domain
-│   │   ├── user.py  api_key.py  team.py  image.py
-│   ├── schemas/                # Pydantic schemas, one module per domain
-│   │   ├── auth.py  image.py  team.py  key.py  admin.py  meta.py
+│   ├── models/                 # users, teams, media, uploads, groups, traffic
+│   ├── schemas/                # Pydantic contracts by domain
 │   ├── services/               # business logic
-│   │   ├── images.py           # magic-byte sniffing + upload/delete
+│   │   ├── images.py  videos.py  library.py
 │   │   ├── signing.py          # short-code URLs + signed links
-│   │   ├── teams.py  shortcode.py  ratelimit.py
+│   │   └── teams.py  storage_quota.py  traffic.py  ratelimit.py
 │   ├── api/                    # HTTP layer
 │   │   ├── deps.py             # unified dependency surface
 │   │   └── routes/             # routes by resource
-│   │       ├── auth.py  users.py  upload.py  gallery.py
-│   │       ├── images.py  keys.py  admin.py
+│   │       ├── auth.py  users.py  upload.py  gallery.py  library.py
+│   │       ├── images.py  videos.py  keys.py  admin.py
 │   │       └── teams/          # team.py  members.py  space.py
 │   └── static/                 # built frontend (injected by Docker)
 ├── frontend/                   # Vue 3 + Vite source
 │   ├── src/
 │   │   ├── App.vue             # nav shell + views
-│   │   ├── components/         # view components
+│   │   ├── components/         # media views, cards, inspector, modals
+│   │   ├── stores/             # feedback and upload state
+│   │   ├── tests/              # Vitest component and state tests
 │   │   ├── api.js              # fetch wrapper + token management
-│   │   └── style.css
+│   │   ├── style.css            # shared/auth styles
+│   │   └── workspace.css        # authenticated workspace styles
 │   ├── vite.config.js  package.json
 ├── tests/                      # pytest, split by domain
 ├── Dockerfile                  # multi-stage: node build → python runtime
 ├── docker-compose.yml
+├── .gitlab-ci.yml              # test/build/release gate for GitLab mirrors
 ├── .env.example                # English Docker Compose template
 └── .env.zh-CN.example          # Chinese Docker Compose template
 ```
@@ -378,7 +380,7 @@ oss/
 - **SVG = potential stored XSS**: always served as an attachment, never rendered inline
 - **Auth**: bcrypt password hashes; HS256 JWT; set `JWT_SECRET` explicitly
 - **User isolation**: list endpoints filter by owner; private images return 404 to others (existence is not disclosed)
-- **Private-image access**: owner/team/admin login, or a **time-limited signed link** (HMAC-SHA256 over `code:expires`, bound to one image, tamper-resistant and expiring). A valid link is a bearer credential that can be replayed until expiry; protect it like a temporary password and prefer a short TTL.
+- **Private-media access**: owner/team/admin login, or a **time-limited signed link** (HMAC-SHA256 over `code:expires:signing_version`, bound to one media item, tamper-resistant, revocable and expiring). A valid link is a bearer credential that can be replayed until expiry; protect it like a temporary password and prefer a short TTL.
 - **Rate limiting** (in-process fixed window; swap for a shared store when scaling out):
   - Login: 20/min per IP + 5/min per account (anti brute-force)
   - `GET /i/{code}`: 240/min per IP (anti enumeration)
@@ -412,4 +414,4 @@ Pull requests are welcome. Please keep tests green (`pytest`) and the frontend b
 
 ## 📄 License
 
-[MIT](./LICENSE) © 2026 oss contributors
+[MIT](./LICENSE) © 2026 AssetHarbor contributors
