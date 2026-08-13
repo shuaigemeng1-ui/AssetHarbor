@@ -19,13 +19,17 @@ function openPicker() {
 }
 
 function onInput(event) {
-  emit('files', event.target.files)
+  // FileList is live: clearing the input also empties the object. Consumers
+  // perform async validation before reading it, so always emit a stable copy.
+  const files = Array.from(event.target.files || [])
   event.target.value = ''
+  emit('files', files)
 }
 
 function onDrop(event) {
   dragging.value = false
-  emit('files', event.dataTransfer.files)
+  // DataTransfer.files may become unavailable after the drop event returns.
+  emit('files', Array.from(event.dataTransfer?.files || []))
 }
 </script>
 
