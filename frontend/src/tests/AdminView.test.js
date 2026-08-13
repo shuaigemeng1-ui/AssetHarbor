@@ -177,6 +177,8 @@ describe('AdminView user lifecycle', () => {
 
     expect(api.getAdminTrafficStats).toHaveBeenCalledWith(7)
     expect(wrapper.text()).toContain('API 调用与流量')
+    expect(wrapper.text()).toContain('仅统计使用用户生成 API Key 鉴权的请求')
+    expect(wrapper.text()).not.toContain('匿名调用')
     expect(wrapper.text()).toContain('12')
     expect(wrapper.text()).toContain('同步任务')
     expect(wrapper.text()).toContain('alice')

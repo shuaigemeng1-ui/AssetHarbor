@@ -42,15 +42,13 @@ def test_traffic_counts_streamed_bytes_routes_users_and_api_keys(client):
     body = report.json()
     assert body["days"] == 7
     assert len(body["daily"]) == 7
-    assert body["summary"]["request_count"] >= 3
-    assert body["summary"]["response_bytes"] >= len(FAKE_PNG)
+    assert body["summary"]["request_count"] >= 2
     assert body["summary"]["total_bytes"] == (
         body["summary"]["request_bytes"] + body["summary"]["response_bytes"]
     )
 
     routes = {(item["route"], item["method"]): item for item in body["routes"]}
     assert ("/api/upload", "POST") in routes
-    assert ("/i/{code}", "GET") in routes
     assert ("/api/media/{code}", "GET") in routes
     assert all(code not in item["route"] for item in body["routes"])
     assert all("?" not in item["route"] for item in body["routes"])
@@ -66,6 +64,65 @@ def test_traffic_counts_streamed_bytes_routes_users_and_api_keys(client):
     assert member["storage_bytes"] == len(FAKE_PNG)
     assert member["total_usage_bytes"] >= member["storage_bytes"]
     assert member["request_count"] >= 2
+
+
+def test_admin_dashboard_metrics_only_count_api_key_requests(client):
+    """JWT page activity must not change the Key-only dashboard metrics."""
+    username, token = new_user(client)
+    created = client.post(
+        "/api/keys", headers=auth(token), json={"name": "dashboard-key-only"}
+    ).json()
+    key_headers = {"X-API-Key": created["key"]}
+    admin_token = login(client, "admin", "admin-pass")
+
+    before = client.get(
+        "/api/admin/traffic-stats?days=7", headers=auth(admin_token)
+    ).json()
+
+    # These are the same JWT-authenticated requests the management UI makes.
+    for _ in range(3):
+        assert client.get("/api/images", headers=auth(token)).status_code == 200
+    for _ in range(2):
+        assert client.get("/api/images", headers=key_headers).status_code == 200
+
+    after_response = client.get(
+        "/api/admin/traffic-stats?days=7", headers=auth(admin_token)
+    )
+    assert after_response.status_code == 200, after_response.text
+    after = after_response.json()
+
+    assert after["summary"]["request_count"] - before["summary"]["request_count"] == 2
+
+    before_daily = {item["date"]: item["request_count"] for item in before["daily"]}
+    after_daily = {item["date"]: item["request_count"] for item in after["daily"]}
+    assert sum(after_daily.values()) - sum(before_daily.values()) == 2
+
+    def route_count(report):
+        return next(
+            (
+                item["request_count"]
+                for item in report["routes"]
+                if item["route"] == "/api/images" and item["method"] == "GET"
+            ),
+            0,
+        )
+
+    assert route_count(after) - route_count(before) == 2
+
+    def key_count(report):
+        return next(
+            (
+                item["request_count"]
+                for item in report["api_keys"]
+                if item["api_key_id"] == created["id"]
+            ),
+            0,
+        )
+
+    assert key_count(after) - key_count(before) == 2
+    member = next(item for item in after["members"] if item["username"] == username)
+    before_member = next(item for item in before["members"] if item["username"] == username)
+    assert member["request_count"] - before_member["request_count"] == 2
 
 
 @pytest.mark.parametrize("replacement_mode", ["revoke", "rotate"])

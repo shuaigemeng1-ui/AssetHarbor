@@ -252,7 +252,7 @@ async function doDeleteTeam(team) {
     <div class="admin-section-head traffic-section-head">
       <div>
         <h3>API 调用与流量</h3>
-        <p>按 UTC 自然日统计完成的 HTTP 请求；流量为应用层统计值，响应流量按 ASGI 成功发送的字节计量，不代表客户端已完整消费。</p>
+        <p>仅统计使用用户生成 API Key 鉴权的请求，管理页面操作与匿名访问不计入；流量按 UTC 自然日和应用层字节计量。</p>
       </div>
       <label class="traffic-range">
         <span>统计范围</span>
@@ -266,7 +266,7 @@ async function doDeleteTeam(team) {
       <article class="traffic-stat-card">
         <span>调用数量</span>
         <strong>{{ traffic ? formatNumber(trafficSummary.request_count) : '–' }}</strong>
-        <small>{{ traffic?.start_date || '—' }} 至 {{ traffic?.end_date || '—' }}</small>
+        <small>API Key · {{ traffic?.start_date || '—' }} 至 {{ traffic?.end_date || '—' }}</small>
       </article>
       <article class="traffic-stat-card">
         <span>总流量</span>
@@ -288,11 +288,6 @@ async function doDeleteTeam(team) {
         <strong>{{ traffic ? formatErrorRate(trafficSummary) : '–' }}</strong>
         <small>{{ traffic ? `${formatNumber(trafficSummary.error_count)} 次错误` : '按 HTTP 4xx / 5xx 统计' }}</small>
       </article>
-      <article class="traffic-stat-card">
-        <span>匿名调用</span>
-        <strong>{{ traffic ? formatNumber(traffic.anonymous?.request_count) : '–' }}</strong>
-        <small>{{ traffic ? formatBytes(traffic.anonymous?.total_bytes) : '公开媒体与未鉴权请求' }}</small>
-      </article>
     </div>
 
     <div v-if="trafficError" class="traffic-error" role="alert">
@@ -309,7 +304,7 @@ async function doDeleteTeam(team) {
         <div class="traffic-panel-head">
           <div>
             <h4 id="traffic-trend-heading">每日调用趋势</h4>
-            <p>进度条以当前范围内最高调用日为基准。</p>
+            <p>仅包含 API Key 调用，进度条以当前范围内最高调用日为基准。</p>
           </div>
           <span class="total-badge">{{ traffic.days }} 天</span>
         </div>
@@ -341,7 +336,7 @@ async function doDeleteTeam(team) {
         <div class="traffic-panel-head">
           <div>
             <h4 id="member-usage-heading">成员使用空间与调用量</h4>
-            <p>空间包含已完成图片、视频和未完成视频预留。</p>
+            <p>空间包含媒体与上传预留，调用量仅包含该成员的 API Key。</p>
           </div>
           <span class="total-badge">{{ membersByUsage.length }} 位</span>
         </div>
@@ -371,7 +366,7 @@ async function doDeleteTeam(team) {
 
       <div class="traffic-breakdown-grid">
         <section class="traffic-panel" aria-labelledby="route-ranking-heading">
-          <div class="traffic-panel-head"><div><h4 id="route-ranking-heading">高频接口</h4><p>按调用数量排序的前 8 个路由。</p></div></div>
+          <div class="traffic-panel-head"><div><h4 id="route-ranking-heading">高频接口</h4><p>按 API Key 调用数量排序的前 8 个路由。</p></div></div>
           <div class="table-shell">
             <table class="traffic-table compact-traffic-table">
               <caption class="sr-only">高频 API 路由排行</caption>

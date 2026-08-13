@@ -158,14 +158,14 @@ def admin_stats(
 @router.get(
     "/traffic-stats",
     response_model=AdminTrafficStats,
-    summary="Traffic trends and per-member storage usage (admin)",
+    summary="API-key traffic trends and per-member storage usage (admin)",
 )
 def admin_traffic_stats(
     days: int = Query(default=7, ge=1, le=365, description="UTC calendar days, including today"),
     current_user: User = Depends(require_jwt_admin),
     db: Session = Depends(get_db),
 ) -> AdminTrafficStats:
-    """Return global/daily/route/API-key traffic and every member's storage."""
+    """Return API-key traffic trends and every member's storage usage."""
     _flush_traffic_or_503()
     telemetry_complete, telemetry_dropped_events = telemetry_integrity_status()
     db.rollback()
@@ -175,9 +175,10 @@ def admin_traffic_stats(
     end_date = datetime.now(timezone.utc).date()
     start_date = end_date - timedelta(days=days - 1)
     period_filter = TrafficDaily.day >= start_date
+    api_key_period_filter = (period_filter, TrafficDaily.api_key_id > 0)
 
     summary = _traffic_totals(
-        db.execute(select(*_traffic_sum_columns()).where(period_filter)).one()
+        db.execute(select(*_traffic_sum_columns()).where(*api_key_period_filter)).one()
     )
     anonymous = _traffic_totals(
         db.execute(
@@ -189,7 +190,7 @@ def admin_traffic_stats(
         day: _traffic_totals((count, errors, request_bytes, response_bytes))
         for day, count, errors, request_bytes, response_bytes in db.execute(
             select(TrafficDaily.day, *_traffic_sum_columns())
-            .where(period_filter)
+            .where(*api_key_period_filter)
             .group_by(TrafficDaily.day)
             .order_by(TrafficDaily.day)
         ).all()
@@ -210,7 +211,7 @@ def admin_traffic_stats(
         )
         for route, method, count, errors, request_bytes, response_bytes in db.execute(
             select(TrafficDaily.route, TrafficDaily.method, *_traffic_sum_columns())
-            .where(period_filter)
+            .where(*api_key_period_filter)
             .group_by(TrafficDaily.route, TrafficDaily.method)
             .order_by(func.sum(TrafficDaily.request_count).desc(), TrafficDaily.route)
             .limit(200)
@@ -223,7 +224,7 @@ def admin_traffic_stats(
             TrafficDaily.user_id,
             *_traffic_sum_columns(),
         )
-        .where(period_filter, TrafficDaily.api_key_id > 0)
+        .where(*api_key_period_filter)
         .group_by(TrafficDaily.api_key_id, TrafficDaily.user_id)
         .order_by(func.sum(TrafficDaily.request_count).desc())
         .limit(200)
@@ -255,7 +256,7 @@ def admin_traffic_stats(
         user_id: _traffic_totals((count, errors, request_bytes, response_bytes))
         for user_id, count, errors, request_bytes, response_bytes in db.execute(
             select(TrafficDaily.user_id, *_traffic_sum_columns())
-            .where(period_filter, TrafficDaily.user_id > 0)
+            .where(*api_key_period_filter, TrafficDaily.user_id > 0)
             .group_by(TrafficDaily.user_id)
         ).all()
     }
