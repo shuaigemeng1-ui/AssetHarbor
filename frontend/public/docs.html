@@ -7,188 +7,328 @@
 <title>oss · API 文档</title>
 <style>
   :root {
-    --bg: #f4f6fa;
+    --bg: #f7f8fa;
     --panel: #fff;
-    --panel-soft: #f8f9fc;
-    --border: #e1e6ef;
-    --border-strong: #cbd3e1;
-    --text: #1b2433;
-    --muted: #6f788a;
-    --accent: #5b5bd6;
-    --accent-soft: #f0f0ff;
-    --code-bg: #111827;
-    --green: #16803d;
-    --orange: #a76100;
-    --red: #c73535;
-    --purple: #7c3aed;
+    --border: #e7e9ee;
+    --text: #17202f;
+    --muted: #5f6b7d;
+    --faint: #8a94a6;
+    --accent: #2563eb;
+    --accent-soft: #eef4ff;
+    --code-bg: #101828;
+    --code-text: #dbe6f6;
+    --code-dim: #8fa0ba;
+    --green: #14803c;
+    --blue: #1d5bd6;
+    --purple: #6d28d9;
+    --orange: #b45309;
+    --red: #c2333b;
   }
   * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; scroll-padding-top: 22px; }
+  html { scroll-behavior: smooth; scroll-padding-top: 84px; }
   body {
     margin: 0;
     background: var(--bg);
     color: var(--text);
-    font: 14px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font: 15px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   }
   button, a { font: inherit; }
   button:focus-visible, a:focus-visible {
-    outline: 3px solid rgb(91 91 214 / 25%);
+    outline: 2px solid rgb(37 99 235 / 35%);
     outline-offset: 2px;
+    border-radius: 6px;
   }
-  .shell {
-    width: min(1180px, calc(100% - 36px));
-    margin: 0 auto;
-    padding: 30px 0 72px;
-  }
+
+  /* --- Top bar ---------------------------------------------------------- */
   .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    border-bottom: 1px solid var(--border);
+    background: rgb(247 248 250 / 88%);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+  .topbar-inner {
+    width: min(1180px, calc(100% - 40px));
+    min-height: 62px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-mark {
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+  }
+  .brand-copy { display: flex; align-items: baseline; gap: 8px; }
+  .brand-copy strong { font-size: 15px; font-weight: 680; letter-spacing: -.01em; }
+  .brand-copy span { color: var(--muted); font-size: 13px; }
+  .header-actions { display: flex; align-items: center; gap: 10px; }
+  .base-url {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 11px;
+    background: #fff;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .base-url code { color: var(--accent); font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+  .openapi-link {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 12px;
+    background: #fff;
+    color: var(--text);
+    font-size: 13px;
+    text-decoration: none;
+  }
+  .openapi-link:hover { border-color: var(--accent); color: var(--accent); }
+  .lang-switch { display: flex; gap: 2px; border: 1px solid var(--border); border-radius: 8px; padding: 2px; background: #fff; }
+  .lang-switch button {
+    min-height: 30px;
+    border: 0;
+    border-radius: 6px;
+    padding: 0 11px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .lang-switch button.active { background: var(--accent); color: #fff; }
+
+  /* --- Layout ----------------------------------------------------------- */
+  .shell { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 30px 0 72px; }
+  .layout { display: grid; grid-template-columns: 196px minmax(0, 1fr); gap: 44px; }
+
+  .side-nav { position: sticky; top: 84px; align-self: start; display: grid; gap: 3px; }
+  .side-nav strong {
+    margin: 16px 12px 6px;
+    color: var(--faint);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .08em;
+  }
+  .side-nav strong:first-child { margin-top: 0; }
+  .side-nav a {
+    border-radius: 8px;
+    padding: 6px 12px;
+    color: var(--muted);
+    font-size: 14px;
+    text-decoration: none;
+  }
+  .side-nav a:hover { color: var(--text); }
+  .side-nav a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+  main { min-width: 0; }
+
+  h2 { margin: 52px 0 10px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+  main > h2:first-child { margin-top: 0; }
+  h3 { margin: 0; font-size: 16px; font-weight: 650; }
+  .lead { margin: 0 0 20px; color: var(--muted); font-size: 14px; }
+
+  /* --- Notice cards ----------------------------------------------------- */
+  .notice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .notice {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    background: #fff;
+  }
+  .notice strong { display: block; margin-bottom: 3px; font-size: 14px; font-weight: 650; }
+  .notice span { color: var(--muted); font-size: 13.5px; }
+
+  /* --- Endpoint cards --------------------------------------------------- */
+  .endpoint-card {
+    margin-top: 14px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #fff;
+  }
+  .endpoint-head {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 20px;
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 22px;
+    gap: 16px;
+    padding: 17px 20px 15px;
   }
-  .brand { margin: 0; font-size: 28px; letter-spacing: -.04em; }
-  .brand span { color: var(--accent); }
-  .subtitle { max-width: 680px; margin: 5px 0 0; color: var(--muted); }
-  .base-url { margin: 9px 0 0; color: var(--muted); font-size: 12px; }
-  .base-url code {
-    border: 1px solid #dedfff;
-    border-radius: 7px;
-    padding: 2px 7px;
-    background: var(--accent-soft);
-    color: #4f4fc7;
+  .endpoint-title { min-width: 0; }
+  .endpoint-route { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .endpoint-route code {
+    color: var(--text);
+    font: 600 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     word-break: break-all;
   }
-  .header-actions { display: flex; align-items: center; gap: 9px; }
-  .openapi-link, .lang-switch button {
-    min-height: 36px;
-    border: 1px solid var(--border);
-    border-radius: 9px;
-    padding: 7px 12px;
-    background: rgb(255 255 255 / 80%);
+  .endpoint-head p { margin: 3px 0 0; color: var(--muted); font-size: 13.5px; }
+
+  .method {
+    display: inline-flex;
+    min-width: 52px;
+    justify-content: center;
+    border-radius: 6px;
+    padding: 3px 8px;
+    font: 700 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .02em;
+  }
+  .m-get { background: #e8f6ed; color: var(--green); }
+  .m-post { background: #e9f1ff; color: var(--blue); }
+  .m-put { background: #f2ecfe; color: var(--purple); }
+  .m-patch { background: #fdf3e5; color: var(--orange); }
+  .m-delete { background: #fdecec; color: var(--red); }
+
+  .auth-badge {
+    flex: 0 0 auto;
+    border-radius: 999px;
+    padding: 3px 10px;
+    background: #f1f3f7;
     color: var(--muted);
-    text-decoration: none;
-    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
   }
-  .lang-switch { display: flex; gap: 5px; }
-  .lang-switch button.active { border-color: #d9dafb; background: var(--accent-soft); color: #4f4fc7; }
-  .layout { display: grid; grid-template-columns: 205px minmax(0, 1fr); gap: 34px; margin-top: 26px; }
-  .side-nav { position: sticky; top: 20px; align-self: start; display: grid; gap: 5px; }
-  .side-nav strong { margin: 0 10px 7px; color: #a0a7b5; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
-  .side-nav a {
-    border-radius: 9px;
-    padding: 7px 10px;
+  .auth-badge.public { background: #e8f6ed; color: var(--green); }
+
+  .parameter-wrap { overflow-x: auto; padding: 0 20px 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th {
+    border-bottom: 1px solid var(--border);
+    padding: 8px 12px;
     color: var(--muted);
-    text-decoration: none;
+    font-size: 12.5px;
+    font-weight: 600;
+    text-align: left;
+    white-space: nowrap;
   }
-  .side-nav a:hover { background: #fff; color: var(--accent); }
-  main { min-width: 0; }
-  h2 { margin: 46px 0 12px; font-size: 23px; letter-spacing: -.03em; }
-  main > h2:first-child { margin-top: 0; }
-  h3 { margin: 0; font-size: 17px; }
-  .lead { margin: 0 0 18px; color: var(--muted); }
-  .notice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-  .notice {
-    border: 1px solid #dedfff;
-    border-radius: 12px;
-    padding: 13px 15px;
-    background: #f7f7ff;
-    color: #626884;
+  td { border-bottom: 1px solid #f0f2f6; padding: 9px 12px; vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  td code {
+    border-radius: 4px;
+    padding: 1px 6px;
+    background: #f2f4f8;
+    color: var(--text);
+    font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    word-break: break-word;
   }
-  .notice strong { display: block; margin-bottom: 3px; color: #3f4270; }
-  .endpoint-card {
-    margin-top: 16px;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    background: var(--panel);
-    box-shadow: 0 7px 24px rgb(34 45 73 / 4%);
-  }
-  .endpoint-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 17px 18px 13px; }
-  .endpoint-title { min-width: 0; }
-  .endpoint-route { display: flex; align-items: center; gap: 9px; margin-bottom: 5px; }
-  .endpoint-route code { color: #31394a; font: 600 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
-  .endpoint-head p { margin: 0; color: var(--muted); font-size: 12px; }
-  .auth-badge { flex: 0 0 auto; border-radius: 999px; padding: 3px 8px; background: #f1f3f7; color: #747d8e; font-size: 10px; font-weight: 700; }
-  .auth-badge.public { background: #ecf8f0; color: var(--green); }
-  .method { display: inline-block; min-width: 48px; border: 1px solid currentColor; border-radius: 6px; padding: 2px 6px; text-align: center; font: 750 10px/1.4 ui-monospace, monospace; }
-  .m-get { color: var(--green); }
-  .m-post { color: #2563eb; }
-  .m-put { color: var(--purple); }
-  .m-patch { color: var(--orange); }
-  .m-delete { color: var(--red); }
-  .parameter-wrap { overflow-x: auto; padding: 0 18px 11px; }
-  table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  th, td { border-bottom: 1px solid #edf0f5; padding: 7px 8px; text-align: left; vertical-align: top; }
-  th { color: var(--muted); font-weight: 600; white-space: nowrap; }
-  td code { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-word; }
+
+  /* --- Code examples ---------------------------------------------------- */
   .example { border-top: 1px solid var(--border); background: var(--code-bg); }
-  .example-toolbar { display: flex; align-items: center; justify-content: space-between; min-height: 43px; border-bottom: 1px solid rgb(255 255 255 / 9%); padding: 5px 10px 5px 13px; }
+  .example-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 44px;
+    border-bottom: 1px solid rgb(255 255 255 / 8%);
+    padding: 6px 10px 6px 14px;
+  }
   .code-tabs { display: flex; gap: 4px; }
   .code-tab, .copy-btn {
     border: 1px solid transparent;
     border-radius: 7px;
-    padding: 5px 10px;
+    padding: 5px 11px;
     background: transparent;
-    color: #9ca8bc;
+    color: var(--code-dim);
     cursor: pointer;
-    font-size: 11px;
+    font-size: 12.5px;
   }
-  .code-tab[aria-selected="true"] { border-color: rgb(255 255 255 / 13%); background: rgb(255 255 255 / 9%); color: #fff; }
-  .copy-btn { border-color: rgb(255 255 255 / 13%); }
+  .code-tab[aria-selected="true"] { border-color: rgb(255 255 255 / 12%); background: rgb(255 255 255 / 8%); color: #fff; }
+  .copy-btn { border-color: rgb(255 255 255 / 14%); }
   .copy-btn:hover { color: #fff; }
   .code-panel { position: relative; }
   .code-panel[hidden] { display: none; }
-  pre { margin: 0; overflow-x: auto; padding: 16px 18px 19px; }
-  pre code { color: #e6edf7; font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; }
-  .reference-shell { overflow-x: auto; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); }
-  .reference-shell table { min-width: 680px; margin: 0; }
-  .reference-shell th, .reference-shell td { padding: 10px 12px; }
-  .security-note { margin-top: 14px; border-left: 3px solid var(--accent); padding: 9px 13px; background: #f5f5ff; color: var(--muted); }
-  footer { margin-top: 48px; border-top: 1px solid var(--border); padding-top: 20px; color: var(--muted); font-size: 12px; }
+  pre { margin: 0; overflow-x: auto; padding: 16px 20px 19px; }
+  pre code {
+    color: var(--code-text);
+    font: 12.5px/1.75 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: pre;
+  }
+
+  /* --- Reference tables & notes ----------------------------------------- */
+  .reference-shell { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+  .reference-shell table { min-width: 660px; margin: 0; }
+  .reference-shell th, .reference-shell td { padding: 11px 16px; }
+  .reference-shell td:first-child { white-space: nowrap; }
+  .reference-shell td:nth-child(2) code { background: transparent; padding: 0; }
+
+  .security-note {
+    margin: 14px 0 0;
+    border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    padding: 11px 15px;
+    background: #fff;
+    color: var(--muted);
+    font-size: 13.5px;
+  }
+
+  footer { margin-top: 56px; border-top: 1px solid var(--border); padding-top: 18px; color: var(--muted); font-size: 13px; }
+
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  /* --- Responsive ------------------------------------------------------- */
   @media (max-width: 820px) {
-    .layout { grid-template-columns: 1fr; }
-    .side-nav { position: static; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .side-nav strong { grid-column: 1 / -1; }
+    .layout { grid-template-columns: 1fr; gap: 0; }
+    .side-nav { position: static; display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; }
+    .side-nav strong { display: none; }
+    .side-nav a {
+      flex: 0 0 auto;
+      border: 1px solid var(--border);
+      background: #fff;
+    }
+    .side-nav a.active { border-color: #cfe0ff; background: var(--accent-soft); color: var(--accent); }
   }
   @media (max-width: 620px) {
-    .shell { width: min(100% - 24px, 1180px); padding-top: 18px; }
-    .topbar, .endpoint-head { flex-direction: column; }
-    .header-actions { width: 100%; flex-wrap: wrap; }
+    .topbar-inner { width: min(100% - 28px, 1180px); flex-wrap: wrap; padding: 10px 0; }
+    .brand-copy span { display: none; }
+    .base-url { order: 3; width: 100%; }
+    .shell { width: min(100% - 28px, 1180px); padding-top: 20px; }
     .notice-grid { grid-template-columns: 1fr; }
-    .side-nav { display: flex; overflow-x: auto; }
-    .side-nav strong { display: none; }
-    .side-nav a { flex: 0 0 auto; }
+    .endpoint-head { flex-direction: column; }
   }
   @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 </style>
 </head>
 <body>
-<div class="shell">
-  <header class="topbar">
-    <div>
-      <h1 class="brand">oss<span>.</span> API</h1>
-      <p class="subtitle" data-zh="面向脚本、自动化任务和内部系统的开放接口。常用接口同时提供可直接复制的 Python 3 与 cURL 示例。" data-en="Open APIs for scripts, automations and internal systems, with copy-ready Python 3 and cURL examples."></p>
-      <p class="base-url"><span data-zh="当前服务地址" data-en="Base URL"></span>：<code id="base-url">/</code></p>
-    </div>
-    <div class="header-actions">
-      <a class="openapi-link" href="/openapi.json">OpenAPI JSON</a>
-      <div class="lang-switch" aria-label="文档语言">
-        <button type="button" data-lang="zh" class="active" aria-pressed="true">中文</button>
-        <button type="button" data-lang="en" aria-pressed="false">English</button>
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">O</span>
+      <div class="brand-copy">
+        <strong>OSS API</strong>
+        <span data-zh="开放接口文档" data-en="Open API reference"></span>
       </div>
     </div>
-  </header>
+    <div class="header-actions">
+      <p class="base-url"><span data-zh="服务地址" data-en="Base URL"></span><code id="base-url">/</code></p>
+      <a class="openapi-link" href="/openapi.json">OpenAPI</a>
+      <div class="lang-switch" aria-label="文档语言">
+        <button type="button" data-lang="zh" class="active" aria-pressed="true">中文</button>
+        <button type="button" data-lang="en" aria-pressed="false">EN</button>
+      </div>
+    </div>
+  </div>
+</div>
 
+<div class="shell">
   <div class="layout">
     <nav class="side-nav" aria-label="API 文档章节">
-      <strong>API Guide</strong>
+      <strong data-zh="开始" data-en="Getting started"></strong>
       <a href="#quickstart" data-zh="快速开始" data-en="Quick start"></a>
       <a href="#examples" data-zh="常用调用" data-en="Common calls"></a>
       <a href="#video-flow" data-zh="视频分片" data-en="Video chunks"></a>
-      <a href="#reference" data-zh="接口索引" data-en="Reference"></a>
+      <strong data-zh="参考" data-en="Reference"></strong>
+      <a href="#reference" data-zh="接口索引" data-en="Endpoints"></a>
       <a href="#security" data-zh="鉴权隔离" data-en="Auth isolation"></a>
       <a href="#operations" data-zh="运维接口" data-en="Operations"></a>
     </nav>
@@ -456,7 +596,7 @@ curl --fail-with-body \
 import requests
 
 base = os.getenv("OSS_BASE_URL", "{{BASE}}")
-# 此无鉴权下载仅适用于公开媒体。
+# 以下无鉴权示例仅适用于公开媒体。
 with requests.get(f"{base}/v/Ab3xYz9Kq1", params={"download": 1}, stream=True, timeout=120) as response:
     response.raise_for_status()
     with open("video.mp4", "wb") as output:
@@ -466,7 +606,7 @@ with requests.get(f"{base}/v/Ab3xYz9Kq1", params={"download": 1}, stream=True, t
 # 私密媒体二选一：给同一请求添加有权身份，或直接请求已取得的签名 URL。
 # headers = {"Authorization": f"Bearer {os.environ['OSS_TOKEN']}"}
 # requests.get(os.environ["OSS_SIGNED_URL"], stream=True, timeout=120)</code></pre></div>
-          <div class="code-panel" id="public-download-curl" role="tabpanel" aria-labelledby="public-download-curl-tab" data-code-panel="curl" hidden><pre><code># 此无鉴权下载仅适用于公开媒体
+          <div class="code-panel" id="public-download-curl" role="tabpanel" aria-labelledby="public-download-curl-tab" data-code-panel="curl" hidden><pre><code># 以下无鉴权示例仅适用于公开媒体
 curl --fail-with-body -L \
   "$OSS_BASE_URL/v/Ab3xYz9Kq1?download=1" \
   -o video.mp4
@@ -662,10 +802,10 @@ print(video["code"], video["url"], video["visibility"])</code></pre></div>
 
       <h2 id="security" data-zh="鉴权与空间隔离" data-en="Authentication and scope isolation"></h2>
       <div class="notice-grid">
-        <div class="notice"><strong>个人空间</strong>列表、修改、删除和上传会话均绑定当前身份；普通成员不能通过传 owner_id 查看他人资产。</div>
-        <div class="notice"><strong>团队空间</strong>team_id 不是授权凭据。每次调用仍校验团队成员关系；管理操作要求 owner/admin。</div>
-        <div class="notice"><strong>私密媒体</strong>只允许属主、有权团队成员、管理员 JWT 或有效签名 URL；管理员 API Key 仍按属主/团队范围，其他请求返回 404。</div>
-        <div class="notice"><strong>公开参数</strong>visibility 缺省为 public；只有显式传 private 才进入私密访问规则。切勿让不可信调用方随意传 team_id。</div>
+        <div class="notice"><strong>个人空间</strong><span>列表、修改、删除和上传会话均绑定当前身份；普通成员不能通过传 owner_id 查看他人资产。</span></div>
+        <div class="notice"><strong>团队空间</strong><span>team_id 不是授权凭据。每次调用仍校验团队成员关系；管理操作要求 owner/admin。</span></div>
+        <div class="notice"><strong>私密媒体</strong><span>只允许属主、有权团队成员、管理员 JWT 或有效签名 URL；管理员 API Key 仍按属主/团队范围，其他请求返回 404。</span></div>
+        <div class="notice"><strong>公开参数</strong><span>visibility 缺省为 public；只有显式传 private 才进入私密访问规则。切勿让不可信调用方随意传 team_id。</span></div>
       </div>
       <p class="security-note">API Key 绑定用户但仅用于媒体数据面，且管理员 API Key 不继承管理员 JWT 的全局越权能力。修改密码、管理 Key、创建/管理团队、管理分组、用户与管理员接口必须使用 JWT；不要把令牌、X-API-Key、签名链接的 sig 或完整查询串写入日志、工单和截图。</p>
 
@@ -780,6 +920,30 @@ print(video["code"], video["url"], video["visibility"])</code></pre></div>
       button.addEventListener('click', function () { applyDocumentLanguage(button.dataset.lang); });
     });
     applyDocumentLanguage(savedLanguage === 'en' ? 'en' : 'zh');
+
+    // Scrollspy: highlight the sidebar entry of the section in view. Feature
+    // guarded so older browsers and non-browser runtimes skip it silently.
+    try {
+      if ('IntersectionObserver' in window) {
+        var navLinks = Array.prototype.slice.call(document.querySelectorAll('.side-nav a[href^="#"]'));
+        var linkBySection = {};
+        navLinks.forEach(function (link) {
+          linkBySection[link.getAttribute('href').slice(1)] = link;
+        });
+        var spy = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (!entry.isIntersecting) return;
+            navLinks.forEach(function (link) { link.classList.remove('active'); });
+            var active = linkBySection[entry.target.id];
+            if (active) active.classList.add('active');
+          });
+        }, { rootMargin: '0px 0px -72% 0px' });
+        navLinks.forEach(function (link) {
+          var target = document.getElementById(link.getAttribute('href').slice(1));
+          if (target) spy.observe(target);
+        });
+      }
+    } catch (error) {}
   }());
 </script>
 </body>
