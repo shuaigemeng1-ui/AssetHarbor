@@ -36,8 +36,17 @@ describe('AuthView registration policy', () => {
     const wrapper = mountAuth()
     await flushPromises()
 
-    expect(wrapper.findAll('.auth-tabs button').map(button => button.text())).toEqual(['登录'])
+    expect(wrapper.find('.auth-tabs').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('创建账户')
+  })
+
+  it('shows the account switcher only when registration is available', async () => {
+    api.fetchPublicConfig.mockResolvedValue({ registration_mode: 'open' })
+    const wrapper = mountAuth()
+    await flushPromises()
+
+    expect(wrapper.findAll('.auth-tabs button').map(button => button.text())).toEqual(['登录', '注册'])
+    expect(wrapper.findAll('.auth-tabs button').map(button => button.attributes('aria-pressed'))).toEqual(['true', 'false'])
   })
 
   it('collects and submits the invite code in invite mode', async () => {
