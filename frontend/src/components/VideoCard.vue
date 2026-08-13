@@ -206,6 +206,29 @@ async function saveName() {
 </template>
 
 <style scoped>
+.video-card {
+  overflow: visible;
+}
+
+.video-preview {
+  aspect-ratio: 16 / 9;
+  overflow: visible;
+  border-radius: 17px 17px 0 0;
+  background: #05080f;
+}
+
+.video-preview video {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: #05080f;
+  object-fit: contain;
+}
+
+.video-placeholder {
+  border-radius: inherit;
+}
+
 .rename-form { display: grid; gap: 7px; }
 .rename-form label { font-size: 12px; font-weight: 650; }
 .rename-form input { min-height: 42px; border: 1px solid var(--border); border-radius: 10px; padding: 8px 11px; outline: 0; }

@@ -80,9 +80,36 @@ onMounted(() => {
 <style scoped>
 .player-content {
   width: 100%;
-  overflow: hidden;
-  border-radius: 14px;
-  background: #111827;
   color: #fff;
+}
+
+.player-stage {
+  width: 100%;
+  min-height: 0;
+  aspect-ratio: 16 / 9;
+  max-height: calc(100dvh - 220px);
+  border-radius: 14px;
+  background: #05080f;
+}
+
+.player-stage video {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border-radius: inherit;
+  background: #05080f;
+  object-fit: contain;
+}
+
+.player-fallback {
+  width: 100%;
+  min-height: 100%;
+}
+
+@media (max-width: 580px) {
+  .player-stage {
+    max-height: calc(100dvh - 190px);
+    border-radius: 10px;
+  }
 }
 </style>
