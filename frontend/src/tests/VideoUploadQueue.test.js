@@ -61,4 +61,27 @@ describe('VideoUploadQueue', () => {
     expect(global.text()).toContain('会话有效期至')
     expect(global.findAll('button').some(button => button.text() === '重试')).toBe(true)
   })
+
+  it('renders an expired session as a failed state with a re-select action and no stale validity text', () => {
+    videoUploadState.tasks.push({
+      localId: 3,
+      teamId: null,
+      filename: 'expired.mp4',
+      name: '',
+      size: 100,
+      chunkSize: 20,
+      uploadedParts: [],
+      chunkProgress: {},
+      status: 'failed',
+      speed: 0,
+      eta: Infinity,
+      error: '上传会话已过期，请重新选择文件',
+      expiresAt: null,
+    })
+
+    const wrapper = mount(VideoUploadQueue)
+    expect(wrapper.text()).toContain('上传会话已过期，请重新选择文件')
+    expect(wrapper.text()).not.toContain('会话有效期至')
+    expect(wrapper.findAll('button').some(button => button.text() === '重新选择')).toBe(true)
+  })
 })

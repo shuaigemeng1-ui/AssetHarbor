@@ -5,6 +5,8 @@ const api = vi.hoisted(() => ({
   listVideoUploads: vi.fn(),
   getVideoUpload: vi.fn(),
   completeVideoUpload: vi.fn(),
+  createVideoUpload: vi.fn(),
+  uploadVideoPart: vi.fn(),
   getToken: vi.fn(() => 'session-token'),
 }))
 const persistence = vi.hoisted(() => ({
@@ -16,8 +18,6 @@ const persistence = vi.hoisted(() => ({
 vi.mock('../api', () => ({
   ...api,
   cancelVideoUpload: vi.fn(),
-  createVideoUpload: vi.fn(),
-  uploadVideoPart: vi.fn(),
 }))
 vi.mock('../utils/videoFingerprint', () => ({
   videoFingerprint: vi.fn(async () => 'a'.repeat(64)),
@@ -28,6 +28,7 @@ vi.mock('../stores/uploadPersistence', () => persistence)
 import {
   initializeVideoUploads,
   resetVideoUploads,
+  resumeVideoTask,
   videoUploadState,
 } from '../stores/videoUploads'
 
@@ -127,5 +128,150 @@ describe('server video upload discovery', () => {
 
     expect(videoUploadState.tasks.map(task => task.uploadId)).toEqual(['new-account-upload'])
     expect(videoUploadState.tasks[0].ownerId).toBe(8)
+  })
+})
+
+describe('expired video upload sessions', () => {
+  function expiredRecord(overrides = {}) {
+    return {
+      key: '7:expired-upload',
+      ownerId: 7,
+      uploadId: 'expired-upload',
+      filename: 'old.mp4',
+      size: 100,
+      name: '',
+      visibility: 'public',
+      fingerprint: 'f'.repeat(64),
+      teamId: null,
+      chunkSize: 25,
+      totalParts: 4,
+      uploadedParts: [0, 1],
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      ...overrides,
+    }
+  }
+
+  beforeEach(() => {
+    resetVideoUploads()
+    vi.clearAllMocks()
+    persistence.listPersistedUploads.mockResolvedValue([])
+    api.listVideoUploads.mockResolvedValue({ items: [], total: 0, max_active: 3, part_concurrency: 3 })
+    api.getVideoUpload.mockRejectedValue(Object.assign(new Error('session gone'), { status: 404 }))
+  })
+
+  it('restores a persisted task with a past expiresAt into a failed state with a clear message', async () => {
+    persistence.listPersistedUploads.mockResolvedValue([expiredRecord()])
+
+    await initializeVideoUploads(7)
+
+    expect(videoUploadState.tasks).toHaveLength(1)
+    expect(videoUploadState.tasks[0]).toMatchObject({
+      status: 'failed',
+      error: '上传会话已过期，请重新选择文件',
+      uploadId: null,
+      uploadedParts: [],
+      totalParts: 0,
+      expiresAt: null,
+    })
+    expect(persistence.removePersistedUpload).toHaveBeenCalledWith('7:expired-upload')
+  })
+
+  it('fails an expired task on resume instead of restarting from zero', async () => {
+    await initializeVideoUploads(7)
+    const file = new File(['abcd'], 'movie.mp4', { type: 'video/mp4' })
+    const task = {
+      localId: 999,
+      ownerId: 7,
+      uploadId: 'expired-upload',
+      file,
+      filename: 'movie.mp4',
+      size: 4,
+      name: 'movie.mp4',
+      visibility: 'public',
+      teamId: null,
+      fingerprint: 'f'.repeat(64),
+      serverStatus: 'active',
+      chunkSize: 4,
+      totalParts: 1,
+      uploadedParts: [0],
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      status: 'uploading',
+      result: null,
+      error: '',
+      chunkProgress: {},
+      partRetries: {},
+      retryAt: {},
+      rateLimitGateId: null,
+      speed: 0,
+      eta: Infinity,
+      runStartedAt: 0,
+      runBaseBytes: 0,
+    }
+    videoUploadState.tasks.push(task)
+    api.createVideoUpload.mockResolvedValue(session({ upload_id: 'fresh-session' }))
+
+    // A resume attempt on a session whose expiry is already past must surface
+    // the expiry failure, not silently re-create the session from zero.
+    await resumeVideoTask(task)
+
+    expect(task.status).toBe('failed')
+    expect(task.error).toBe('上传会话已过期，请重新选择文件')
+    expect(api.createVideoUpload).not.toHaveBeenCalled()
+    expect(persistence.removePersistedUpload).toHaveBeenCalledWith('7:expired-upload')
+  })
+
+  it('keeps silently removing a non-expired restored session the server no longer holds', async () => {
+    persistence.listPersistedUploads.mockResolvedValue([expiredRecord({
+      key: '7:missing-upload',
+      uploadId: 'missing-upload',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    })])
+
+    await initializeVideoUploads(7)
+
+    expect(videoUploadState.tasks).toHaveLength(0)
+    expect(persistence.removePersistedUpload).toHaveBeenCalledWith('7:missing-upload')
+  })
+
+  it('keeps the legacy restart behavior for a non-expired session that vanished mid-upload', async () => {
+    await initializeVideoUploads(7)
+    const task = {
+      localId: 999,
+      ownerId: 7,
+      uploadId: 'vanished-upload',
+      file: new File(['abcd'], 'movie.mp4', { type: 'video/mp4' }),
+      filename: 'movie.mp4',
+      size: 4,
+      name: 'movie.mp4',
+      visibility: 'public',
+      teamId: null,
+      fingerprint: 'f'.repeat(64),
+      serverStatus: 'active',
+      chunkSize: 4,
+      totalParts: 1,
+      uploadedParts: [],
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      status: 'uploading',
+      result: null,
+      error: '',
+      chunkProgress: {},
+      partRetries: {},
+      retryAt: {},
+      rateLimitGateId: null,
+      speed: 0,
+      eta: Infinity,
+      runStartedAt: 0,
+      runBaseBytes: 0,
+    }
+    videoUploadState.tasks.push(task)
+    api.createVideoUpload.mockResolvedValue(session({ upload_id: 'fresh-session' }))
+    api.uploadVideoPart.mockReturnValue({ promise: new Promise(() => {}), abort: vi.fn() })
+
+    await resumeVideoTask(task)
+
+    // Non-expired 404s keep the pre-existing behavior: reconcile clears the
+    // dead session and the task re-initializes a fresh one.
+    await vi.waitFor(() => expect(api.createVideoUpload).toHaveBeenCalled())
+    expect(task.status).not.toBe('failed')
   })
 })

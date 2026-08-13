@@ -14,6 +14,11 @@ import { listPersistedUploads, persistUpload, removePersistedUpload } from './up
 export const VIDEO_ACCEPT = '.mp4,.m4v,.mov,.webm,.mkv,.avi,.mpeg,.mpg,.ts,.ogv,.ogg,.3gp,.flv,.wmv,video/*'
 export const VIDEO_EXTENSION_RE = /\.(mp4|m4v|mov|webm|mkv|avi|mpeg|mpg|ts|ogv|ogg|3gp|flv|wmv)$/i
 export const MAX_CONCURRENT_PARTS = 3
+export const UPLOAD_SESSION_EXPIRED_MESSAGE = '上传会话已过期，请重新选择文件'
+// XHR progress events can fire dozens of times per second. Writing every event
+// into reactive state forces a full queue re-render plus an O(parts) metric
+// recomputation each time, so writes are throttled to ~5 Hz per task.
+const PROGRESS_THROTTLE_MS = 200
 
 let ownerId = null
 let initializedOwnerId = null
@@ -24,6 +29,8 @@ let roundRobinIndex = 0
 let sessionGeneration = 0
 const activeJobs = new Map()
 const retryTimers = new Map()
+// Per-task throttling state for chunk progress writes: localId -> { lastFlushAt, pending }.
+const progressThrottles = new Map()
 let partRateLimitGate = null
 let nextPartRateLimitGateId = 1
 const fingerprintJobs = new Map()
@@ -146,6 +153,26 @@ export function shouldRetryUploadError(error) {
   return !error?.aborted && isRetryableHttpStatus(error?.status)
 }
 
+function isSessionExpired(task) {
+  if (!task.expiresAt) return false
+  const expiry = Date.parse(task.expiresAt)
+  return Number.isFinite(expiry) && Date.now() > expiry
+}
+
+// The server no longer holds this session (expired or deleted). Fail the task
+// with a clear localized message instead of silently restarting from zero.
+// Callers must remove the persisted record BEFORE clearing uploadId so the
+// correct persistence key is still available.
+function failTaskSessionExpired(task) {
+  task.status = 'failed'
+  task.error = UPLOAD_SESSION_EXPIRED_MESSAGE
+  task.uploadId = null
+  task.uploadedParts = []
+  task.chunkSize = 0
+  task.totalParts = 0
+  task.expiresAt = null
+}
+
 function persistenceKey(task) {
   return `${task.ownerId}:${task.uploadId}`
 }
@@ -226,6 +253,31 @@ function updateMetrics(task) {
   const transferred = Math.max(0, taskTransferredBytes(task) - task.runBaseBytes)
   task.speed = transferred / elapsed
   task.eta = task.speed > 0 ? Math.max(0, (task.size - taskTransferredBytes(task)) / task.speed) : Infinity
+}
+
+function flushChunkProgress(task, throttle, now = Date.now()) {
+  if (!throttle?.pending) return
+  const { partNumber, loaded } = throttle.pending
+  throttle.pending = null
+  throttle.lastFlushAt = now
+  task.chunkProgress[partNumber] = loaded
+  updateMetrics(task)
+}
+
+// Time-based throttle: at most one reactive write + updateMetrics per
+// PROGRESS_THROTTLE_MS per task. The latest value is remembered so the final
+// write (applied on part completion or the next window boundary) is never lost.
+function writeChunkProgress(task, partNumber, loaded) {
+  const now = Date.now()
+  let throttle = progressThrottles.get(task.localId)
+  if (!throttle) {
+    throttle = { lastFlushAt: 0, pending: null }
+    progressThrottles.set(task.localId, throttle)
+  }
+  throttle.pending = { partNumber, loaded }
+  if (now - throttle.lastFlushAt >= PROGRESS_THROTTLE_MS) {
+    flushChunkProgress(task, throttle, now)
+  }
 }
 
 function taskJobKey(task, partNumber) {
@@ -328,6 +380,9 @@ async function recoverAfterPartRateLimit(gate) {
       if (partRateLimitGate !== gate || gate.generation !== sessionGeneration) return
       if (complete === null || !isTaskWaitingForRateLimit(task, gate)) continue
       task.rateLimitGateId = null
+      // reconcileTask fails the task itself when the session expired; do not
+      // resurrect it into an uploading state without a server session.
+      if (task.status === 'failed') continue
       if (!complete) {
         task.status = 'uploading'
         task.error = ''
@@ -371,6 +426,7 @@ function abortTaskJobs(task) {
     }
   }
   task.chunkProgress = {}
+  progressThrottles.delete(task.localId)
 }
 
 function installNetworkListeners() {
@@ -476,6 +532,7 @@ export function resetVideoUploads() {
   }
   videoUploadState.tasks.splice(0)
   fingerprintJobs.clear()
+  progressThrottles.clear()
   admissionBatches.clear()
   openAdmissionBatch = null
   admissionTail = Promise.resolve()
@@ -506,6 +563,10 @@ async function validateRestoredTask(task, generation, authToken) {
     if (!isCurrentTask(task, generation)) return
     if ([404, 410].includes(error.status)) {
       await removePersistedUpload(persistenceKey(task))
+      if (isSessionExpired(task)) {
+        failTaskSessionExpired(task)
+        return
+      }
       const index = videoUploadState.tasks.indexOf(task)
       if (index >= 0) videoUploadState.tasks.splice(index, 1)
       return
@@ -571,6 +632,11 @@ async function recoverRemoteFinalization(task, generation = sessionGeneration, a
       }
     } catch (reconcileError) {
       if (!isCurrentTask(task, generation)) return
+      if ([404, 410].includes(reconcileError.status) && isSessionExpired(task)) {
+        await removePersistedUpload(persistenceKey(task))
+        failTaskSessionExpired(task)
+        return
+      }
       task.status = 'failed'
       task.error = `恢复服务端校验失败：${reconcileError.message}`
     }
@@ -900,14 +966,14 @@ async function startChunk(task, partNumber) {
       start,
       total: task.size,
       sha256,
-      onProgress: loaded => {
-        task.chunkProgress[partNumber] = loaded
-        updateMetrics(task)
-      },
+      onProgress: loaded => writeChunkProgress(task, partNumber, loaded),
     })
     job.abort = transport.abort
     await transport.promise
     if (!isCurrentTask(task, generation) || !eligibleTask(task)) return
+    // The part is about to become confirmed bytes, so apply the last throttled
+    // progress value immediately to keep the bar ending at 100%.
+    flushChunkProgress(task, progressThrottles.get(task.localId))
     if (!task.uploadedParts.includes(partNumber)) {
       task.uploadedParts.push(partNumber)
       task.uploadedParts.sort((a, b) => a - b)
@@ -935,6 +1001,7 @@ async function startChunk(task, partNumber) {
       try {
         const complete = await reconcileTask(task)
         if (complete) return
+        if (task.status === 'failed') return
         if (task.uploadedParts.includes(partNumber)) {
           task.status = 'uploading'
           task.error = ''
@@ -1002,6 +1069,11 @@ async function maybeFinalize(task) {
     await markCompleted(task, result)
   } catch (error) {
     if (!isCurrentTask(task, generation) || task.status !== 'finalizing') return
+    if ([404, 410].includes(error.status) && isSessionExpired(task)) {
+      await removePersistedUpload(persistenceKey(task))
+      failTaskSessionExpired(task)
+      return
+    }
     task.status = 'failed'
     task.error = error.message
     saveTask(task)
@@ -1014,6 +1086,7 @@ async function markCompleted(task, result) {
   task.uploadedParts = Array.from({ length: task.totalParts }, (_, index) => index)
   task.speed = 0
   task.eta = 0
+  progressThrottles.delete(task.localId)
   await removePersistedUpload(persistenceKey(task))
   window.dispatchEvent(new CustomEvent('oss:video-upload-complete', { detail: result }))
   maybeInitializeTasks()
@@ -1037,6 +1110,10 @@ async function reconcileTask(task, { signal, shouldApply } = {}) {
       if (!canApply()) return null
       await removePersistedUpload(persistenceKey(task))
       if (!canApply()) return null
+      if (isSessionExpired(task)) {
+        failTaskSessionExpired(task)
+        return false
+      }
       task.uploadId = null
       task.uploadedParts = []
       task.chunkSize = 0
@@ -1067,6 +1144,14 @@ export async function resumeVideoTask(task, fromNetwork = false) {
     task.status = 'network_paused'
     return
   }
+  if (isSessionExpired(task)) {
+    // The local session expired, so the server can no longer resume it. Fail
+    // with a clear message instead of reconciling into a silent restart from
+    // zero (a failed/expired task has no uploadId to reconcile anyway).
+    if (task.uploadId) await removePersistedUpload(persistenceKey(task))
+    failTaskSessionExpired(task)
+    return
+  }
   task.status = 'initializing'
   task.error = ''
   task.retryAt = {}
@@ -1075,6 +1160,9 @@ export async function resumeVideoTask(task, fromNetwork = false) {
     const complete = await reconcileTask(task)
     if (!isCurrentTask(task, generation) || task.status === 'cancelled') return
     if (complete) return
+    // reconcileTask fails the task itself when the session expired (404/410
+    // with a past expiresAt); do not silently re-queue and restart from zero.
+    if (task.status === 'failed') return
     if (!task.uploadId) {
       task.status = 'queued'
       maybeInitializeTasks()

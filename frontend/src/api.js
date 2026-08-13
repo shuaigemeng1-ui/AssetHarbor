@@ -1,5 +1,7 @@
 const TOKEN_KEY = 'oss_token'
 const MAX_RETRY_AFTER_MS = 5 * 60 * 1000
+const REQUEST_TIMEOUT_MS = 30 * 1000
+const PART_UPLOAD_TIMEOUT_MS = 60 * 1000
 
 export function parseRetryAfter(value, now = Date.now()) {
   if (value === null || value === undefined) return null
@@ -71,7 +73,7 @@ export function formatApiErrorDetail(detail, status) {
 }
 
 export async function request(path, options = {}) {
-  const { suppressUnauthorized = false, ...fetchOptions } = options
+  const { suppressUnauthorized = false, timeout = REQUEST_TIMEOUT_MS, ...fetchOptions } = options
   const headers = { ...(fetchOptions.headers || {}) }
   const storedToken = getToken()
   if (storedToken && !headers.Authorization) headers.Authorization = `Bearer ${storedToken}`
@@ -79,7 +81,23 @@ export async function request(path, options = {}) {
     ? headers.Authorization.slice(7)
     : null
 
-  const resp = await fetch(path, { ...fetchOptions, headers })
+  // A silently hung TCP connection must not leave uploads stuck forever. Only
+  // synthesize a timeout when the caller did not pass its own signal: a
+  // caller-supplied signal (pause/cancel/abort) must surface as its own
+  // AbortError, never as a timeout.
+  const signal = fetchOptions.signal || AbortSignal.timeout(timeout)
+  let resp
+  try {
+    resp = await fetch(path, { ...fetchOptions, headers, signal })
+  } catch (error) {
+    // AbortSignal.timeout rejects with a TimeoutError DOMException. Surface it
+    // as a retryable network-style failure (status 0) so the upload store's
+    // existing network_paused handling kicks in instead of hanging forever.
+    if (!fetchOptions.signal && (error?.name === 'TimeoutError' || signal?.aborted)) {
+      throw Object.assign(new Error('请求超时，请检查网络后重试'), { status: 0, name: 'TimeoutError' })
+    }
+    throw error
+  }
   if (resp.status === 401 && !path.startsWith('/api/auth/') && !suppressUnauthorized) {
     expireCurrentToken(requestToken)
     throw new Error('登录已过期，请重新登录')
@@ -250,6 +268,9 @@ export function uploadVideoPart(uploadId, partNumber, blob, {
   const requestToken = getToken()
   const promise = new Promise((resolve, reject) => {
     xhr.open('PUT', `/api/video-uploads/${uploadId}/parts/${partNumber}`)
+    // A hung chunk connection must time out instead of stalling the queue. The
+    // store treats status 0 as a network failure and pauses for retry.
+    xhr.timeout = PART_UPLOAD_TIMEOUT_MS
     if (requestToken) xhr.setRequestHeader('Authorization', `Bearer ${requestToken}`)
     xhr.setRequestHeader('Content-Type', 'application/octet-stream')
     xhr.setRequestHeader('Content-Range', `bytes ${start}-${start + blob.size - 1}/${total}`)
@@ -258,6 +279,7 @@ export function uploadVideoPart(uploadId, partNumber, blob, {
     xhr.upload.onprogress = event => {
       if (event.lengthComputable) onProgress?.(event.loaded, event.total)
     }
+    xhr.ontimeout = () => reject(Object.assign(new Error('分片上传超时'), { status: 0, name: 'TimeoutError' }))
     xhr.onerror = () => reject(Object.assign(new Error('网络连接中断'), { status: 0 }))
     xhr.onabort = () => reject(Object.assign(new Error('上传已暂停'), { aborted: true }))
     xhr.onload = () => {
