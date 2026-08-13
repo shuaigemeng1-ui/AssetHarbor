@@ -15,6 +15,7 @@ from conftest import (
     MP4_HEADER,
     auth,
     init_video,
+    login,
     new_user,
     put_video_part,
     upload,
@@ -319,6 +320,145 @@ def test_team_access_is_rechecked_at_completion_and_session_remains_retryable(cl
     completed = client.post(f"/api/video-uploads/{upload_id}/complete", headers=auth(member))
     assert completed.status_code == 200
     assert completed.json()["team_id"] == team_id
+
+
+def test_finalizing_recovery_preserves_admin_credential_scope(client, monkeypatch):
+    """Crash recovery must not turn an admin API key into global authority."""
+    from app.core.config import settings
+    from app.core.database import SessionLocal
+    from app.models import Image, UploadSession
+    from app.services import videos
+
+    _, team_owner_token = new_user(client)
+    admin_token = login(client, "admin", "admin-pass")
+    key_response = client.post(
+        "/api/keys",
+        headers=auth(admin_token),
+        json={"name": "recovery-tenant-scope"},
+    )
+    assert key_response.status_code == 201, key_response.text
+    admin_key = key_response.json()["key"]
+
+    team_id = client.post(
+        "/api/teams",
+        headers=auth(team_owner_token),
+        json={"name": f"recovery-scope-{uuid.uuid4().hex[:8]}"},
+    ).json()["id"]
+    membership = client.post(
+        f"/api/teams/{team_id}/members",
+        headers=auth(team_owner_token),
+        json={"username": "admin"},
+    )
+    assert membership.status_code == 201, membership.text
+
+    def fail_after_atomic_move(*_args, **_kwargs):
+        raise RuntimeError("simulated crash after finalizing metadata")
+
+    tenant_data = _sample(384)
+    tenant_init = init_video(
+        client, admin_key, tenant_data, team_id=team_id
+    )
+    assert tenant_init.status_code == 201, tenant_init.text
+    tenant_upload_id = tenant_init.json()["upload_id"]
+    assert put_video_part(
+        client,
+        admin_key,
+        tenant_upload_id,
+        0,
+        tenant_data,
+        0,
+        len(tenant_data),
+    ).status_code == 200
+    with monkeypatch.context() as scoped:
+        scoped.setattr(videos, "_create_final_image", fail_after_atomic_move)
+        with pytest.raises(RuntimeError, match="simulated crash"):
+            client.post(
+                f"/api/video-uploads/{tenant_upload_id}/complete",
+                headers=auth(admin_key),
+            )
+
+    with SessionLocal() as db:
+        tenant_upload = db.get(UploadSession, tenant_upload_id)
+        tenant_info = json.loads(tenant_upload.resume_info)
+        assert tenant_upload.status == "finalizing"
+        assert tenant_info["auth_scope"] == "tenant"
+        tenant_destination = settings.data_dir / tenant_info["stored_path"]
+        assert tenant_destination.is_file()
+
+    # Revoke membership after the durable finalizing state was written. The
+    # startup path must restore the upload for retry instead of publishing it
+    # through the account's global administrator role.
+    removed = client.delete(
+        f"/api/teams/{team_id}/members/{membership.json()['id']}",
+        headers=auth(team_owner_token),
+    )
+    assert removed.status_code == 204, removed.text
+    with SessionLocal() as db:
+        videos.recover_finalizing_session(
+            db, db.get(UploadSession, tenant_upload_id)
+        )
+
+    with SessionLocal() as db:
+        tenant_upload = db.get(UploadSession, tenant_upload_id)
+        assert tenant_upload.status == "active"
+        assert tenant_upload.resume_info == ""
+        assert db.execute(
+            select(Image).where(Image.code == tenant_info["code"])
+        ).scalar_one_or_none() is None
+    assert videos.session_file(tenant_upload_id).is_file()
+    assert not tenant_destination.exists()
+    denied_retry = client.post(
+        f"/api/video-uploads/{tenant_upload_id}/complete",
+        headers=auth(admin_key),
+    )
+    assert denied_retry.status_code == 403, denied_retry.text
+
+    # A JWT-authenticated global administrator records that authority and can
+    # still finish recovery without joining the team.
+    global_data = _sample(400)
+    global_init = init_video(
+        client, admin_token, global_data, team_id=team_id
+    )
+    assert global_init.status_code == 201, global_init.text
+    global_upload_id = global_init.json()["upload_id"]
+    assert put_video_part(
+        client,
+        admin_token,
+        global_upload_id,
+        0,
+        global_data,
+        0,
+        len(global_data),
+    ).status_code == 200
+    with monkeypatch.context() as scoped:
+        scoped.setattr(videos, "_create_final_image", fail_after_atomic_move)
+        with pytest.raises(RuntimeError, match="simulated crash"):
+            client.post(
+                f"/api/video-uploads/{global_upload_id}/complete",
+                headers=auth(admin_token),
+            )
+
+    with SessionLocal() as db:
+        global_upload = db.get(UploadSession, global_upload_id)
+        global_info = json.loads(global_upload.resume_info)
+        assert global_upload.status == "finalizing"
+        assert global_info["auth_scope"] == "global_admin"
+        legacy_info = dict(global_info)
+        legacy_info.pop("auth_scope")
+        _info, _destination, legacy_global_override = (
+            videos._validated_finalizing_info(json.dumps(legacy_info))
+        )
+        assert legacy_global_override is False
+        videos.recover_finalizing_session(db, global_upload)
+
+    with SessionLocal() as db:
+        recovered = db.get(UploadSession, global_upload_id)
+        image = db.execute(
+            select(Image).where(Image.code == global_info["code"])
+        ).scalar_one()
+        assert recovered.status == "completed"
+        assert recovered.final_code == image.code
+        assert image.team_id == team_id
 
 
 def _assert_partial_headers(response, start: int, end: int, total: int, visibility: str) -> None:

@@ -6,13 +6,13 @@ from sqlalchemy.orm import Session
 
 from ...models import User
 from ...schemas import UserOut
-from ..deps import get_db, require_admin
+from ..deps import get_db, require_jwt_admin
 
 router = APIRouter(prefix="/api", tags=["users"])
 
 
 @router.get("/users", response_model=list[UserOut], summary="List all users (admin only)")
-def list_users(_: User = Depends(require_admin), db: Session = Depends(get_db)) -> list[UserOut]:
+def list_users(_: User = Depends(require_jwt_admin), db: Session = Depends(get_db)) -> list[UserOut]:
     users = db.execute(select(User).order_by(User.id)).scalars().all()
     return [
         UserOut(id=u.id, username=u.username, role=u.role, created_at=u.created_at)

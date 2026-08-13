@@ -14,14 +14,16 @@ import app.api.routes.admin as admin_routes
 import app.api.routes.auth as auth_routes
 from app.core import database, security
 from app.core.config import settings
-from app.models import User
+from app.models import RuntimeCounter, User
 from app.schemas import ResetPasswordRequest
+from app.services.identifiers import next_user_id
 from conftest import _uname, auth, login, new_user
 
 
 def _isolated_user_sessions(tmp_path, filename="users.db"):
     isolated_engine = create_engine(f"sqlite:///{tmp_path / filename}")
     User.__table__.create(bind=isolated_engine)
+    RuntimeCounter.__table__.create(bind=isolated_engine)
     return isolated_engine, sessionmaker(
         bind=isolated_engine,
         autoflush=False,
@@ -192,7 +194,7 @@ def test_sql_expression_revocation_does_not_lose_stale_session_increment(client)
         assert stored.auth_version == original_version + 2
 
 
-def test_admin_reset_rechecks_stale_actor_role_inside_lifecycle_lease():
+def test_admin_reset_rechecks_stale_actor_role_inside_lifecycle_lease(client):
     with database.SessionLocal() as stale_session:
         actor = User(
             username=_uname("reset_actor"),
@@ -229,7 +231,7 @@ def test_admin_reset_rechecks_stale_actor_role_inside_lifecycle_lease():
         assert db.get(User, target_id).password_hash == original_target_hash
 
 
-def test_pre_migration_jwt_without_auth_version_remains_revocable(client):
+def test_pre_migration_jwt_without_generation_claims_is_rejected(client):
     username, current_token = new_user(client)
     with database.SessionLocal() as db:
         user = db.query(User).filter_by(username=username).one()
@@ -246,14 +248,53 @@ def test_pre_migration_jwt_without_auth_version_remains_revocable(client):
             algorithm=security._ALGORITHM,
         )
 
-    assert client.get("/api/auth/me", headers=auth(legacy_token)).status_code == 200
-    changed = client.post(
-        "/api/auth/change-password",
-        headers=auth(current_token),
-        json={"old_password": "pass123", "new_password": "newpass1"},
-    )
-    assert changed.status_code == 204
     assert client.get("/api/auth/me", headers=auth(legacy_token)).status_code == 401
+
+
+def test_deleted_user_jwt_cannot_authenticate_reused_account_id(client):
+    username, old_token = new_user(client)
+    old_user = client.get("/api/auth/me", headers=auth(old_token)).json()
+    admin_token = login(client, "admin", "admin-pass")
+    assert client.delete(
+        f"/api/admin/users/{old_user['id']}", headers=auth(admin_token)
+    ).status_code == 204
+
+    replacement = client.post(
+        "/api/admin/users",
+        headers=auth(admin_token),
+        json={"username": f"replacement-{old_user['id']}", "password": "pass123", "role": "user"},
+    )
+    assert replacement.status_code == 201
+    assert replacement.json()["id"] > old_user["id"]
+    assert client.get("/api/auth/me", headers=auth(old_token)).status_code == 401
+
+
+def test_fresh_library_user_rejects_reused_account_identity(client):
+    from app.core.auth_scope import bind_auth_scope
+    from app.services.library import fresh_library_user
+
+    username, _token = new_user(client)
+    with database.SessionLocal() as stale_db:
+        stale_actor = stale_db.query(User).filter_by(username=username).one()
+        bind_auth_scope(stale_actor, "jwt")
+        stale_id = stale_actor.id
+
+        admin_token = login(client, "admin", "admin-pass")
+        assert client.delete(
+            f"/api/admin/users/{stale_id}", headers=auth(admin_token)
+        ).status_code == 204
+        replacement = client.post(
+            "/api/admin/users",
+            headers=auth(admin_token),
+            json={"username": f"fresh-replacement-{stale_id}", "password": "pass123", "role": "user"},
+        )
+        assert replacement.status_code == 201
+        assert replacement.json()["id"] > stale_id
+
+        stale_db.rollback()
+        with pytest.raises(HTTPException) as rejected:
+            fresh_library_user(stale_db, stale_actor)
+        assert rejected.value.status_code == 401
 
 
 def test_login_for_missing_account_runs_fixed_dummy_bcrypt(client, monkeypatch):
@@ -305,6 +346,12 @@ def test_auth_version_migration_is_idempotent_and_has_no_foreign_key(tmp_path, m
                 """
             )
         )
+        conn.execute(text("CREATE TABLE teams (id INTEGER PRIMARY KEY)"))
+        conn.execute(text("CREATE TABLE team_members (id INTEGER PRIMARY KEY)"))
+        conn.execute(text("CREATE TABLE api_keys (id INTEGER PRIMARY KEY)"))
+        conn.execute(text("INSERT INTO teams (id) VALUES (10)"))
+        conn.execute(text("INSERT INTO team_members (id) VALUES (20)"))
+        conn.execute(text("INSERT INTO api_keys (id) VALUES (30)"))
         conn.execute(
             text(
                 """
@@ -325,6 +372,56 @@ def test_auth_version_migration_is_idempotent_and_has_no_foreign_key(tmp_path, m
         assert str(columns["auth_version"][4]).strip("'\"") == "1"
         assert conn.execute(text("SELECT auth_version FROM users WHERE id = 1")).scalar_one() == 1
         assert conn.execute(text("PRAGMA foreign_key_list(users)")).all() == []
+        assert conn.execute(
+            text("SELECT value FROM runtime_counters WHERE name = 'user_id'")
+        ).scalar_one() == 1
+        assert conn.execute(text("PRAGMA foreign_key_list(runtime_counters)")).all() == []
+        assert conn.execute(
+            text("SELECT value FROM runtime_counters WHERE name = 'team_id'")
+        ).scalar_one() == 10
+        assert conn.execute(
+            text("SELECT value FROM runtime_counters WHERE name = 'team_member_id'")
+        ).scalar_one() == 20
+        assert conn.execute(
+            text("SELECT value FROM runtime_counters WHERE name = 'media_group_id'")
+        ).scalar_one() == 0
+        assert conn.execute(
+            text("SELECT value FROM runtime_counters WHERE name = 'api_key_id'")
+        ).scalar_one() == 30
+
+    legacy_sessions = sessionmaker(
+        bind=legacy_engine, autoflush=False, expire_on_commit=False
+    )
+    with legacy_sessions() as db:
+        db.execute(text("DELETE FROM users WHERE id = 1"))
+        db.commit()
+        replacement = User(
+            id=next_user_id(db),
+            username="replacement",
+            password_hash="replacement-hash",
+            role="user",
+        )
+        db.add(replacement)
+        db.commit()
+        assert replacement.id == 2
+
+        # Even when the legacy highest rows are deleted before the first new
+        # allocation, migration-seeded high-water marks prevent stale URL ABA.
+        db.execute(text("DELETE FROM teams WHERE id = 10"))
+        db.execute(text("DELETE FROM team_members WHERE id = 20"))
+        db.execute(text("DELETE FROM api_keys WHERE id = 30"))
+        db.commit()
+        from app.api.routes.keys import _next_api_key_id
+        from app.services.identifiers import (
+            next_media_group_id,
+            next_team_id,
+            next_team_member_id,
+        )
+
+        assert next_team_id(db) == 11
+        assert next_team_member_id(db) == 21
+        assert next_media_group_id(db) == 1
+        assert _next_api_key_id(db) == 31
 
 
 def test_ensure_admin_only_revokes_when_password_or_role_actually_changes(tmp_path, monkeypatch):

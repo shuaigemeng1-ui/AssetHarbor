@@ -21,7 +21,9 @@ const loadingMore = ref(false)
 const loadError = ref('')
 const query = ref('')
 const uploadName = ref('')
-const uploadVisibility = ref('private')
+// Omitted visibility is a fixed public API contract. Users must explicitly
+// select "private" when they want restricted access.
+const uploadVisibility = ref('public')
 const groupTarget = ref(null)
 const publicConfig = ref(null)
 const PAGE_SIZE = 12
@@ -87,7 +89,6 @@ async function ensurePublicConfig() {
     publicConfigPromise = fetchPublicConfig()
       .then(config => {
         publicConfig.value = config
-        uploadVisibility.value = config.default_visibility || uploadVisibility.value
         return config
       })
       .finally(() => { publicConfigPromise = null })

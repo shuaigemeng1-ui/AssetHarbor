@@ -7,9 +7,10 @@ from sqlalchemy.orm import Session
 from ....models import Team, TeamMember, User
 from ....schemas import TeamCreate, TeamDetail, TeamOut
 from ....services.teams import can_manage_team, get_membership
+from ....services.identifiers import next_team_id, next_team_member_id
 from ....services.library import fresh_library_user, serialized_library_lifecycle
 from ....services.videos import dissolve_team_media
-from ...deps import get_current_user, get_db
+from ...deps import get_db, require_jwt_user
 from ._common import get_team_or_404, member_out, team_out
 
 router = APIRouter(prefix="/api", tags=["teams"])
@@ -19,7 +20,7 @@ router = APIRouter(prefix="/api", tags=["teams"])
 @serialized_library_lifecycle
 def create_team(
     payload: TeamCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_jwt_user),
     db: Session = Depends(get_db),
 ) -> TeamOut:
     db.rollback()
@@ -28,10 +29,21 @@ def create_team(
     if db.execute(select(Team.id).where(Team.name == name)).scalar_one_or_none() is not None:
         raise HTTPException(status_code=409, detail="team name already taken")
 
-    team = Team(name=name, description=payload.description.strip(), owner_id=current_user.id)
+    team = Team(
+        id=next_team_id(db),
+        name=name,
+        description=payload.description.strip(),
+        owner_id=current_user.id,
+    )
     db.add(team)
-    db.flush()  # get team.id
-    db.add(TeamMember(team_id=team.id, user_id=current_user.id, role="owner"))
+    db.add(
+        TeamMember(
+            id=next_team_member_id(db),
+            team_id=team.id,
+            user_id=current_user.id,
+            role="owner",
+        )
+    )
     db.commit()
     db.refresh(team)
     return team_out(team, "owner", 1, current_user.username)
@@ -39,7 +51,7 @@ def create_team(
 
 @router.get("/teams", response_model=list[TeamOut], summary="List teams I belong to")
 def list_my_teams(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_jwt_user),
     db: Session = Depends(get_db),
 ) -> list[TeamOut]:
     if current_user.role == "admin":
@@ -78,7 +90,7 @@ def list_my_teams(
 @router.get("/teams/{team_id}", response_model=TeamDetail, summary="Team detail and members")
 def team_detail(
     team_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_jwt_user),
     db: Session = Depends(get_db),
 ) -> TeamDetail:
     team = get_team_or_404(db, team_id)
@@ -105,7 +117,7 @@ def team_detail(
 @serialized_library_lifecycle
 def delete_team(
     team_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_jwt_user),
     db: Session = Depends(get_db),
 ) -> None:
     db.rollback()

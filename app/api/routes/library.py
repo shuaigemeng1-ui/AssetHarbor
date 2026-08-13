@@ -1,5 +1,7 @@
 """统一媒体库、个人/团队分组和媒体库概览接口。"""
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -14,6 +16,8 @@ from ...schemas import (
     MediaGroupOut,
     MediaGroupUpdate,
     UnifiedMediaListResponse,
+    UnifiedMediaInfo,
+    UnifiedMediaLink,
 )
 from ...services.library import (
     delete_group,
@@ -27,10 +31,50 @@ from ...services.library import (
     validate_team_scope,
     visible_group_or_404,
 )
+from ...services.identifiers import next_media_group_id
 from ...models.base import utcnow
-from ..deps import get_current_user, get_db
+from ...core.config import settings
+from ...core.auth_scope import has_global_admin_scope
+from ...services.signing import (
+    build_image_url,
+    build_signed_image_url,
+    build_signed_video_url,
+    build_video_url,
+)
+from ...services.ratelimit import check_rate_limit, client_ip
+from ...services.teams import is_team_member
+from ..deps import get_current_user, get_db, get_optional_user, require_jwt_user
 
 router = APIRouter(prefix="/api", tags=["media-library"])
+
+
+def _has_media_scope(db: Session, media: Image, user: User | None) -> bool:
+    return bool(
+        user is not None
+        and (
+            has_global_admin_scope(user)
+            or media.owner_id == user.id
+            or (
+                media.team_id is not None
+                and is_team_member(db, media.team_id, user.id)
+            )
+        )
+    )
+
+
+def _media_url(request: Request, media: Image) -> str:
+    if media.media_kind == "video":
+        return build_video_url(request, media.code)
+    return build_image_url(request, media.code)
+
+
+def _throttle_media_lookup(request: Request) -> None:
+    """Bound anonymous/code-scanning load before touching SQLite."""
+    check_rate_limit(
+        f"media-lookup:{client_ip(request)}",
+        settings.images_rate_limit_per_minute,
+        60,
+    )
 
 
 def _resolve_group_media(
@@ -122,13 +166,115 @@ def list_media(
 
 
 @router.get(
+    "/media/{code}",
+    response_model=UnifiedMediaInfo,
+    summary="Get unified image/video metadata",
+    description="Public metadata is available anonymously. Private media returns 404 unless "
+    "the caller is its owner, an authorized team member, or an administrator using JWT. "
+    "API keys always remain owner/team scoped, including keys owned by administrators.",
+)
+def get_media_metadata(
+    code: str,
+    request: Request,
+    current_user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+) -> UnifiedMediaInfo:
+    _throttle_media_lookup(request)
+    media = db.execute(
+        select(Image).where(Image.code == code, Image.media_kind.in_(("image", "video")))
+    ).scalar_one_or_none()
+    if media is None:
+        raise HTTPException(status_code=404, detail="media not found")
+    in_scope = _has_media_scope(db, media, current_user)
+    if media.visibility == "private" and not in_scope:
+        raise HTTPException(status_code=404, detail="media not found")
+
+    # Public metadata does not disclose another member's account identifier or
+    # username. Scoped callers still receive ownership details useful to tools.
+    owner_username = None
+    if in_scope and media.owner_id is not None:
+        owner = db.get(User, media.owner_id)
+        owner_username = owner.username if owner else None
+    return UnifiedMediaInfo(
+        code=media.code,
+        url=_media_url(request, media),
+        size=media.size,
+        content_type=media.content_type,
+        sha256=media.sha256,
+        created_at=media.created_at,
+        name=media.name,
+        visibility=media.visibility,
+        owner_id=media.owner_id if in_scope else None,
+        owner_username=owner_username,
+        team_id=media.team_id if in_scope else None,
+        original_filename=media.original_filename if in_scope else None,
+        media_kind=media.media_kind,
+    )
+
+
+@router.get(
+    "/media/{code}/link",
+    response_model=UnifiedMediaLink,
+    summary="Get one stable media URL",
+    description="Public media returns its permanent direct URL anonymously. Private media "
+    "returns an expiring signed URL to its owner, an authorized team member, or an "
+    "administrator using JWT. API keys always remain owner/team scoped.",
+)
+def get_media_link(
+    code: str,
+    request: Request,
+    ttl: int = Query(
+        settings.signed_url_ttl_seconds,
+        ge=60,
+        le=7 * 86400,
+        description="Private-link TTL in seconds; ignored for public media",
+    ),
+    current_user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+) -> UnifiedMediaLink:
+    _throttle_media_lookup(request)
+    media = db.execute(
+        select(Image).where(Image.code == code, Image.media_kind.in_(("image", "video")))
+    ).scalar_one_or_none()
+    if media is None:
+        raise HTTPException(status_code=404, detail="media not found")
+
+    if media.visibility == "public":
+        return UnifiedMediaLink(
+            code=media.code,
+            media_kind=media.media_kind,
+            visibility=media.visibility,
+            url=_media_url(request, media),
+        )
+    if not _has_media_scope(db, media, current_user):
+        # Keep private resource existence hidden from both anonymous and
+        # authenticated callers outside its owner/team/admin scope.
+        raise HTTPException(status_code=404, detail="media not found")
+    if media.media_kind == "video":
+        url, expires = build_signed_video_url(
+            request, media.code, ttl_seconds=ttl, version=media.signing_version
+        )
+    else:
+        url, expires = build_signed_image_url(
+            request, media.code, ttl_seconds=ttl, version=media.signing_version
+        )
+    return UnifiedMediaLink(
+        code=media.code,
+        media_kind=media.media_kind,
+        visibility=media.visibility,
+        url=url,
+        expires_at=datetime.fromtimestamp(expires, tz=timezone.utc),
+    )
+
+
+@router.get(
     "/media-groups",
     response_model=MediaGroupListResponse,
     summary="List personal or team media groups",
 )
 @serialized_library_lifecycle
 def list_media_groups(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_jwt_user),
     team_id: int | None = Query(default=None, ge=1),
     q: str = Query(default="", max_length=100),
     limit: int = Query(default=50, ge=1, le=100),
@@ -170,7 +316,7 @@ def list_media_groups(
 @serialized_library_lifecycle
 def create_media_group(
     payload: MediaGroupCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_jwt_user),
     db: Session = Depends(get_db),
 ) -> MediaGroupOut:
     db.rollback()
@@ -193,6 +339,7 @@ def create_media_group(
         team_id=payload.team_id,
     )
     group = MediaGroup(
+        id=next_media_group_id(db),
         owner_id=current_user.id,
         team_id=payload.team_id,
         name=name,
@@ -223,7 +370,7 @@ def create_media_group(
 @serialized_library_lifecycle
 def get_media_group(
     group_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_jwt_user),
     db: Session = Depends(get_db),
 ) -> MediaGroupOut:
     db.rollback()
@@ -240,7 +387,7 @@ def get_media_group(
 def update_media_group(
     group_id: int,
     payload: MediaGroupUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_jwt_user),
     db: Session = Depends(get_db),
 ) -> MediaGroupOut:
     db.rollback()
@@ -280,7 +427,7 @@ def update_media_group(
 @serialized_library_lifecycle
 def remove_media_group(
     group_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_jwt_user),
     db: Session = Depends(get_db),
 ) -> None:
     db.rollback()
@@ -297,7 +444,7 @@ def remove_media_group(
 def list_media_group_items(
     group_id: int,
     request: Request,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_jwt_user),
     kind: str = Query(default="all"),
     q: str = Query(default="", max_length=100),
     limit: int = Query(default=20, ge=1, le=100),
@@ -328,7 +475,7 @@ def list_media_group_items(
 def add_media_group_items(
     group_id: int,
     payload: MediaGroupItemsAdd,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_jwt_user),
     db: Session = Depends(get_db),
 ) -> MediaGroupItemsResult:
     db.rollback()
@@ -380,7 +527,7 @@ def add_media_group_items(
 def remove_media_group_item(
     group_id: int,
     code: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_jwt_user),
     db: Session = Depends(get_db),
 ) -> None:
     db.rollback()

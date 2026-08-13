@@ -2,6 +2,11 @@
 
 from conftest import FAKE_PNG, auth, new_user, upload
 
+from sqlalchemy import text
+
+from app.core.database import engine
+from app.models import RuntimeCounter
+
 
 def test_api_key_created_once_and_listed_by_prefix(client):
     _, token = new_user(client)
@@ -76,6 +81,29 @@ def test_api_key_revoke(client):
     assert client.get("/api/auth/me", headers={"X-API-Key": key}).status_code == 401
 
 
+def test_revoked_key_id_is_never_reused_or_deleted_by_a_stale_retry(client):
+    _, token = new_user(client)
+    headers = auth(token)
+    first = client.post("/api/keys", headers=headers).json()
+    assert client.delete(f"/api/keys/{first['id']}", headers=headers).status_code == 204
+
+    replacement = client.post("/api/keys", headers=headers).json()
+    assert replacement["id"] > first["id"]
+    assert client.delete(f"/api/keys/{first['id']}", headers=headers).status_code == 404
+    assert client.get(
+        "/api/auth/me", headers={"X-API-Key": replacement["key"]}
+    ).status_code == 200
+
+
+def test_runtime_counter_table_has_no_foreign_keys_and_chinese_comments(client):
+    with engine.connect() as connection:
+        assert connection.execute(text("PRAGMA foreign_key_list(runtime_counters)")).all() == []
+    assert all(
+        column.comment and any("\u4e00" <= char <= "\u9fff" for char in column.comment)
+        for column in RuntimeCounter.__table__.columns
+    )
+
+
 def test_api_keys_are_unique(client):
     _, token = new_user(client)
     h = auth(token)
@@ -85,6 +113,27 @@ def test_api_keys_are_unique(client):
     keys = client.get("/api/keys", headers=h).json()
     prefixes = [k["key_prefix"] for k in keys]
     assert len(prefixes) == len(set(prefixes))
+
+
+def test_api_key_mutations_have_a_daily_per_account_limit(client, monkeypatch):
+    from app.core.config import settings
+    import app.services.ratelimit as ratelimit
+
+    _, token = new_user(client)
+    monkeypatch.setattr(settings, "api_key_mutation_rate_limit_per_day", 2)
+    first = client.post("/api/keys", headers=auth(token))
+    second = client.post("/api/keys", headers=auth(token))
+    rejected = client.post("/api/keys", headers=auth(token))
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert rejected.status_code == 429
+    assert int(rejected.headers["retry-after"]) > 0
+
+    # The shared limiter must retain a 24-hour window beyond its old one-hour
+    # pruning horizon; otherwise key churn can grow traffic dimensions again.
+    original_monotonic = ratelimit.time.monotonic
+    monkeypatch.setattr(ratelimit.time, "monotonic", lambda: original_monotonic() + 3601)
+    assert client.post("/api/keys", headers=auth(token)).status_code == 429
 
 
 def test_api_key_cannot_access_others_resources(client):

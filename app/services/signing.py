@@ -2,8 +2,9 @@
 
 Signed URLs let private images be viewed by anyone holding a *fresh, valid*
 link (e.g. an <img> tag cannot send an Authorization header). Each link is
-HMAC-SHA256 over ``{code}:{expires}``, bound to one image and one expiry
-timestamp — guessing, tampering or replaying a signature fails verification.
+HMAC-SHA256 over ``{code}:{expires}``, bound to one image and one expiry.
+Guessing or tampering fails, but the bearer URL remains replayable until it
+expires and therefore must be protected like a temporary password.
 """
 
 import base64

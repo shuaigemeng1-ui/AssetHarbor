@@ -19,7 +19,9 @@ from ...core.security import (
 from ...models import User
 from ...schemas import ChangePasswordRequest, PublicConfig, RegisterRequest, TokenResponse, UserOut
 from ...services.ratelimit import check_rate_limit, client_ip
-from ..deps import get_current_user, get_db
+from ...services.identifiers import next_user_id
+from ...services.library import library_lifecycle_lease
+from ..deps import get_current_user, get_db, require_jwt_user
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -40,7 +42,6 @@ def public_config() -> PublicConfig:
         video_chunk_concurrency=settings.video_chunk_concurrency,
         user_storage_quota_bytes=settings.user_storage_quota_bytes,
         team_storage_quota_bytes=settings.team_storage_quota_bytes,
-        default_visibility=settings.default_visibility,
     )
 
 
@@ -72,19 +73,29 @@ def register(
         ):
             raise HTTPException(status_code=403, detail="invalid invite code")
 
-    exists = db.execute(select(User).where(User.username == payload.username)).scalar_one_or_none()
-    if exists is not None:
-        raise HTTPException(status_code=409, detail="username already taken")
-
-    user = User(username=payload.username, password_hash=hash_password(payload.password), role="user")
-    db.add(user)
-    try:
-        db.commit()
-    except IntegrityError:
+    password_hash = hash_password(payload.password)
+    with library_lifecycle_lease():
         db.rollback()
-        raise HTTPException(status_code=409, detail="username already taken")
-    db.refresh(user)
-    return _user_out(user)
+        exists = db.execute(
+            select(User).where(User.username == payload.username)
+        ).scalar_one_or_none()
+        if exists is not None:
+            raise HTTPException(status_code=409, detail="username already taken")
+
+        user = User(
+            id=next_user_id(db),
+            username=payload.username,
+            password_hash=password_hash,
+            role="user",
+        )
+        db.add(user)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="username already taken")
+        db.refresh(user)
+        return _user_out(user)
 
 
 @router.post("/login", response_model=TokenResponse, summary="Login and get a JWT access token")
@@ -95,6 +106,10 @@ def login(
 ) -> TokenResponse:
     # Anti brute-force: throttle per IP and per account.
     check_rate_limit(f"login-ip:{client_ip(request)}", settings.login_rate_limit_per_minute, 60)
+    if len(form.username) > 64 or len(form.password) > 128:
+        # Avoid unbounded rate-limit keys and password hashing work. The same
+        # generic response keeps account existence undisclosed.
+        raise HTTPException(status_code=401, detail="incorrect username or password")
     check_rate_limit(f"login-user:{form.username}", settings.login_rate_limit_per_username, 60)
 
     user = db.execute(select(User).where(User.username == form.username)).scalar_one_or_none()
@@ -134,7 +149,7 @@ def me(current_user: User = Depends(get_current_user)) -> UserOut:
 @router.post("/change-password", status_code=204, summary="Change your password")
 def change_password(
     payload: ChangePasswordRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_jwt_user),
     db: Session = Depends(get_db),
 ) -> None:
     original_hash = current_user.password_hash

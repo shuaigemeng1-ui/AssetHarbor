@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from sqlalchemy.orm import Session
 
 from ...core.config import settings
+from ...core.auth_scope import has_global_admin_scope
 from ...models import Team, User
 from ...schemas import UploadResponse
 from ...services.images import store_upload
@@ -29,8 +30,8 @@ async def upload_image(
     request: Request,
     current_user: User = Depends(get_current_user),
     file: UploadFile = File(..., description="Image file (jpeg/png/gif/webp/svg/bmp/ico/avif/tiff)"),
-    name: str = Form("", description="Optional display name; falls back to the filename"),
-    visibility: str = Form(settings.default_visibility, description="public (anyone) or private (owner + team + signed links only)"),
+    name: str = Form("", max_length=255, description="Optional display name; falls back to the filename"),
+    visibility: str = Form("public", description="public (default, anyone) or private (owner + team + signed links only)"),
     team_id: int | None = Form(None, description="Team space to upload into (optional)"),
     db: Session = Depends(get_db),
 ) -> UploadResponse:
@@ -43,7 +44,7 @@ async def upload_image(
         team = db.get(Team, team_id)
         if team is None:
             raise HTTPException(status_code=404, detail="team not found")
-        if get_membership(db, team.id, current_user.id) is None and current_user.role != "admin":
+        if get_membership(db, team.id, current_user.id) is None and not has_global_admin_scope(current_user):
             raise HTTPException(status_code=403, detail="you are not a member of this team")
 
     image = await store_upload(

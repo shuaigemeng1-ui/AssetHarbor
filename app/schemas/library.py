@@ -56,8 +56,16 @@ class UnifiedMediaInfo(BaseModel):
     owner_id: int | None
     owner_username: str | None = None
     team_id: int | None = None
-    original_filename: str
+    original_filename: str | None
     media_kind: str
+
+
+class UnifiedMediaLink(BaseModel):
+    code: str
+    media_kind: str
+    visibility: str
+    url: str
+    expires_at: datetime | None = None
 
 
 class UnifiedMediaListResponse(BaseModel):

@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
+from ..core.auth_scope import has_global_admin_scope
 from ..models import Image, User
 from .library import (
     delete_group_items_for_media,
@@ -21,6 +22,7 @@ from .library import (
 )
 from .shortcode import generate_short_code
 from .storage_quota import enforce_storage_quota
+from .storage_paths import resolve_media_path
 from .teams import get_membership
 from .videos import reserve_write_space
 
@@ -151,6 +153,13 @@ def _stored_path(code: str, ext: str) -> Path:
     return Path("files") / code[:2] / code[2:4] / f"{code}.{ext}"
 
 
+def _safe_filename(filename: str | None) -> str:
+    """Store a bounded display basename instead of client path metadata."""
+    cleaned = (filename or "image").replace("\\", "/").split("/")[-1]
+    cleaned = cleaned.replace("\x00", "").strip()
+    return cleaned[:255] or "image"
+
+
 async def store_upload(
     file: UploadFile,
     db: Session,
@@ -173,7 +182,7 @@ async def store_upload(
 
     mime, ext = detected
     digest = hashlib.sha256(data).hexdigest()
-    original_filename = file.filename or "image"
+    original_filename = _safe_filename(file.filename)
 
     # Reading and validating the potentially large request body deliberately
     # happens above, outside the global lifecycle lease. Only the final
@@ -213,7 +222,7 @@ async def store_upload(
             image = Image(
                 code=code,
                 original_filename=original_filename,
-                name=name or original_filename,
+                name=(name or original_filename)[:255],
                 stored_path=str(rel_path),
                 content_type=mime,
                 size=len(data),
@@ -250,19 +259,24 @@ def delete_image(db: Session, image: Image, actor: User | None = None) -> None:
         actor = fresh_library_user(db, actor)
         if not can_manage_image(db, actor, current):
             raise HTTPException(status_code=403, detail="media management privileges required")
-    path = settings.data_dir / current.stored_path
+    try:
+        path = resolve_media_path(current.stored_path)
+    except ValueError:
+        # Corrupt metadata must never turn deletion into an arbitrary unlink.
+        path = None
     delete_group_items_for_media(db, current.id)
     db.delete(current)
     db.commit()
     try:
-        path.unlink(missing_ok=True)
+        if path is not None:
+            path.unlink(missing_ok=True)
     except OSError:
         pass  # the DB row is the source of truth; orphan files can be swept later
 
 
 def can_manage_image(db: Session, user: User, image: Image) -> bool:
     """Owner, global admin, or a team owner/admin when the image lives in a team."""
-    if user.role == "admin" or image.owner_id == user.id:
+    if has_global_admin_scope(user) or image.owner_id == user.id:
         return True
     if image.team_id is not None:
         member = get_membership(db, image.team_id, user.id)

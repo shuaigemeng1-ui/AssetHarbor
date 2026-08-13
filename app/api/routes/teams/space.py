@@ -5,6 +5,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ....models import Image, User
+from ....core.auth_scope import has_global_admin_scope
 from ....schemas import ImageInfo, ImageListResponse
 from ....services.signing import build_image_url
 from ....services.teams import get_membership
@@ -29,7 +30,7 @@ def team_images(
     db: Session = Depends(get_db),
 ) -> ImageListResponse:
     team = get_team_or_404(db, team_id)
-    if get_membership(db, team.id, current_user.id) is None and current_user.role != "admin":
+    if get_membership(db, team.id, current_user.id) is None and not has_global_admin_scope(current_user):
         raise HTTPException(status_code=404, detail="team not found")
 
     filters = [Image.team_id == team.id, Image.media_kind == "image"]

@@ -9,7 +9,7 @@ class VideoUploadCreate(BaseModel):
     filename: str = Field(min_length=1, max_length=255)
     size: int = Field(gt=0)
     name: str = Field(default="", max_length=255)
-    visibility: str | None = None
+    visibility: str = "public"
     team_id: int | None = None
     fingerprint: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
 

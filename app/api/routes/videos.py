@@ -13,6 +13,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ...core.config import settings
+from ...core.auth_scope import has_global_admin_scope
 from ...models import Image, Team, UploadPart, UploadSession, User
 from ...schemas import (
     SignedLinkResponse,
@@ -32,6 +33,7 @@ from ...services.signing import (
     verify_image_signature,
 )
 from ...services.teams import get_membership, is_team_member
+from ...services.storage_paths import resolve_media_path
 from ...services.videos import (
     cancel_upload_session,
     complete_upload_session,
@@ -118,7 +120,7 @@ def initialize_video_upload(
         filename=payload.filename,
         size=payload.size,
         name=payload.name,
-        visibility=payload.visibility or settings.default_visibility,
+        visibility=payload.visibility,
         team_id=payload.team_id,
         fingerprint=payload.fingerprint,
     )
@@ -198,6 +200,11 @@ async def upload_video_part(
     content_range: str | None = Header(default=None, alias="Content-Range"),
     chunk_sha256: str | None = Header(default=None, alias="X-Chunk-SHA256"),
 ) -> VideoPartResponse:
+    check_rate_limit(
+        f"video-part:{current_user.id}:{current_user.created_at.isoformat()}",
+        settings.video_part_rate_limit_per_minute,
+        60,
+    )
     upload = get_upload_for_user(
         db, upload_id, current_user, cleanup_expired=False
     )
@@ -274,7 +281,7 @@ def list_videos(
     db: Session = Depends(get_db),
 ) -> VideoListResponse:
     filters = []
-    if current_user.role != "admin":
+    if not has_global_admin_scope(current_user):
         filters.extend((Image.owner_id == current_user.id, Image.team_id.is_(None)))
     if q:
         like = f"%{q}%"
@@ -298,7 +305,7 @@ def list_team_videos(
 ) -> VideoListResponse:
     if db.get(Team, team_id) is None:
         raise HTTPException(status_code=404, detail="team not found")
-    if current_user.role != "admin" and get_membership(db, team_id, current_user.id) is None:
+    if not has_global_admin_scope(current_user) and get_membership(db, team_id, current_user.id) is None:
         raise HTTPException(status_code=404, detail="team not found")
     filters = [Image.team_id == team_id]
     if q:
@@ -367,7 +374,7 @@ def get_video_signed_link(
         raise HTTPException(status_code=404, detail="video not found")
     allowed = (
         video.owner_id == current_user.id
-        or current_user.role == "admin"
+        or has_global_admin_scope(current_user)
         or (video.team_id is not None and is_team_member(db, video.team_id, current_user.id))
     )
     if not allowed:
@@ -436,7 +443,13 @@ def get_video(
         raise HTTPException(status_code=404, detail="video not found")
     if video.visibility == "private":
         allowed = bool(
-            (current_user is not None and (video.owner_id == current_user.id or current_user.role == "admin"))
+            (
+                current_user is not None
+                and (
+                    video.owner_id == current_user.id
+                    or has_global_admin_scope(current_user)
+                )
+            )
             or (
                 video.team_id is not None
                 and current_user is not None
@@ -451,8 +464,11 @@ def get_video(
         if not allowed:
             raise HTTPException(status_code=404, detail="video not found")
 
-    path = settings.data_dir / video.stored_path
-    if not path.is_file():
+    try:
+        path = resolve_media_path(video.stored_path)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="video not found")
+    if not path.is_file() or path.stat().st_size != video.size:
         raise HTTPException(status_code=404, detail="video not found")
     headers = {
         "Accept-Ranges": "bytes",

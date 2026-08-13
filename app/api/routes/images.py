@@ -6,9 +6,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...core.config import settings
+from ...core.auth_scope import has_global_admin_scope
 from ...models import Image, User
 from ...services.ratelimit import check_rate_limit, client_ip
 from ...services.signing import verify_image_signature
+from ...services.storage_paths import resolve_media_path
 from ...services.teams import is_team_member
 from ..deps import get_db, get_optional_user
 
@@ -43,7 +45,7 @@ def get_image(
 
     if image.visibility == "private":
         is_owner = current_user is not None and image.owner_id == current_user.id
-        is_admin = current_user is not None and current_user.role == "admin"
+        is_admin = has_global_admin_scope(current_user)
         in_team = bool(
             image.team_id is not None
             and current_user is not None
@@ -58,7 +60,10 @@ def get_image(
             # 404 (not 403) so private images are not discoverable.
             raise HTTPException(status_code=404, detail="image not found")
 
-    path = settings.data_dir / image.stored_path
+    try:
+        path = resolve_media_path(image.stored_path)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="image not found")
     if not path.is_file():
         raise HTTPException(status_code=404, detail="image not found")
 

@@ -11,6 +11,7 @@ from .base import utcnow
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, comment="用户编号")
     username: Mapped[str] = mapped_column(

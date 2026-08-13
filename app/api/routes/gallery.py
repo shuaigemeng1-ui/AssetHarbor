@@ -7,6 +7,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ...core.config import settings
+from ...core.auth_scope import has_global_admin_scope
 from ...models import Image, User
 from ...schemas import ImageInfo, ImageListResponse, ImageUpdate, SignedLinkResponse
 from ...services.images import can_manage_image, delete_image, update_media_metadata
@@ -20,9 +21,9 @@ router = APIRouter(prefix="/api", tags=["gallery"])
 @router.get(
     "/images",
     response_model=ImageListResponse,
-    summary="List images (your own, or all if admin)",
-    description="Newest first. Regular users only see their own images; admins see "
-    "everything. Supports text search via ?q= and limit/offset pagination.",
+    summary="List images (your own, or all with an administrator JWT)",
+    description="Newest first. Regular users and API keys only see their owner/team scope; "
+    "an administrator JWT sees everything. Supports ?q= and limit/offset pagination.",
 )
 def list_images(
     request: Request,
@@ -33,7 +34,7 @@ def list_images(
     db: Session = Depends(get_db),
 ) -> ImageListResponse:
     filters = [Image.media_kind == "image"]
-    if current_user.role != "admin":
+    if not has_global_admin_scope(current_user):
         filters.append(Image.owner_id == current_user.id)
         filters.append(Image.team_id.is_(None))  # team images live in the team space
     if q:
@@ -159,7 +160,7 @@ def get_signed_link(
         raise HTTPException(status_code=404, detail="image not found")
 
     is_owner = image.owner_id == current_user.id
-    is_admin = current_user.role == "admin"
+    is_admin = has_global_admin_scope(current_user)
     in_team = bool(
         image.team_id is not None and is_team_member(db, image.team_id, current_user.id)
     )

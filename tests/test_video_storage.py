@@ -313,3 +313,112 @@ def test_orphan_sweep_rechecks_database_before_removing_directory(client):
     # must trust its fresh query while holding the same gate used by PUT/delete.
     assert _cleanup_upload_directory(directory, time.time()) is False
     assert directory.is_dir()
+
+
+def test_cleanup_candidate_scan_does_not_hold_global_lifecycle_locks(client, monkeypatch):
+    from app.services import videos
+    from conftest import init_video, new_user
+
+    _, token = new_user(client)
+    upload_id = init_video(client, token, MP4_HEADER + b"unlocked-scan").json()[
+        "upload_id"
+    ]
+    real_session_file = videos.session_file
+    scan_entered = threading.Event()
+    release_scan = threading.Event()
+    cleanup_finished = threading.Event()
+    failures: list[BaseException] = []
+
+    def blocked_session_file(candidate_id):
+        if candidate_id == upload_id and not scan_entered.is_set():
+            scan_entered.set()
+            assert release_scan.wait(5), "test did not release cleanup snapshot"
+        return real_session_file(candidate_id)
+
+    monkeypatch.setattr(videos, "session_file", blocked_session_file)
+
+    def cleanup_worker():
+        try:
+            videos.cleanup_expired_uploads()
+        except BaseException as exc:
+            failures.append(exc)
+        finally:
+            cleanup_finished.set()
+
+    worker = threading.Thread(target=cleanup_worker, daemon=True)
+    worker.start()
+    assert scan_entered.wait(2), "cleanup never reached its filesystem snapshot"
+    try:
+        assert videos._session_create_lock.acquire(timeout=0.5)
+        videos._session_create_lock.release()
+
+        lease_acquired = threading.Event()
+
+        def lifecycle_probe():
+            with videos.library_lifecycle_lease():
+                lease_acquired.set()
+
+        probe = threading.Thread(target=lifecycle_probe, daemon=True)
+        probe.start()
+        assert lease_acquired.wait(0.5), "cleanup snapshot held the lifecycle lease"
+        probe.join(timeout=1)
+    finally:
+        release_scan.set()
+
+    worker.join(timeout=5)
+    assert cleanup_finished.is_set()
+    assert failures == []
+
+
+def test_orphan_snapshot_cannot_delete_session_created_before_fresh_check(
+    client, monkeypatch
+):
+    from app.core.config import settings
+    from app.core.database import SessionLocal
+    from app.models import UploadSession
+    from app.services import videos
+    from conftest import init_video, new_user
+
+    fixed_id = "12345678-1234-4234-8234-123456789abc"
+    directory = settings.uploads_dir / fixed_id
+    directory.mkdir(parents=True, exist_ok=True)
+    sweep_entered = threading.Event()
+    release_sweep = threading.Event()
+    cleanup_finished = threading.Event()
+    failures: list[BaseException] = []
+    real_cleanup_directory = videos._cleanup_upload_directory
+
+    def paused_cleanup_directory(child, stale_before, stale_temp_candidates=None):
+        if child.name == fixed_id:
+            sweep_entered.set()
+            assert release_sweep.wait(5), "test did not release orphan sweep"
+        return real_cleanup_directory(child, stale_before, stale_temp_candidates)
+
+    monkeypatch.setattr(videos, "_cleanup_upload_directory", paused_cleanup_directory)
+
+    def cleanup_worker():
+        try:
+            videos.cleanup_expired_uploads()
+        except BaseException as exc:
+            failures.append(exc)
+        finally:
+            cleanup_finished.set()
+
+    worker = threading.Thread(target=cleanup_worker, daemon=True)
+    worker.start()
+    assert sweep_entered.wait(2), "cleanup never reached the orphan candidate"
+    try:
+        monkeypatch.setattr(videos.uuid, "uuid4", lambda: __import__("uuid").UUID(fixed_id))
+        _, token = new_user(client)
+        initialized = init_video(client, token, MP4_HEADER + b"new-session-race")
+        assert initialized.status_code == 201, initialized.text
+        assert initialized.json()["upload_id"] == fixed_id
+    finally:
+        release_sweep.set()
+
+    worker.join(timeout=5)
+    assert cleanup_finished.is_set()
+    assert failures == []
+    assert directory.is_dir()
+    with SessionLocal() as db:
+        assert db.get(UploadSession, fixed_id) is not None

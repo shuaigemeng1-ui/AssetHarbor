@@ -266,6 +266,20 @@ def test_part_headers_length_hash_and_range_are_enforced(client):
     assert client.put(endpoint, headers=short_headers, content=short).status_code == 400
 
 
+def test_video_part_requests_have_a_per_account_rate_limit(client, monkeypatch):
+    from app.core.config import settings
+
+    data = _sample()
+    _, token = new_user(client)
+    upload_id = init_video(client, token, data).json()["upload_id"]
+    monkeypatch.setattr(settings, "video_part_rate_limit_per_minute", 1)
+
+    assert put_video_part(client, token, upload_id, 0, data, 0, len(data)).status_code == 200
+    rejected = put_video_part(client, token, upload_id, 0, data, 0, len(data))
+    assert rejected.status_code == 429
+    assert int(rejected.headers["retry-after"]) > 0
+
+
 def test_unsupported_magic_rejected_even_with_mp4_name_and_mime(client):
     data = b"definitely not an mp4 container"
     _, token = new_user(client)

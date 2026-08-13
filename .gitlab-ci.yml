@@ -18,6 +18,7 @@ backend-tests:
   before_script:
     - python -m pip install --disable-pip-version-check -r requirements-dev.txt
   script:
+    - python -m pip_audit -r requirements.txt
     - python -m compileall -q app tests
     - python -m pytest -q
 
@@ -35,6 +36,7 @@ frontend-tests-build:
   script:
     - cd frontend
     - npm ci
+    - npm audit --audit-level=high --registry=https://registry.npmjs.org
     - npm run test
     - npm run build
   artifacts:

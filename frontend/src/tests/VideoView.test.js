@@ -27,7 +27,7 @@ describe('VideoView media group scope', () => {
     vi.clearAllMocks()
     api.listVideos.mockResolvedValue({ items: [], total: 0 })
     api.listTeamVideos.mockResolvedValue({ items: [], total: 0 })
-    api.fetchPublicConfig.mockResolvedValue({ default_visibility: 'private' })
+    api.fetchPublicConfig.mockResolvedValue({ max_video_size_mb: 2048, video_chunk_size_mb: 8 })
   })
 
   function mountVideos(props = {}) {
@@ -63,6 +63,7 @@ describe('VideoView media group scope', () => {
     })
     const wrapper = mountVideos({ user: { id: 99, role: 'admin' } })
     await flushPromises()
+    expect(wrapper.get('.vis-select').element.value).toBe('public')
 
     const cards = wrapper.findAll('.video-card-stub')
     expect(cards.map(card => card.attributes('data-groupable'))).toEqual(['true', 'false', 'true'])

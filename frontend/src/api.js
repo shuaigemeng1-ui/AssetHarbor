@@ -1,4 +1,24 @@
 const TOKEN_KEY = 'oss_token'
+const MAX_RETRY_AFTER_MS = 5 * 60 * 1000
+
+export function parseRetryAfter(value, now = Date.now()) {
+  if (value === null || value === undefined) return null
+  const raw = String(value).trim()
+  if (!raw) return null
+
+  let delay
+  if (/^\d+(?:\.\d+)?$/.test(raw)) {
+    delay = Number(raw) * 1000
+  } else {
+    const timestamp = Date.parse(raw)
+    if (!Number.isFinite(timestamp)) return null
+    delay = timestamp - now
+  }
+  if (!Number.isFinite(delay)) return null
+  // A small floor prevents an expired HTTP-date from creating a tight 429 loop;
+  // the cap prevents a malformed proxy response from freezing the queue forever.
+  return Math.min(MAX_RETRY_AFTER_MS, Math.max(1000, Math.ceil(delay)))
+}
 
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY)
@@ -66,6 +86,9 @@ export async function request(path, options = {}) {
     const error = new Error(formatApiErrorDetail(body.detail, resp.status))
     error.status = resp.status
     error.body = body
+    const retryAfter = resp.headers?.get?.('Retry-After') ?? null
+    error.retryAfter = retryAfter
+    error.retryAfterMs = parseRetryAfter(retryAfter)
     throw error
   }
   return body
@@ -181,10 +204,10 @@ export function createVideoUpload(payload, { signal, token, suppressUnauthorized
   })
 }
 
-export function getVideoUpload(uploadId, { token, suppressUnauthorized = false } = {}) {
+export function getVideoUpload(uploadId, { token, suppressUnauthorized = false, signal } = {}) {
   const headers = {}
   if (token) headers.Authorization = `Bearer ${token}`
-  return request(`/api/video-uploads/${uploadId}`, { headers, suppressUnauthorized })
+  return request(`/api/video-uploads/${uploadId}`, { headers, suppressUnauthorized, signal })
 }
 
 export function listVideoUploads({ token, suppressUnauthorized = false } = {}) {
@@ -244,9 +267,12 @@ export function uploadVideoPart(uploadId, partNumber, blob, {
       if (xhr.status === 401) {
         expireCurrentToken(requestToken)
       }
+      const retryAfter = xhr.getResponseHeader?.('Retry-After') ?? null
       reject(Object.assign(new Error(formatApiErrorDetail(body.detail, xhr.status)), {
         status: xhr.status,
         body,
+        retryAfter,
+        retryAfterMs: parseRetryAfter(retryAfter),
       }))
     }
     xhr.send(blob)
@@ -419,6 +445,11 @@ export function listTeamVideos(teamId, { limit = 12, offset = 0, q = '' } = {}) 
 
 export function getAdminStats() {
   return request('/api/admin/stats')
+}
+
+export function getAdminTrafficStats(days = 7) {
+  const boundedDays = Math.min(365, Math.max(1, Number(days) || 7))
+  return request(`/api/admin/traffic-stats?days=${boundedDays}`)
 }
 
 export function listAdminTeams() {

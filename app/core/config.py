@@ -60,10 +60,6 @@ class Settings(BaseSettings):
     token_expire_minutes: int = Field(default=60 * 24 * 7, gt=0, le=60 * 24 * 365)
 
     # --- security ----------------------------------------------------------
-    # Default visibility for new uploads: public | private.
-    # private by default — uploads are not openly accessible until you
-    # explicitly share them (public) or issue a signed link.
-    default_visibility: Literal["public", "private"] = "private"
     # TTL (seconds) of expiring signed URLs used to view private images.
     signed_url_ttl_seconds: int = Field(default=60 * 60 * 24, ge=60, le=7 * 86400)
     # In-process rate limits, per 60s window. See app/services/ratelimit.py.
@@ -73,12 +69,22 @@ class Settings(BaseSettings):
     registration_rate_limit_per_username: int = Field(default=3, ge=0, le=1_000_000)
     images_rate_limit_per_minute: int = Field(default=240, ge=0, le=1_000_000)  # per IP
     upload_rate_limit_per_minute: int = Field(default=60, ge=0, le=1_000_000)  # per user
+    video_part_rate_limit_per_minute: int = Field(default=1000, ge=0, le=1_000_000)  # per user
+    api_key_mutation_rate_limit_per_day: int = Field(default=100, ge=1, le=100_000)
+    # Bound durable credentials per account. Rotation replaces one row and
+    # therefore does not consume another slot.
+    max_api_keys_per_user: int = Field(default=20, ge=1, le=1000)
+    # Daily traffic aggregates older than this are deleted by the telemetry
+    # writer at most once per UTC day. Keeps SQLite growth bounded.
+    traffic_retention_days: int = Field(default=365, ge=1, le=3650)
 
     @model_validator(mode="after")
     def validate_video_chunk_size(self) -> "Settings":
         """A resumable part cannot be larger than the file accepted by the service."""
         if self.video_chunk_size_mb > self.max_video_size_mb:
             raise ValueError("video_chunk_size_mb must not exceed max_video_size_mb")
+        if self.jwt_secret and len(self.jwt_secret.encode("utf-8")) < 32:
+            raise ValueError("jwt_secret must be empty or contain at least 32 UTF-8 bytes")
         return self
 
     @property

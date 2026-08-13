@@ -24,7 +24,7 @@ describe('GalleryView image uploads', () => {
     vi.clearAllMocks()
     api.listImages.mockResolvedValue({ items: [], total: 0 })
     api.listTeamImages.mockResolvedValue({ items: [], total: 0 })
-    api.fetchPublicConfig.mockResolvedValue({ default_visibility: 'private', max_upload_size_mb: 10 })
+    api.fetchPublicConfig.mockResolvedValue({ max_upload_size_mb: 10 })
   })
 
   function mountGallery(props = {}) {
@@ -65,6 +65,7 @@ describe('GalleryView image uploads', () => {
 
     const wrapper = mountGallery()
     await flushPromises()
+    expect(wrapper.get('.vis-select').element.value).toBe('public')
     await selectFile(wrapper)
 
     expect(wrapper.get('.image-result-stub').attributes('data-status')).toBe('uploading')
@@ -105,7 +106,7 @@ describe('GalleryView image uploads', () => {
     api.uploadFile
       .mockRejectedValueOnce(new Error('temporary network error'))
       .mockResolvedValueOnce({
-        code: 'retry-code', name: 'stamp.png', original_filename: 'stamp.png', visibility: 'private',
+        code: 'retry-code', name: 'stamp.png', original_filename: 'stamp.png', visibility: 'public',
         content_type: 'image/png', size: 128, url: '/i/retry-code', owner_id: 1,
       })
     const wrapper = mountGallery()
@@ -118,7 +119,7 @@ describe('GalleryView image uploads', () => {
     await flushPromises()
 
     expect(api.uploadFile).toHaveBeenCalledTimes(2)
-    expect(api.uploadFile.mock.calls[1][1]).toEqual({ name: '', visibility: 'private', teamId: null })
+    expect(api.uploadFile.mock.calls[1][1]).toEqual({ name: '', visibility: 'public', teamId: null })
     expect(wrapper.find('.pending-grid').exists()).toBe(false)
     expect(wrapper.text()).toContain('retry-code')
     expect(wrapper.text()).toContain('1 张')

@@ -3,362 +3,784 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>oss · API Docs</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🖼️</text></svg>">
+<meta name="description" content="oss 开放 API 文档、Python 3 与 cURL 调用示例">
+<title>oss · API 文档</title>
 <style>
   :root {
-    --bg: #f5f7fb; --panel: #ffffff; --border: #dfe5ef;
-    --text: #172033; --muted: #657089; --accent: #2563eb;
-    --code-bg: #111827; --green: #16803d; --blue: #2563eb;
-    --orange: #a76100; --red: #c73535;
+    --bg: #f4f6fa;
+    --panel: #fff;
+    --panel-soft: #f8f9fc;
+    --border: #e1e6ef;
+    --border-strong: #cbd3e1;
+    --text: #1b2433;
+    --muted: #6f788a;
+    --accent: #5b5bd6;
+    --accent-soft: #f0f0ff;
+    --code-bg: #111827;
+    --green: #16803d;
+    --orange: #a76100;
+    --red: #c73535;
+    --purple: #7c3aed;
   }
   * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 22px; }
   body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 15px/1.7 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   }
-  .wrap { max-width: 960px; margin: 0 auto; padding: 32px 20px 80px; }
-
-  header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-  h1 { margin: 0; font-size: 26px; }
-  h1 span { color: var(--accent); }
-  .base { color: var(--muted); font-size: 13px; margin: 4px 0 0; word-break: break-all; }
-  .base code { color: var(--accent); background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; }
-
-  .lang-switch { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-  .lang-switch button {
-    background: transparent; border: none; color: var(--muted);
-    padding: 7px 16px; cursor: pointer; font-size: 13px;
+  button, a { font: inherit; }
+  button:focus-visible, a:focus-visible {
+    outline: 3px solid rgb(91 91 214 / 25%);
+    outline-offset: 2px;
   }
-  .lang-switch button.active { background: #e8efff; color: var(--accent); }
-
-  nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0; }
-  nav a {
-    color: var(--muted); text-decoration: none; font-size: 13px;
-    border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px;
+  .shell {
+    width: min(1180px, calc(100% - 36px));
+    margin: 0 auto;
+    padding: 30px 0 72px;
   }
-  nav a:hover { color: var(--accent); border-color: var(--accent); }
-
-  h2 { font-size: 20px; margin: 40px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
-  h3 { font-size: 16px; margin: 24px 0 8px; }
-  p.desc { color: var(--muted); margin: 0 0 14px; }
-
-  table { width: 100%; border-collapse: collapse; margin: 10px 0 18px; font-size: 14px; }
-  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
-  th { color: var(--muted); font-weight: 500; font-size: 12px; white-space: nowrap; }
-  td code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; word-break: break-all; }
-
-  .method {
-    display: inline-block; min-width: 52px; text-align: center;
-    border-radius: 5px; padding: 1px 8px; font-size: 12px; font-weight: 700;
-    font-family: ui-monospace, monospace;
+  .topbar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 22px;
   }
-  .m-get { color: var(--green); border: 1px solid var(--green); }
-  .m-post { color: var(--blue); border: 1px solid var(--blue); }
-  .m-put { color: #7c3aed; border: 1px solid #7c3aed; }
-  .m-patch { color: var(--orange); border: 1px solid var(--orange); }
-  .m-delete { color: var(--red); border: 1px solid var(--red); }
-
-  .path { font-family: ui-monospace, monospace; font-size: 13px; white-space: nowrap; }
-
-  .code-block { position: relative; margin: 8px 0 18px; }
-  .code-block pre {
-    background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px;
-    padding: 14px; overflow-x: auto; margin: 0;
+  .brand { margin: 0; font-size: 28px; letter-spacing: -.04em; }
+  .brand span { color: var(--accent); }
+  .subtitle { max-width: 680px; margin: 5px 0 0; color: var(--muted); }
+  .base-url { margin: 9px 0 0; color: var(--muted); font-size: 12px; }
+  .base-url code {
+    border: 1px solid #dedfff;
+    border-radius: 7px;
+    padding: 2px 7px;
+    background: var(--accent-soft);
+    color: #4f4fc7;
+    word-break: break-all;
   }
-  .code-block code { color: #e6edf7; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.6; }
-  .copy-btn {
-    position: absolute; top: 8px; right: 8px;
-    border: 1px solid var(--border); background: transparent; color: var(--muted);
-    border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer;
+  .header-actions { display: flex; align-items: center; gap: 9px; }
+  .openapi-link, .lang-switch button {
+    min-height: 36px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 7px 12px;
+    background: rgb(255 255 255 / 80%);
+    color: var(--muted);
+    text-decoration: none;
+    cursor: pointer;
   }
-  .copy-btn:hover { color: var(--accent); border-color: var(--accent); }
-
-  .note {
-    background: #edf3ff; border: 1px solid var(--border); border-left: 3px solid var(--accent);
-    border-radius: 8px; padding: 10px 14px; font-size: 13px; color: var(--muted); margin: 12px 0;
+  .lang-switch { display: flex; gap: 5px; }
+  .lang-switch button.active { border-color: #d9dafb; background: var(--accent-soft); color: #4f4fc7; }
+  .layout { display: grid; grid-template-columns: 205px minmax(0, 1fr); gap: 34px; margin-top: 26px; }
+  .side-nav { position: sticky; top: 20px; align-self: start; display: grid; gap: 5px; }
+  .side-nav strong { margin: 0 10px 7px; color: #a0a7b5; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
+  .side-nav a {
+    border-radius: 9px;
+    padding: 7px 10px;
+    color: var(--muted);
+    text-decoration: none;
   }
-  footer { margin-top: 48px; color: var(--muted); font-size: 13px; }
-  footer a { color: var(--muted); }
-  @media (max-width: 640px) { .path { white-space: normal; word-break: break-all; } }
+  .side-nav a:hover { background: #fff; color: var(--accent); }
+  main { min-width: 0; }
+  h2 { margin: 46px 0 12px; font-size: 23px; letter-spacing: -.03em; }
+  main > h2:first-child { margin-top: 0; }
+  h3 { margin: 0; font-size: 17px; }
+  .lead { margin: 0 0 18px; color: var(--muted); }
+  .notice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .notice {
+    border: 1px solid #dedfff;
+    border-radius: 12px;
+    padding: 13px 15px;
+    background: #f7f7ff;
+    color: #626884;
+  }
+  .notice strong { display: block; margin-bottom: 3px; color: #3f4270; }
+  .endpoint-card {
+    margin-top: 16px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--panel);
+    box-shadow: 0 7px 24px rgb(34 45 73 / 4%);
+  }
+  .endpoint-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 17px 18px 13px; }
+  .endpoint-title { min-width: 0; }
+  .endpoint-route { display: flex; align-items: center; gap: 9px; margin-bottom: 5px; }
+  .endpoint-route code { color: #31394a; font: 600 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+  .endpoint-head p { margin: 0; color: var(--muted); font-size: 12px; }
+  .auth-badge { flex: 0 0 auto; border-radius: 999px; padding: 3px 8px; background: #f1f3f7; color: #747d8e; font-size: 10px; font-weight: 700; }
+  .auth-badge.public { background: #ecf8f0; color: var(--green); }
+  .method { display: inline-block; min-width: 48px; border: 1px solid currentColor; border-radius: 6px; padding: 2px 6px; text-align: center; font: 750 10px/1.4 ui-monospace, monospace; }
+  .m-get { color: var(--green); }
+  .m-post { color: #2563eb; }
+  .m-put { color: var(--purple); }
+  .m-patch { color: var(--orange); }
+  .m-delete { color: var(--red); }
+  .parameter-wrap { overflow-x: auto; padding: 0 18px 11px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { border-bottom: 1px solid #edf0f5; padding: 7px 8px; text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+  td code { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-word; }
+  .example { border-top: 1px solid var(--border); background: var(--code-bg); }
+  .example-toolbar { display: flex; align-items: center; justify-content: space-between; min-height: 43px; border-bottom: 1px solid rgb(255 255 255 / 9%); padding: 5px 10px 5px 13px; }
+  .code-tabs { display: flex; gap: 4px; }
+  .code-tab, .copy-btn {
+    border: 1px solid transparent;
+    border-radius: 7px;
+    padding: 5px 10px;
+    background: transparent;
+    color: #9ca8bc;
+    cursor: pointer;
+    font-size: 11px;
+  }
+  .code-tab[aria-selected="true"] { border-color: rgb(255 255 255 / 13%); background: rgb(255 255 255 / 9%); color: #fff; }
+  .copy-btn { border-color: rgb(255 255 255 / 13%); }
+  .copy-btn:hover { color: #fff; }
+  .code-panel { position: relative; }
+  .code-panel[hidden] { display: none; }
+  pre { margin: 0; overflow-x: auto; padding: 16px 18px 19px; }
+  pre code { color: #e6edf7; font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; }
+  .reference-shell { overflow-x: auto; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); }
+  .reference-shell table { min-width: 680px; margin: 0; }
+  .reference-shell th, .reference-shell td { padding: 10px 12px; }
+  .security-note { margin-top: 14px; border-left: 3px solid var(--accent); padding: 9px 13px; background: #f5f5ff; color: var(--muted); }
+  footer { margin-top: 48px; border-top: 1px solid var(--border); padding-top: 20px; color: var(--muted); font-size: 12px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  @media (max-width: 820px) {
+    .layout { grid-template-columns: 1fr; }
+    .side-nav { position: static; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .side-nav strong { grid-column: 1 / -1; }
+  }
+  @media (max-width: 620px) {
+    .shell { width: min(100% - 24px, 1180px); padding-top: 18px; }
+    .topbar, .endpoint-head { flex-direction: column; }
+    .header-actions { width: 100%; flex-wrap: wrap; }
+    .notice-grid { grid-template-columns: 1fr; }
+    .side-nav { display: flex; overflow-x: auto; }
+    .side-nav strong { display: none; }
+    .side-nav a { flex: 0 0 auto; }
+  }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
+<div class="shell">
+  <header class="topbar">
     <div>
-      <h1>oss<span>.</span> API <span data-zh="文档" data-en="Documentation"></span></h1>
-      <p class="base" data-zh="当前服务地址：" data-en="Base URL: "><code id="base-url">/</code></p>
+      <h1 class="brand">oss<span>.</span> API</h1>
+      <p class="subtitle" data-zh="面向脚本、自动化任务和内部系统的开放接口。常用接口同时提供可直接复制的 Python 3 与 cURL 示例。" data-en="Open APIs for scripts, automations and internal systems, with copy-ready Python 3 and cURL examples."></p>
+      <p class="base-url"><span data-zh="当前服务地址" data-en="Base URL"></span>：<code id="base-url">/</code></p>
     </div>
-    <div class="lang-switch">
-      <button data-lang="zh" class="active">中文</button>
-      <button data-lang="en">English</button>
+    <div class="header-actions">
+      <a class="openapi-link" href="/openapi.json">OpenAPI JSON</a>
+      <div class="lang-switch" aria-label="文档语言">
+        <button type="button" data-lang="zh" class="active" aria-pressed="true">中文</button>
+        <button type="button" data-lang="en" aria-pressed="false">English</button>
+      </div>
     </div>
   </header>
 
-  <nav>
-    <a href="#auth" data-zh="认证" data-en="Auth"></a>
-    <a href="#keys" data-zh="API Key" data-en="API Keys"></a>
-    <a href="#upload" data-zh="上传" data-en="Upload"></a>
-    <a href="#images" data-zh="图片" data-en="Images"></a>
-    <a href="#videos" data-zh="视频" data-en="Videos"></a>
-    <a href="#library" data-zh="媒体库" data-en="Library"></a>
-    <a href="#teams" data-zh="团队" data-en="Teams"></a>
-    <a href="#admin" data-zh="管理员" data-en="Admin"></a>
-    <a href="#other" data-zh="其他" data-en="Other"></a>
-  </nav>
+  <div class="layout">
+    <nav class="side-nav" aria-label="API 文档章节">
+      <strong>API Guide</strong>
+      <a href="#quickstart" data-zh="快速开始" data-en="Quick start"></a>
+      <a href="#examples" data-zh="常用调用" data-en="Common calls"></a>
+      <a href="#video-flow" data-zh="视频分片" data-en="Video chunks"></a>
+      <a href="#reference" data-zh="接口索引" data-en="Reference"></a>
+      <a href="#security" data-zh="鉴权隔离" data-en="Auth isolation"></a>
+      <a href="#operations" data-zh="运维接口" data-en="Operations"></a>
+    </nav>
 
-  <p class="note" data-zh="除「注册 / 登录 / 获取公开图片 / 健康检查」外，所有接口都需要请求头 Authorization: Bearer &lt;token&gt;（JWT 或 API Key）。API Key 也支持 X-API-Key 请求头。" data-en="All endpoints except register / login / public image fetch / health require the header Authorization: Bearer &lt;token&gt; (JWT or API key). API keys are also accepted via the X-API-Key header."></p>
-  <p class="note" data-zh="全新安装默认关闭注册，必须设置 ADMIN_PASSWORD；当 users 表为空、注册关闭且未配置管理员密码时，应用会快速失败。数值配置均有边界并在启动导入时校验，非法值会返回明确的 ValidationError。" data-en="Fresh installs default to closed registration and require ADMIN_PASSWORD; the app fails fast when the users table is empty, registration is closed, and no admin password is configured. Numeric configuration is bounded and validated at startup with an explicit ValidationError."></p>
-  <p class="note" data-zh="USER_STORAGE_QUOTA_MB 与 TEAM_STORAGE_QUOTA_MB 默认为 0（不限额）；非零时统计已完成媒体和未完成视频会话预留，团队上传必须同时满足用户和团队额度。VIDEO_CHUNK_CONCURRENCY（默认 3，范围 1..32）控制单 worker 同时接收的分片数。" data-en="USER_STORAGE_QUOTA_MB and TEAM_STORAGE_QUOTA_MB default to 0 (unlimited). Non-zero limits include completed media and unfinished video reservations; team uploads must satisfy both ceilings. VIDEO_CHUNK_CONCURRENCY (default 3, range 1..32) controls simultaneous inbound chunks in the single worker."></p>
-  <p class="note" data-zh="所有响应都包含 X-Request-ID；请求日志仅记录方法、路径、状态和耗时，不记录请求头或 sig/expires 等查询参数。" data-en="Every response includes X-Request-ID. Request logs contain only method, path, status and duration, never request headers or query parameters such as sig/expires."></p>
+    <main>
+      <h2 id="quickstart" data-zh="快速开始" data-en="Quick start"></h2>
+      <p class="lead" data-zh="示例默认展示 Python 3。先安装 requests，再把服务地址与令牌放进环境变量；示例不会把凭据写进源码。" data-en="Examples default to Python 3. Install requests and keep the service URL and token in environment variables rather than source code."></p>
+      <div class="notice-grid">
+        <div class="notice">
+          <strong data-zh="鉴权方式" data-en="Authentication"></strong>
+          <span data-zh="媒体数据接口可使用 Authorization: Bearer &lt;JWT 或 API Key&gt;，API Key 也可放在 X-API-Key；账户、Key 管理、团队治理、分组和管理员接口仅接受 JWT。" data-en="Media data APIs accept Authorization: Bearer &lt;JWT or API key&gt;, and X-API-Key is also supported. Account, key, team-governance, group and admin APIs require a JWT."></span>
+        </div>
+        <div class="notice">
+          <strong data-zh="缺省公开" data-en="Public by default"></strong>
+          <span data-zh="省略 visibility 是固定 API 契约：图片上传和视频初始化始终按 public 处理，不受部署配置覆盖；需要私密访问必须显式传 private。" data-en="Image uploads and video initialization use public whenever visibility is omitted. This fixed API contract cannot be overridden by deployment config; send private explicitly for restricted access."></span>
+        </div>
+      </div>
 
-  <!-- ============ Auth ============ -->
-  <h2 id="auth">🔐 <span data-zh="认证" data-en="Authentication"></span></h2>
-  <table>
-    <thead><tr><th data-zh="方法" data-en="Method"></th><th data-zh="路径" data-en="Path"></th><th data-zh="说明" data-en="Description"></th></tr></thead>
-    <tbody>
-      <tr><td><span class="method m-post">POST</span></td><td class="path">/api/auth/register</td><td data-zh="注册账号 {username, password, invite_code?}" data-en="Register {username, password, invite_code?}"></td></tr>
-      <tr><td><span class="method m-post">POST</span></td><td class="path">/api/auth/login</td><td data-zh="登录（表单 username &amp; password）→ 返回 token" data-en="Login (form username &amp; password) → token"></td></tr>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/auth/me</td><td data-zh="当前登录用户信息" data-en="Current user info"></td></tr>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/auth/config</td><td data-zh="公开安全配置：注册模式、上传/会话/分片并发限制、用户/团队额度上限（字节）" data-en="Public-safe config: registration mode, upload/session/chunk concurrency limits and user/team quota ceilings in bytes"></td></tr>
-      <tr><td><span class="method m-post">POST</span></td><td class="path">/api/auth/change-password</td><td data-zh="修改自己的密码 {old_password, new_password}" data-en="Change own password {old_password, new_password}"></td></tr>
-    </tbody>
-  </table>
+      <article class="endpoint-card" data-example="environment">
+        <div class="endpoint-head">
+          <div class="endpoint-title">
+            <div class="endpoint-route"><span class="method m-get">SETUP</span><code>Python 3 / cURL 环境变量</code></div>
+            <h3 data-zh="准备调用环境" data-en="Prepare the client environment"></h3>
+            <p data-zh="先登录获得 JWT，长期自动化建议在账户页创建 API Key。" data-en="Log in for a JWT; use an API key from the account page for long-running automations."></p>
+          </div>
+          <span class="auth-badge public" data-zh="本地准备" data-en="Local setup"></span>
+        </div>
+        <div class="example" data-default-lang="python">
+          <div class="example-toolbar">
+            <div class="code-tabs" role="tablist" aria-label="准备调用环境代码语言">
+              <button class="code-tab" type="button" role="tab" id="environment-python-tab" aria-controls="environment-python" aria-selected="true" data-code-lang="python">Python 3</button>
+              <button class="code-tab" type="button" role="tab" id="environment-curl-tab" aria-controls="environment-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
+            </div>
+            <button class="copy-btn" type="button" aria-label="复制准备调用环境 Python 3 示例" data-copy>复制</button>
+          </div>
+          <div class="code-panel" id="environment-python" role="tabpanel" aria-labelledby="environment-python-tab" data-code-panel="python"><pre><code>python3 -m pip install requests
 
-  <h3 data-zh="注册并登录" data-en="Register & login"></h3>
-  <div class="code-block"><pre><code># 注册
-curl -X POST {{BASE}}/api/auth/register \
+# Linux / macOS
+export OSS_BASE_URL="{{BASE}}"
+export OSS_TOKEN="替换为 JWT 或 API Key"</code></pre></div>
+          <div class="code-panel" id="environment-curl" role="tabpanel" aria-labelledby="environment-curl-tab" data-code-panel="curl" hidden><pre><code>export OSS_BASE_URL="{{BASE}}"
+export OSS_TOKEN="替换为 JWT 或 API Key"
+curl "$OSS_BASE_URL/healthz"</code></pre></div>
+        </div>
+      </article>
+
+      <h2 id="examples" data-zh="常用开放接口" data-en="Common open APIs"></h2>
+      <p class="lead" data-zh="每张调用卡都可切换语言并复制当前示例。示例使用环境变量中的服务地址和令牌。" data-en="Switch languages and copy the active example from each card. Examples read the service URL and token from environment variables."></p>
+
+      <article class="endpoint-card" data-example="login">
+        <div class="endpoint-head">
+          <div class="endpoint-title">
+            <div class="endpoint-route"><span class="method m-post">POST</span><code>/api/auth/login</code></div>
+            <h3 data-zh="登录并获取 JWT" data-en="Log in and obtain a JWT"></h3>
+            <p data-zh="表单登录，返回 access_token。" data-en="Form login returning access_token."></p>
+          </div>
+          <span class="auth-badge public" data-zh="无需鉴权" data-en="No auth"></span>
+        </div>
+        <div class="parameter-wrap"><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>username</code></td><td>form</td><td>是</td><td>用户名</td></tr>
+          <tr><td><code>password</code></td><td>form</td><td>是</td><td>密码</td></tr>
+        </tbody></table></div>
+        <div class="example" data-default-lang="python">
+          <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="登录示例代码语言">
+            <button class="code-tab" type="button" role="tab" id="login-python-tab" aria-controls="login-python" aria-selected="true" data-code-lang="python">Python 3</button>
+            <button class="code-tab" type="button" role="tab" id="login-curl-tab" aria-controls="login-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
+          </div><button class="copy-btn" type="button" aria-label="复制登录 Python 3 示例" data-copy>复制</button></div>
+          <div class="code-panel" id="login-python" role="tabpanel" aria-labelledby="login-python-tab" data-code-panel="python"><pre><code>import os
+import requests
+
+base = os.getenv("OSS_BASE_URL", "{{BASE}}")
+response = requests.post(
+    f"{base}/api/auth/login",
+    data={"username": "alice", "password": "your-password"},
+    timeout=30,
+)
+response.raise_for_status()
+print(response.json()["access_token"])</code></pre></div>
+          <div class="code-panel" id="login-curl" role="tabpanel" aria-labelledby="login-curl-tab" data-code-panel="curl" hidden><pre><code>curl --fail-with-body -X POST "$OSS_BASE_URL/api/auth/login" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "username=alice" \
+  --data-urlencode "password=your-password"</code></pre></div>
+        </div>
+      </article>
+
+      <article class="endpoint-card" data-example="image-upload">
+        <div class="endpoint-head">
+          <div class="endpoint-title">
+            <div class="endpoint-route"><span class="method m-post">POST</span><code>/api/upload</code></div>
+            <h3 data-zh="上传图片" data-en="Upload an image"></h3>
+            <p data-zh="multipart 上传。示例故意省略 visibility，因此服务端按 public 处理。" data-en="Multipart upload. The example omits visibility, so the server stores it as public."></p>
+          </div><span class="auth-badge" data-zh="JWT / API Key" data-en="JWT / API key"></span>
+        </div>
+        <div class="parameter-wrap"><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>file</code></td><td>form</td><td>是</td><td>支持的图片文件</td></tr>
+          <tr><td><code>name</code></td><td>form</td><td>否</td><td>展示名称，缺省取文件名</td></tr>
+          <tr><td><code>visibility</code></td><td>form</td><td>否</td><td><code>public</code>（默认）或 <code>private</code></td></tr>
+          <tr><td><code>team_id</code></td><td>form</td><td>否</td><td>团队空间 ID，调用者必须是成员</td></tr>
+        </tbody></table></div>
+        <div class="example" data-default-lang="python">
+          <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="图片上传示例代码语言">
+            <button class="code-tab" type="button" role="tab" id="image-upload-python-tab" aria-controls="image-upload-python" aria-selected="true" data-code-lang="python">Python 3</button>
+            <button class="code-tab" type="button" role="tab" id="image-upload-curl-tab" aria-controls="image-upload-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
+          </div><button class="copy-btn" type="button" aria-label="复制图片上传 Python 3 示例" data-copy>复制</button></div>
+          <div class="code-panel" id="image-upload-python" role="tabpanel" aria-labelledby="image-upload-python-tab" data-code-panel="python"><pre><code>import os
+from pathlib import Path
+import requests
+
+base = os.getenv("OSS_BASE_URL", "{{BASE}}")
+headers = {"Authorization": f"Bearer {os.environ['OSS_TOKEN']}"}
+path = Path("cover.png")
+with path.open("rb") as stream:
+    response = requests.post(
+        f"{base}/api/upload",
+        headers=headers,
+        files={"file": (path.name, stream)},
+        data={"name": "项目封面"},  # visibility 缺省即 public
+        timeout=120,
+    )
+response.raise_for_status()
+print(response.json())</code></pre></div>
+          <div class="code-panel" id="image-upload-curl" role="tabpanel" aria-labelledby="image-upload-curl-tab" data-code-panel="curl" hidden><pre><code>curl --fail-with-body -X POST "$OSS_BASE_URL/api/upload" \
+  -H "Authorization: Bearer $OSS_TOKEN" \
+  -F "file=@cover.png" \
+  -F "name=项目封面"</code></pre></div>
+        </div>
+      </article>
+
+      <article class="endpoint-card" data-example="media-list">
+        <div class="endpoint-head">
+          <div class="endpoint-title">
+            <div class="endpoint-route"><span class="method m-get">GET</span><code>/api/media</code></div>
+            <h3 data-zh="查询媒体库" data-en="List the media library"></h3>
+            <p data-zh="普通成员和 API Key 只返回个人/有权团队范围；仅管理员 JWT 在未指定团队时可查看全站，管理员 API Key 也不具备全局越权能力。" data-en="Members and API keys receive only personal or authorized team assets. Only an administrator JWT can access the global scope; an administrator's API key has no global override."></p>
+          </div><span class="auth-badge" data-zh="JWT / API Key" data-en="JWT / API key"></span>
+        </div>
+        <div class="parameter-wrap"><table><thead><tr><th>参数</th><th>必填</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>kind</code></td><td>否</td><td><code>all</code> / <code>image</code> / <code>video</code></td></tr>
+          <tr><td><code>q</code></td><td>否</td><td>名称、原文件名或短码</td></tr>
+          <tr><td><code>team_id</code></td><td>否</td><td>有权访问的团队空间</td></tr>
+          <tr><td><code>limit / offset</code></td><td>否</td><td>分页参数</td></tr>
+        </tbody></table></div>
+        <div class="example" data-default-lang="python">
+          <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="媒体查询示例代码语言">
+            <button class="code-tab" type="button" role="tab" id="media-list-python-tab" aria-controls="media-list-python" aria-selected="true" data-code-lang="python">Python 3</button>
+            <button class="code-tab" type="button" role="tab" id="media-list-curl-tab" aria-controls="media-list-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
+          </div><button class="copy-btn" type="button" aria-label="复制媒体查询 Python 3 示例" data-copy>复制</button></div>
+          <div class="code-panel" id="media-list-python" role="tabpanel" aria-labelledby="media-list-python-tab" data-code-panel="python"><pre><code>import os
+import requests
+
+base = os.getenv("OSS_BASE_URL", "{{BASE}}")
+response = requests.get(
+    f"{base}/api/media",
+    headers={"Authorization": f"Bearer {os.environ['OSS_TOKEN']}"},
+    params={"kind": "all", "q": "封面", "limit": 20, "offset": 0},
+    timeout=30,
+)
+response.raise_for_status()
+for item in response.json()["items"]:
+    print(item["media_kind"], item["code"], item["visibility"])</code></pre></div>
+          <div class="code-panel" id="media-list-curl" role="tabpanel" aria-labelledby="media-list-curl-tab" data-code-panel="curl" hidden><pre><code>curl --fail-with-body --get "$OSS_BASE_URL/api/media" \
+  -H "Authorization: Bearer $OSS_TOKEN" \
+  --data-urlencode "kind=all" \
+  --data-urlencode "q=封面" \
+  --data-urlencode "limit=20" \
+  --data-urlencode "offset=0"</code></pre></div>
+        </div>
+      </article>
+
+      <article class="endpoint-card" data-example="media-metadata">
+        <div class="endpoint-head">
+          <div class="endpoint-title">
+            <div class="endpoint-route"><span class="method m-get">GET</span><code>/api/media/{code}</code></div>
+            <h3 data-zh="读取统一媒体元数据" data-en="Read unified media metadata"></h3>
+            <p data-zh="公开媒体允许匿名查询，并将 owner_id、owner_username、team_id、original_filename 隐藏为 null；私密媒体需添加有权 JWT 或 API Key，越权统一返回 404。" data-en="Public media can be queried anonymously, with owner_id, owner_username, team_id and original_filename hidden as null. Private media requires an authorized JWT or API key; unauthorized access returns 404."></p>
+          </div><span class="auth-badge" data-zh="公开免鉴权 · 私密 JWT / Key" data-en="Public: no auth · private: JWT / key"></span>
+        </div>
+        <div class="parameter-wrap"><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>code</code></td><td>path</td><td>是</td><td>图片或视频短码</td></tr>
+        </tbody></table></div>
+        <div class="example" data-default-lang="python">
+          <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="媒体元数据示例代码语言">
+            <button class="code-tab" type="button" role="tab" id="media-metadata-python-tab" aria-controls="media-metadata-python" aria-selected="true" data-code-lang="python">Python 3</button>
+            <button class="code-tab" type="button" role="tab" id="media-metadata-curl-tab" aria-controls="media-metadata-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
+          </div><button class="copy-btn" type="button" aria-label="复制媒体元数据 Python 3 示例" data-copy>复制</button></div>
+          <div class="code-panel" id="media-metadata-python" role="tabpanel" aria-labelledby="media-metadata-python-tab" data-code-panel="python"><pre><code>import os
+import requests
+
+base = os.getenv("OSS_BASE_URL", "{{BASE}}")
+code = "Ab3xYz9Kq1"
+
+# 公开媒体可匿名查询；属主、团队和原文件名字段会返回 null
+response = requests.get(f"{base}/api/media/{code}", timeout=30)
+response.raise_for_status()
+metadata = response.json()
+print(metadata["media_kind"], metadata["visibility"], metadata["url"])
+
+# 查询私密媒体时添加有权 JWT 或 API Key；越权统一返回 404
+# headers = {"Authorization": f"Bearer {os.environ['OSS_TOKEN']}"}
+# metadata = requests.get(f"{base}/api/media/{code}", headers=headers, timeout=30).json()</code></pre></div>
+          <div class="code-panel" id="media-metadata-curl" role="tabpanel" aria-labelledby="media-metadata-curl-tab" data-code-panel="curl" hidden><pre><code># 公开媒体匿名元数据
+curl --fail-with-body "$OSS_BASE_URL/api/media/Ab3xYz9Kq1"
+
+# 私密媒体需有权 JWT 或 API Key；越权统一返回 404
+curl --fail-with-body "$OSS_BASE_URL/api/media/Ab3xYz9Kq1" \
+  -H "Authorization: Bearer $OSS_TOKEN"</code></pre></div>
+        </div>
+      </article>
+
+      <article class="endpoint-card" data-example="signed-link">
+        <div class="endpoint-head">
+          <div class="endpoint-title">
+            <div class="endpoint-route"><span class="method m-get">GET</span><code>/api/media/{code}/link</code></div>
+            <h3 data-zh="获取统一媒体访问链接" data-en="Resolve a unified media link"></h3>
+            <p data-zh="公开媒体允许匿名返回规范直链；私密媒体仅向属主、有权团队成员或管理员 JWT 返回限时签名链接。管理员 API Key 仍按属主/团队权限校验。签名 URL 在到期前可重复使用，应像临时密码一样保护，且不要把 sig 写进日志。" data-en="Public media resolves anonymously to its canonical URL. Private media returns an expiring signed URL only to its owner, authorized team members, or an administrator JWT. An administrator's API key remains owner/team scoped. Signed URLs are replayable until expiry, so protect them like temporary passwords and never log sig."></p>
+          </div><span class="auth-badge" data-zh="公开免鉴权 · 私密 JWT / Key" data-en="Public: no auth · private: JWT / key"></span>
+        </div>
+        <div class="parameter-wrap"><table><thead><tr><th>参数</th><th>必填</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>code</code></td><td>是</td><td>媒体短码</td></tr>
+          <tr><td><code>ttl</code></td><td>否</td><td>有效秒数，受服务端最大值限制</td></tr>
+        </tbody></table></div>
+        <div class="example" data-default-lang="python">
+          <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="签名链接示例代码语言">
+            <button class="code-tab" type="button" role="tab" id="signed-link-python-tab" aria-controls="signed-link-python" aria-selected="true" data-code-lang="python">Python 3</button>
+            <button class="code-tab" type="button" role="tab" id="signed-link-curl-tab" aria-controls="signed-link-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
+          </div><button class="copy-btn" type="button" aria-label="复制签名链接 Python 3 示例" data-copy>复制</button></div>
+          <div class="code-panel" id="signed-link-python" role="tabpanel" aria-labelledby="signed-link-python-tab" data-code-panel="python"><pre><code>import os
+import requests
+
+base = os.getenv("OSS_BASE_URL", "{{BASE}}")
+code = "Ab3xYz9Kq1"
+token = os.getenv("OSS_TOKEN")
+response = requests.get(
+    f"{base}/api/media/{code}/link",
+    headers={"Authorization": f"Bearer {token}"} if token else {},
+    params={"ttl": 3600},
+    timeout=30,
+)
+response.raise_for_status()
+print(response.json()["url"])</code></pre></div>
+          <div class="code-panel" id="signed-link-curl" role="tabpanel" aria-labelledby="signed-link-curl-tab" data-code-panel="curl" hidden><pre><code># 公开媒体：匿名返回规范直链
+curl --fail-with-body "$OSS_BASE_URL/api/media/Ab3xYz9Kq1/link?ttl=3600"
+
+# 私密媒体：有权 JWT 或 API Key 返回签名链接
+curl --fail-with-body \
+  "$OSS_BASE_URL/api/media/Ab3xYz9Kq1/link?ttl=3600" \
+  -H "Authorization: Bearer $OSS_TOKEN"</code></pre></div>
+        </div>
+      </article>
+
+      <article class="endpoint-card" data-example="public-download">
+        <div class="endpoint-head">
+          <div class="endpoint-title">
+            <div class="endpoint-route"><span class="method m-get">GET</span><code>/i/{code} · /v/{code}?download=1</code></div>
+            <h3 data-zh="读取或下载公开媒体" data-en="Read or download public media"></h3>
+            <p data-zh="以下无鉴权示例仅适用于公开媒体，公开视频支持 Range；私密媒体必须给请求添加 Authorization，或使用统一链接接口返回的签名 URL。" data-en="The unauthenticated example below applies only to public media, and public videos support Range. For private media, add Authorization to the request or use a signed URL returned by the unified link endpoint."></p>
+          </div><span class="auth-badge public" data-zh="公开媒体免鉴权" data-en="Public media: no auth"></span>
+        </div>
+        <div class="example" data-default-lang="python">
+          <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="公开媒体下载示例代码语言">
+            <button class="code-tab" type="button" role="tab" id="public-download-python-tab" aria-controls="public-download-python" aria-selected="true" data-code-lang="python">Python 3</button>
+            <button class="code-tab" type="button" role="tab" id="public-download-curl-tab" aria-controls="public-download-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
+          </div><button class="copy-btn" type="button" aria-label="复制公开媒体下载 Python 3 示例" data-copy>复制</button></div>
+          <div class="code-panel" id="public-download-python" role="tabpanel" aria-labelledby="public-download-python-tab" data-code-panel="python"><pre><code>import os
+import requests
+
+base = os.getenv("OSS_BASE_URL", "{{BASE}}")
+# 此无鉴权下载仅适用于公开媒体。
+with requests.get(f"{base}/v/Ab3xYz9Kq1", params={"download": 1}, stream=True, timeout=120) as response:
+    response.raise_for_status()
+    with open("video.mp4", "wb") as output:
+        for chunk in response.iter_content(1024 * 1024):
+            output.write(chunk)
+
+# 私密媒体二选一：给同一请求添加有权身份，或直接请求已取得的签名 URL。
+# headers = {"Authorization": f"Bearer {os.environ['OSS_TOKEN']}"}
+# requests.get(os.environ["OSS_SIGNED_URL"], stream=True, timeout=120)</code></pre></div>
+          <div class="code-panel" id="public-download-curl" role="tabpanel" aria-labelledby="public-download-curl-tab" data-code-panel="curl" hidden><pre><code># 此无鉴权下载仅适用于公开媒体
+curl --fail-with-body -L \
+  "$OSS_BASE_URL/v/Ab3xYz9Kq1?download=1" \
+  -o video.mp4
+
+# 私密媒体二选一：添加有权身份，或直接请求已取得的签名 URL
+# curl -L -H "Authorization: Bearer $OSS_TOKEN" "$OSS_BASE_URL/v/Ab3xYz9Kq1?download=1" -o video.mp4
+# curl -L "$OSS_SIGNED_URL" -o video.mp4</code></pre></div>
+        </div>
+      </article>
+
+      <h2 id="video-flow" data-zh="视频分片与断点续传" data-en="Chunked and resumable video upload"></h2>
+      <p class="lead" data-zh="按“初始化 → 查询服务端状态 → 上传缺失分片 → 完成”执行。分片从 0 开始，可乱序；相同内容重传幂等。" data-en="Follow initialize, reconcile server state, upload missing parts, then complete. Parts are zero-based, can arrive out of order, and identical retries are idempotent."></p>
+
+      <article class="endpoint-card" data-example="video-init">
+        <div class="endpoint-head"><div class="endpoint-title">
+          <div class="endpoint-route"><span class="method m-post">POST</span><code>/api/video-uploads</code></div>
+          <h3 data-zh="1. 初始化上传会话" data-en="1. Initialize the upload session"></h3>
+          <p data-zh="指纹由大小和首/中/尾样本生成。示例省略 visibility，因此默认公开。" data-en="The fingerprint combines file size and start/middle/end samples. Visibility is omitted, so this upload is public."></p>
+        </div><span class="auth-badge" data-zh="JWT / API Key" data-en="JWT / API key"></span></div>
+        <div class="parameter-wrap"><table><thead><tr><th>字段</th><th>必填</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>filename / size / fingerprint</code></td><td>是</td><td>原文件名、字节数、64 位十六进制快速指纹</td></tr>
+          <tr><td><code>name</code></td><td>否</td><td>展示名</td></tr>
+          <tr><td><code>visibility</code></td><td>否</td><td><code>public</code>（默认）或 <code>private</code></td></tr>
+          <tr><td><code>team_id</code></td><td>否</td><td>有权团队 ID</td></tr>
+        </tbody></table></div>
+        <div class="example" data-default-lang="python">
+          <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="视频初始化示例代码语言">
+            <button class="code-tab" type="button" role="tab" id="video-init-python-tab" aria-controls="video-init-python" aria-selected="true" data-code-lang="python">Python 3</button>
+            <button class="code-tab" type="button" role="tab" id="video-init-curl-tab" aria-controls="video-init-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
+          </div><button class="copy-btn" type="button" aria-label="复制视频初始化 Python 3 示例" data-copy>复制</button></div>
+          <div class="code-panel" id="video-init-python" role="tabpanel" aria-labelledby="video-init-python-tab" data-code-panel="python"><pre><code>import hashlib
+import os
+from pathlib import Path
+import requests
+
+path = Path("movie.mp4")
+size = path.stat().st_size
+sample_size = 1024 * 1024
+offsets = [0, max(0, size // 2 - sample_size // 2), max(0, size - sample_size)]
+with path.open("rb") as stream:
+    hashes = []
+    for offset in offsets:
+        stream.seek(offset)
+        hashes.append(hashlib.sha256(stream.read(sample_size)).hexdigest())
+fingerprint = hashlib.sha256(f"{size}:{':'.join(hashes)}".encode()).hexdigest()
+
+base = os.getenv("OSS_BASE_URL", "{{BASE}}")
+response = requests.post(
+    f"{base}/api/video-uploads",
+    headers={"Authorization": f"Bearer {os.environ['OSS_TOKEN']}"},
+    json={"filename": path.name, "size": size, "name": "发布会录像", "fingerprint": fingerprint},
+    timeout=30,
+)
+response.raise_for_status()
+session = response.json()
+print(session["upload_id"], session["chunk_size"], session["uploaded_parts"])</code></pre></div>
+          <div class="code-panel" id="video-init-curl" role="tabpanel" aria-labelledby="video-init-curl-tab" data-code-panel="curl" hidden><pre><code>curl --fail-with-body -X POST "$OSS_BASE_URL/api/video-uploads" \
+  -H "Authorization: Bearer $OSS_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"username":"alice","password":"pass123"}'
+  -d '{"filename":"movie.mp4","size":8388608,"name":"发布会录像","fingerprint":"替换为64位快速指纹"}'</code></pre></div>
+        </div>
+      </article>
 
-# 登录，拿到 token
-TOKEN=$(curl -X POST {{BASE}}/api/auth/login \
-  -d "username=alice&password=pass123" \
-  | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")</code></pre></div>
+      <article class="endpoint-card" data-example="video-status">
+        <div class="endpoint-head"><div class="endpoint-title">
+          <div class="endpoint-route"><span class="method m-get">GET</span><code>/api/video-uploads/{upload_id}</code></div>
+          <h3 data-zh="2. 查询服务端真实状态" data-en="2. Reconcile authoritative server state"></h3>
+          <p data-zh="刷新、断网恢复或重试前，以 uploaded_parts 为准计算缺失分片。" data-en="After refresh or reconnect, use uploaded_parts as the source of truth for missing chunks."></p>
+        </div><span class="auth-badge" data-zh="属主 · JWT / Key；全局管理仅 JWT" data-en="Owner · JWT/key; global admin via JWT only"></span></div>
+        <div class="example" data-default-lang="python">
+          <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="视频状态示例代码语言">
+            <button class="code-tab" type="button" role="tab" id="video-status-python-tab" aria-controls="video-status-python" aria-selected="true" data-code-lang="python">Python 3</button>
+            <button class="code-tab" type="button" role="tab" id="video-status-curl-tab" aria-controls="video-status-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
+          </div><button class="copy-btn" type="button" aria-label="复制视频状态 Python 3 示例" data-copy>复制</button></div>
+          <div class="code-panel" id="video-status-python" role="tabpanel" aria-labelledby="video-status-python-tab" data-code-panel="python"><pre><code>import os
+import requests
 
-  <!-- ============ API Keys ============ -->
-  <h2 id="keys">🔑 <span data-zh="API Key（脚本鉴权）" data-en="API Keys (script auth)"></span></h2>
-  <table>
-    <thead><tr><th data-zh="方法" data-en="Method"></th><th data-zh="路径" data-en="Path"></th><th data-zh="说明" data-en="Description"></th></tr></thead>
-    <tbody>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/keys</td><td data-zh="我的 Key 列表（仅前缀，不含完整 Key）" data-en="My keys (prefix only)"></td></tr>
-      <tr><td><span class="method m-post">POST</span></td><td class="path">/api/keys</td><td data-zh="生成 Key —— 完整 Key 仅返回这一次" data-en="Create key — full key shown exactly once"></td></tr>
-      <tr><td><span class="method m-post">POST</span></td><td class="path">/api/keys/{id}/rotate</td><td data-zh="轮换：旧 Key 立即失效，新 Key 仅显示一次" data-en="Rotate: old key dies instantly, new key shown once"></td></tr>
-      <tr><td><span class="method m-delete">DELETE</span></td><td class="path">/api/keys/{id}</td><td data-zh="撤销 Key" data-en="Revoke a key"></td></tr>
-    </tbody>
-  </table>
-  <p class="note" data-zh="安全设计：数据库只存 SHA-256 哈希，明文无法再次查看；Key 为 256 位密码学随机，哈希唯一约束。" data-en="Security: only SHA-256 hashes are stored — plaintext can never be recovered; keys are 256-bit random with unique hashes."></p>
-  <div class="code-block"><pre><code># 用 Key 上传 / 下载 / 删除（Authorization: Bearer 或 X-API-Key 均可）
-curl -X POST {{BASE}}/api/upload \
-  -H "Authorization: Bearer &lt;key&gt;" -F "file=@a.png" -F "name=测试"
-curl -o a.png "{{BASE}}/i/&lt;code&gt;" -H "Authorization: Bearer &lt;key&gt;"
-curl -X DELETE "{{BASE}}/api/images/&lt;code&gt;" -H "Authorization: Bearer &lt;key&gt;"</code></pre></div>
+base = os.getenv("OSS_BASE_URL", "{{BASE}}")
+upload_id = os.environ["OSS_UPLOAD_ID"]
+response = requests.get(
+    f"{base}/api/video-uploads/{upload_id}",
+    headers={"Authorization": f"Bearer {os.environ['OSS_TOKEN']}"},
+    timeout=30,
+)
+response.raise_for_status()
+session = response.json()
+uploaded = set(session["uploaded_parts"])
+missing = [part for part in range(session["total_parts"]) if part not in uploaded]
+print("missing:", missing)</code></pre></div>
+          <div class="code-panel" id="video-status-curl" role="tabpanel" aria-labelledby="video-status-curl-tab" data-code-panel="curl" hidden><pre><code>curl --fail-with-body \
+  "$OSS_BASE_URL/api/video-uploads/$OSS_UPLOAD_ID" \
+  -H "Authorization: Bearer $OSS_TOKEN"</code></pre></div>
+        </div>
+      </article>
 
-  <!-- ============ Upload ============ -->
-  <h2 id="upload">📤 <span data-zh="上传图片" data-en="Upload"></span></h2>
-  <table>
-    <thead><tr><th data-zh="方法" data-en="Method"></th><th data-zh="路径" data-en="Path"></th><th data-zh="说明" data-en="Description"></th></tr></thead>
-    <tbody>
-      <tr><td><span class="method m-post">POST</span></td><td class="path">/api/upload</td><td data-zh="multipart：file 必填；name / visibility / team_id 可选（默认私密）" data-en="multipart: file required; name / visibility / team_id optional (defaults to private)"></td></tr>
-    </tbody>
-  </table>
-  <div class="code-block"><pre><code>curl -X POST {{BASE}}/api/upload \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "file=@截图.png" -F "name=我的封面" -F "visibility=private"</code></pre></div>
-  <div class="code-block"><pre><code>{
-  "code": "Ab3xYz9Kq1",
-  "url": "{{BASE}}/i/Ab3xYz9Kq1",
-  "size": 123456,
-  "content_type": "image/png",
-  "name": "我的封面",
-  "visibility": "private",
-  "owner_id": 1
-}</code></pre></div>
+      <article class="endpoint-card" data-example="video-part">
+        <div class="endpoint-head"><div class="endpoint-title">
+          <div class="endpoint-route"><span class="method m-put">PUT</span><code>/api/video-uploads/{upload_id}/parts/{part_number}</code></div>
+          <h3 data-zh="3. 上传缺失分片" data-en="3. Upload a missing chunk"></h3>
+          <p data-zh="Content-Range、实际长度和 X-Chunk-SHA256 必须一致。" data-en="Content-Range, actual length and X-Chunk-SHA256 must agree."></p>
+        </div><span class="auth-badge" data-zh="属主 · JWT / Key；全局管理仅 JWT" data-en="Owner · JWT/key; global admin via JWT only"></span></div>
+        <div class="example" data-default-lang="python">
+          <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="视频分片示例代码语言">
+            <button class="code-tab" type="button" role="tab" id="video-part-python-tab" aria-controls="video-part-python" aria-selected="true" data-code-lang="python">Python 3</button>
+            <button class="code-tab" type="button" role="tab" id="video-part-curl-tab" aria-controls="video-part-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
+          </div><button class="copy-btn" type="button" aria-label="复制视频分片 Python 3 示例" data-copy>复制</button></div>
+          <div class="code-panel" id="video-part-python" role="tabpanel" aria-labelledby="video-part-python-tab" data-code-panel="python"><pre><code>import hashlib
+import os
+from pathlib import Path
+import requests
 
-  <!-- ============ Images ============ -->
-  <h2 id="images">🖼️ <span data-zh="图片" data-en="Images"></span></h2>
-  <table>
-    <thead><tr><th data-zh="方法" data-en="Method"></th><th data-zh="路径" data-en="Path"></th><th data-zh="说明" data-en="Description"></th></tr></thead>
-    <tbody>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/i/{code}</td><td data-zh="获取图片（公开：任何人；私密：属主/团队成员/管理员/签名链接）" data-en="Fetch image (public: anyone; private: owner/team/admin/signed link)"></td></tr>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/images?limit&offset&q</td><td data-zh="列出我的图片（管理员看全部），按名称/文件名/短码搜索" data-en="List my images (admins see all); search by name/filename/code"></td></tr>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/images/{code}/link?ttl=86400</td><td data-zh="生成限时签名链接（属主/团队成员/管理员）" data-en="Expiring signed link (owner/team-member/admin)"></td></tr>
-      <tr><td><span class="method m-patch">PATCH</span></td><td class="path">/api/images/{code}</td><td data-zh="修改名称/可见性 {name?, visibility?}" data-en="Update name/visibility {name?, visibility?}"></td></tr>
-      <tr><td><span class="method m-delete">DELETE</span></td><td class="path">/api/images/{code}</td><td data-zh="删除图片（属主/管理员/团队管理员）" data-en="Delete image (owner/admin/team-manager)"></td></tr>
-    </tbody>
-  </table>
-  <p class="note" data-zh="私密图只能通过（a）属主/团队成员/管理员登录态，或（b）限时签名链接访问；对其他人返回 404（不暴露存在性）。SVG 一律以附件形式下发（防 XSS）。" data-en="Private images are reachable only via (a) owner/team/admin login or (b) a time-limited signed link; others get 404 (existence is not disclosed). SVG is always served as an attachment (XSS protection)."></p>
-  <div class="code-block"><pre><code># 生成签名链接
-curl "{{BASE}}/api/images/Ab3xYz9Kq1/link?ttl=86400" -H "Authorization: Bearer $TOKEN"
-# → {"url":"{{BASE}}/i/Ab3xYz9Kq1?expires=1767...&amp;sig=xxxx","expires_at":"..."}
-
-# 搜索图片
-curl "{{BASE}}/api/images?q=%E5%B0%81%E9%9D%A2&amp;limit=20" -H "Authorization: Bearer $TOKEN"</code></pre></div>
-
-  <!-- ============ Videos ============ -->
-  <h2 id="videos">🎬 <span data-zh="视频与断点续传" data-en="Videos &amp; resumable uploads"></span></h2>
-  <p class="desc" data-zh="支持 MP4/M4V、MOV、WebM、MKV、AVI、MPEG/MPG/TS、OGV、3GP、FLV、WMV。服务端按容器头识别格式，不信任扩展名或客户端 MIME。视频保持原文件，不转码；浏览器不支持的编码可直接下载。" data-en="Supports MP4/M4V, MOV, WebM, MKV, AVI, MPEG/MPG/TS, OGV, 3GP, FLV and WMV. Container headers are inspected instead of trusting the extension or client MIME. Videos are stored as-is with no transcoding; unsupported codecs remain downloadable."></p>
-  <table>
-    <thead><tr><th data-zh="方法" data-en="Method"></th><th data-zh="路径" data-en="Path"></th><th data-zh="说明" data-en="Description"></th></tr></thead>
-    <tbody>
-      <tr><td><span class="method m-post">POST</span></td><td class="path">/api/video-uploads</td><td data-zh="初始化 {filename,size,name?,visibility?,team_id?,fingerprint}" data-en="Initialize {filename,size,name?,visibility?,team_id?,fingerprint}"></td></tr>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/video-uploads</td><td data-zh="找回当前用户的可续传会话，并返回动态会话/分片并发上限" data-en="Discover the current user's resumable sessions and dynamic session/part concurrency limits"></td></tr>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/video-uploads/{upload_id}</td><td data-zh="查询状态、已上传分片和过期时间" data-en="Status, uploaded parts and expiry"></td></tr>
-      <tr><td><span class="method m-put">PUT</span></td><td class="path">/api/video-uploads/{upload_id}/parts/{part_number}</td><td data-zh="写入原始分片，要求 Content-Range 与 X-Chunk-SHA256" data-en="Write raw part; requires Content-Range and X-Chunk-SHA256"></td></tr>
-      <tr><td><span class="method m-post">POST</span></td><td class="path">/api/video-uploads/{upload_id}/complete</td><td data-zh="校验完整性并原子发布；重复完成返回同一视频" data-en="Verify and atomically publish; repeated completion returns the same video"></td></tr>
-      <tr><td><span class="method m-delete">DELETE</span></td><td class="path">/api/video-uploads/{upload_id}</td><td data-zh="取消未完成会话" data-en="Cancel an unfinished session"></td></tr>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/videos?limit&amp;offset&amp;q</td><td data-zh="个人视频列表" data-en="Personal video list"></td></tr>
-      <tr><td><span class="method m-patch">PATCH</span></td><td class="path">/api/videos/{code}</td><td data-zh="修改名称/可见性" data-en="Update name/visibility"></td></tr>
-      <tr><td><span class="method m-delete">DELETE</span></td><td class="path">/api/videos/{code}</td><td data-zh="删除正式视频" data-en="Delete stored video"></td></tr>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/videos/{code}/link?ttl=86400</td><td data-zh="生成私密视频签名链接" data-en="Create a signed private-video link"></td></tr>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/v/{code}</td><td data-zh="播放/下载；支持 Range、206、416；?download=1 附件下载" data-en="Stream/download; supports Range, 206, 416; ?download=1 for attachment"></td></tr>
-    </tbody>
-  </table>
-  <p class="note" data-zh="快速指纹：对文件首/中/尾最多 1 MiB 分别计算 SHA-256，再计算 SHA-256(UTF-8(size:head:middle:tail))。分片从 0 编号，可乱序上传；相同内容重传幂等，内容冲突返回 409。默认单视频 2 GiB、分片 8 MiB、会话滑动保留 7 天、每用户 3 个未完成会话、磁盘保留 1 GiB。" data-en="Fingerprint: SHA-256 each of up to 1 MiB at the start/middle/end, then SHA-256(UTF-8(size:head:middle:tail)). Parts are zero-based and may arrive out of order; identical replay is idempotent and conflicting bytes return 409. Defaults: 2 GiB/video, 8 MiB parts, sliding 7-day session, 3 unfinished sessions/user, 1 GiB free-space reserve."></p>
-  <div class="code-block"><pre><code># 1. 初始化 / initialize
-curl -X POST {{BASE}}/api/video-uploads \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"filename":"clip.mp4","size":8388608,"name":"clip","visibility":"private","fingerprint":"&lt;64 lowercase hex&gt;"}'
-
-# 2. 上传第 0 片 / upload part 0
-curl -X PUT {{BASE}}/api/video-uploads/$UPLOAD_ID/parts/0 \
-  -H "Authorization: Bearer $TOKEN" \
+base = os.getenv("OSS_BASE_URL", "{{BASE}}")
+upload_id = os.environ["OSS_UPLOAD_ID"]
+auth = {"Authorization": f"Bearer {os.environ['OSS_TOKEN']}"}
+session = requests.get(f"{base}/api/video-uploads/{upload_id}", headers=auth, timeout=30).json()
+part_number = 0
+start = part_number * session["chunk_size"]
+with Path("movie.mp4").open("rb") as stream:
+    stream.seek(start)
+    chunk = stream.read(session["chunk_size"])
+end = start + len(chunk) - 1
+headers = {
+    **auth,
+    "Content-Type": "application/octet-stream",
+    "Content-Range": f"bytes {start}-{end}/{session['size']}",
+    "X-Chunk-SHA256": hashlib.sha256(chunk).hexdigest(),
+}
+response = requests.put(
+    f"{base}/api/video-uploads/{upload_id}/parts/{part_number}",
+    headers=headers,
+    data=chunk,
+    timeout=120,
+)
+response.raise_for_status()</code></pre></div>
+          <div class="code-panel" id="video-part-curl" role="tabpanel" aria-labelledby="video-part-curl-tab" data-code-panel="curl" hidden><pre><code>curl --fail-with-body -X PUT \
+  "$OSS_BASE_URL/api/video-uploads/$OSS_UPLOAD_ID/parts/0" \
+  -H "Authorization: Bearer $OSS_TOKEN" \
+  -H "Content-Type: application/octet-stream" \
   -H "Content-Range: bytes 0-8388607/8388608" \
-  -H "X-Chunk-SHA256: &lt;part sha256&gt;" \
-  -H "Content-Type: application/octet-stream" --data-binary @part-0
+  -H "X-Chunk-SHA256: 替换为当前分片SHA256" \
+  --data-binary @part-0</code></pre></div>
+        </div>
+      </article>
 
-# 3. 以服务端状态为准续传，再完成 / reconcile status, then complete
-curl {{BASE}}/api/video-uploads/$UPLOAD_ID -H "Authorization: Bearer $TOKEN"
-curl -X POST {{BASE}}/api/video-uploads/$UPLOAD_ID/complete -H "Authorization: Bearer $TOKEN"</code></pre></div>
+      <article class="endpoint-card" data-example="video-complete">
+        <div class="endpoint-head"><div class="endpoint-title">
+          <div class="endpoint-route"><span class="method m-post">POST</span><code>/api/video-uploads/{upload_id}/complete</code></div>
+          <h3 data-zh="4. 完成并发布视频" data-en="4. Complete and publish the video"></h3>
+          <p data-zh="服务端重新校验格式、大小、指纹和分片完整性；重复完成返回同一个视频。" data-en="The server revalidates format, size, fingerprint and all chunks. Repeated completion returns the same video."></p>
+        </div><span class="auth-badge" data-zh="属主 · JWT / Key；全局管理仅 JWT" data-en="Owner · JWT/key; global admin via JWT only"></span></div>
+        <div class="example" data-default-lang="python">
+          <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="视频完成示例代码语言">
+            <button class="code-tab" type="button" role="tab" id="video-complete-python-tab" aria-controls="video-complete-python" aria-selected="true" data-code-lang="python">Python 3</button>
+            <button class="code-tab" type="button" role="tab" id="video-complete-curl-tab" aria-controls="video-complete-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
+          </div><button class="copy-btn" type="button" aria-label="复制视频完成 Python 3 示例" data-copy>复制</button></div>
+          <div class="code-panel" id="video-complete-python" role="tabpanel" aria-labelledby="video-complete-python-tab" data-code-panel="python"><pre><code>import os
+import requests
 
-  <!-- ============ Unified library ============ -->
-  <h2 id="library">🗂️ <span data-zh="统一媒体库与分组" data-en="Unified Library &amp; Groups"></span></h2>
-  <table>
-    <thead><tr><th data-zh="方法" data-en="Method"></th><th data-zh="路径" data-en="Path"></th><th data-zh="说明" data-en="Description"></th></tr></thead>
-    <tbody>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/library/stats</td><td data-zh="个人媒体库概览；管理员返回全局概览" data-en="Personal library overview; global overview for admins"></td></tr>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/media?kind&amp;team_id&amp;group_id&amp;q&amp;limit&amp;offset</td><td data-zh="图片/视频统一分页、搜索和空间筛选" data-en="Unified image/video pagination, search and scope filters"></td></tr>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/media-groups?team_id&amp;q&amp;limit&amp;offset</td><td data-zh="列出个人或团队分组" data-en="List personal or team groups"></td></tr>
-      <tr><td><span class="method m-post">POST</span></td><td class="path">/api/media-groups</td><td data-zh="创建分组 {name,description?,color?,sort_order?,team_id?,codes?}；codes 可原子加入媒体" data-en="Create a group {name,description?,color?,sort_order?,team_id?,codes?}; codes atomically adds media"></td></tr>
-      <tr><td>GET / PATCH / DELETE</td><td class="path">/api/media-groups/{id}</td><td data-zh="查看、修改或删除分组；不会删除媒体" data-en="View, update or delete a group without deleting media"></td></tr>
-      <tr><td>GET / POST</td><td class="path">/api/media-groups/{id}/items</td><td data-zh="分页读取组内媒体，或批量加入 {codes:[...]}" data-en="Paginate group media or add {codes:[...]}"></td></tr>
-      <tr><td><span class="method m-delete">DELETE</span></td><td class="path">/api/media-groups/{id}/items/{code}</td><td data-zh="移出分组，不删除媒体资产" data-en="Remove from a group without deleting the asset"></td></tr>
-    </tbody>
-  </table>
+base = os.getenv("OSS_BASE_URL", "{{BASE}}")
+upload_id = os.environ["OSS_UPLOAD_ID"]
+response = requests.post(
+    f"{base}/api/video-uploads/{upload_id}/complete",
+    headers={"Authorization": f"Bearer {os.environ['OSS_TOKEN']}"},
+    timeout=300,
+)
+response.raise_for_status()
+video = response.json()
+print(video["code"], video["url"], video["visibility"])</code></pre></div>
+          <div class="code-panel" id="video-complete-curl" role="tabpanel" aria-labelledby="video-complete-curl-tab" data-code-panel="curl" hidden><pre><code>curl --fail-with-body -X POST \
+  "$OSS_BASE_URL/api/video-uploads/$OSS_UPLOAD_ID/complete" \
+  -H "Authorization: Bearer $OSS_TOKEN"</code></pre></div>
+        </div>
+      </article>
 
-  <!-- ============ Teams ============ -->
-  <h2 id="teams">🏢 <span data-zh="团队" data-en="Teams"></span></h2>
-  <table>
-    <thead><tr><th data-zh="方法" data-en="Method"></th><th data-zh="路径" data-en="Path"></th><th data-zh="说明" data-en="Description"></th></tr></thead>
-    <tbody>
-      <tr><td><span class="method m-post">POST</span></td><td class="path">/api/teams</td><td data-zh="创建团队 {name, description?}，创建者为 owner" data-en="Create team {name, description?} (creator = owner)"></td></tr>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/teams</td><td data-zh="我加入的团队" data-en="My teams"></td></tr>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/teams/{id}</td><td data-zh="团队详情 + 成员列表" data-en="Team detail + members"></td></tr>
-      <tr><td><span class="method m-post">POST</span></td><td class="path">/api/teams/{id}/members</td><td data-zh="按用户名邀请成员 {username}" data-en="Invite member {username}"></td></tr>
-      <tr><td><span class="method m-patch">PATCH</span></td><td class="path">/api/teams/{id}/members/{member_id}</td><td data-zh="改角色 {role: admin|member}（仅 owner）" data-en="Change role {role: admin|member} (owner only)"></td></tr>
-      <tr><td><span class="method m-delete">DELETE</span></td><td class="path">/api/teams/{id}/members/{member_id}</td><td data-zh="移除成员" data-en="Remove member"></td></tr>
-      <tr><td><span class="method m-delete">DELETE</span></td><td class="path">/api/teams/{id}</td><td data-zh="解散团队（媒体和未完成会话回到上传者个人空间）" data-en="Disband team (media and pending sessions return to uploaders)"></td></tr>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/teams/{id}/images?q</td><td data-zh="团队空间图片（成员/管理员）" data-en="Team space images (members/admins)"></td></tr>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/teams/{id}/videos?q</td><td data-zh="团队空间视频（成员/管理员）" data-en="Team space videos (members/admins)"></td></tr>
-    </tbody>
-  </table>
-  <p class="note" data-zh="团队角色：owner（管理一切）&gt; admin（可管理成员）&gt; member（可查看/上传）。团队私密图对团队成员可见，团队外一律 404。" data-en="Team roles: owner (everything) &gt; admin (manage members) &gt; member (view/upload). Team private images are visible to members only; outsiders get 404."></p>
+      <h2 id="reference" data-zh="接口索引" data-en="Endpoint reference"></h2>
+      <div class="reference-shell"><table><thead><tr><th>方法</th><th>路径</th><th>权限与用途</th></tr></thead><tbody>
+        <tr><td><span class="method m-get">GET</span></td><td><code>/api/auth/config</code></td><td>公开客户端上传、会话、并发与容量限制</td></tr>
+        <tr><td><span class="method m-get">GET</span></td><td><code>/api/keys</code></td><td>JWT-only：列出自己的 API Key 前缀</td></tr>
+        <tr><td><span class="method m-post">POST</span></td><td><code>/api/keys</code></td><td>JWT-only：创建仅展示一次的 API Key</td></tr>
+        <tr><td><span class="method m-get">GET</span></td><td><code>/api/images?limit&amp;offset&amp;q</code></td><td>个人图片；仅管理员 JWT 为全局视图，管理员 API Key 仍按属主/团队范围</td></tr>
+        <tr><td><span class="method m-get">GET</span></td><td><code>/api/media/{code}</code></td><td>公开媒体匿名元数据（隐藏属主、团队和原文件名）；私密媒体仅有权身份可读，越权返回 404</td></tr>
+        <tr><td><span class="method m-get">GET</span></td><td><code>/api/media/{code}/link?ttl=3600</code></td><td>公开媒体可匿名取得规范直链；私密媒体需有权 JWT/API Key 并返回限时签名链接</td></tr>
+        <tr><td><span class="method m-patch">PATCH</span></td><td><code>/api/images/{code}</code></td><td>更新名称或可见性</td></tr>
+        <tr><td><span class="method m-delete">DELETE</span></td><td><code>/api/images/{code}</code></td><td>属主、团队管理员或管理员 JWT 删除；管理员 API Key 无全局越权</td></tr>
+        <tr><td><span class="method m-get">GET</span></td><td><code>/api/video-uploads</code></td><td>找回当前用户可续传会话及动态并发上限</td></tr>
+        <tr><td><span class="method m-delete">DELETE</span></td><td><code>/api/video-uploads/{upload_id}</code></td><td>取消未完成会话，不删除已发布视频</td></tr>
+        <tr><td><span class="method m-get">GET</span></td><td><code>/api/videos?limit&amp;offset&amp;q</code></td><td>个人视频；仅管理员 JWT 为全局视图，管理员 API Key 仍按属主/团队范围</td></tr>
+        <tr><td><span class="method m-patch">PATCH</span></td><td><code>/api/videos/{code}</code></td><td>更新名称或可见性</td></tr>
+        <tr><td><span class="method m-get">GET</span></td><td><code>/api/media-groups</code></td><td>JWT-only：个人或有权团队分组与 items 管理</td></tr>
+        <tr><td><span class="method m-get">GET</span></td><td><code>/api/teams/{id}/images</code></td><td>JWT / API Key：有权团队成员；仅管理员 JWT 可全局越权</td></tr>
+        <tr><td><span class="method m-get">GET</span></td><td><code>/api/teams/{id}/videos</code></td><td>JWT / API Key：有权团队成员；仅管理员 JWT 可全局越权</td></tr>
+      </tbody></table></div>
 
-  <!-- ============ Admin ============ -->
-  <h2 id="admin">🛠️ <span data-zh="管理员" data-en="Admin"></span></h2>
-  <table>
-    <thead><tr><th data-zh="方法" data-en="Method"></th><th data-zh="路径" data-en="Path"></th><th data-zh="说明" data-en="Description"></th></tr></thead>
-    <tbody>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/admin/stats</td><td data-zh="统计 {users,images,videos,media_total,pending_upload_bytes,teams,storage_bytes}" data-en="Stats {users,images,videos,media_total,pending_upload_bytes,teams,storage_bytes}"></td></tr>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/admin/teams</td><td data-zh="全部团队（含拥有者、成员数）" data-en="All teams with member counts"></td></tr>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/api/users</td><td data-zh="全部用户" data-en="All users"></td></tr>
-      <tr><td><span class="method m-post">POST</span></td><td class="path">/api/admin/users</td><td data-zh="创建用户 {username,password,role?}" data-en="Create a user {username,password,role?}"></td></tr>
-      <tr><td><span class="method m-patch">PATCH</span></td><td class="path">/api/admin/users/{id}/role</td><td data-zh="设置角色 {role: admin|user}（不能改自己）" data-en="Set role {role: admin|user} (not self)"></td></tr>
-      <tr><td><span class="method m-patch">PATCH</span></td><td class="path">/api/admin/users/{id}/password</td><td data-zh="重置密码 {new_password}" data-en="Reset password {new_password}"></td></tr>
-      <tr><td><span class="method m-delete">DELETE</span></td><td class="path">/api/admin/users/{id}</td><td data-zh="删除账号、个人媒体/分组、未完成上传和 Key；解散其团队并转移或清理共享数据" data-en="Delete account, personal media/groups, pending uploads and keys; dissolve owned teams and transfer or clean shared data"></td></tr>
-    </tbody>
-  </table>
-  <p class="note" data-zh="部署要求：持久化整个 /data（含 /data/uploads）；只运行一个 Uvicorn worker。Nginx/Caddy 请求体上限必须大于 max(图片上限, 分片大小) 并保留 multipart 余量（默认建议 12m），且不得移除 Range 相关请求/响应头。FORWARDED_ALLOW_IPS 只填写可信反代 IP/CIDR，避免限流误伤或地址伪造。Compose 使用有界 local 日志轮转（10m × 3）。备份和恢复必须在维护窗口停止容器后对整个数据目录做同一份快照或归档；单独备份 SQLite 不能保证媒体一致。恢复前应校验备份完整性，且不得混用不同备份集。GitLab CI 执行后端测试、前端测试/构建和静态检查，Tag 或显式开关还会真实构建 Docker 镜像。" data-en="Deployment: persist all of /data (including /data/uploads) and run one Uvicorn worker. The Nginx/Caddy body limit must exceed max(image limit, part size) with multipart overhead (12m recommended for defaults), and Range-related headers must be preserved. Set FORWARDED_ALLOW_IPS only to trusted proxy IPs/CIDRs to avoid shared rate limits or address spoofing. Compose uses bounded local log rotation (10m × 3). For backup or restore, stop the container during a maintenance window and snapshot or archive the entire data directory as one set; a SQLite-only backup cannot guarantee media consistency. Validate the backup before restoring and never mix backup sets. GitLab CI runs backend tests, frontend tests/build and static checks; tags or an explicit opt-in also perform a real Docker image build."></p>
+      <h2 id="security" data-zh="鉴权与空间隔离" data-en="Authentication and scope isolation"></h2>
+      <div class="notice-grid">
+        <div class="notice"><strong>个人空间</strong>列表、修改、删除和上传会话均绑定当前身份；普通成员不能通过传 owner_id 查看他人资产。</div>
+        <div class="notice"><strong>团队空间</strong>team_id 不是授权凭据。每次调用仍校验团队成员关系；管理操作要求 owner/admin。</div>
+        <div class="notice"><strong>私密媒体</strong>只允许属主、有权团队成员、管理员 JWT 或有效签名 URL；管理员 API Key 仍按属主/团队范围，其他请求返回 404。</div>
+        <div class="notice"><strong>公开参数</strong>visibility 缺省为 public；只有显式传 private 才进入私密访问规则。切勿让不可信调用方随意传 team_id。</div>
+      </div>
+      <p class="security-note">API Key 绑定用户但仅用于媒体数据面，且管理员 API Key 不继承管理员 JWT 的全局越权能力。修改密码、管理 Key、创建/管理团队、管理分组、用户与管理员接口必须使用 JWT；不要把令牌、X-API-Key、签名链接的 sig 或完整查询串写入日志、工单和截图。</p>
 
-  <!-- ============ Other ============ -->
-  <h2 id="other">🧭 <span data-zh="其他" data-en="Other"></span></h2>
-  <table>
-    <thead><tr><th data-zh="方法" data-en="Method"></th><th data-zh="路径" data-en="Path"></th><th data-zh="说明" data-en="Description"></th></tr></thead>
-    <tbody>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/healthz</td><td data-zh="轻量存活检查 {status, version}" data-en="Lightweight liveness check {status, version}"></td></tr>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/readyz</td><td data-zh="就绪检查：SQLite 写事务回滚探针、数据目录可落盘与磁盘保留空间" data-en="Readiness: rolled-back SQLite write transaction, durable data-directory probe and free-space reserve"></td></tr>
-      <tr><td><span class="method m-get">GET</span></td><td class="path">/openapi.json</td><td data-zh="OpenAPI 规范（供工具使用）" data-en="OpenAPI spec (for tooling)"></td></tr>
-    </tbody>
-  </table>
-
-  <footer>
-    <span data-zh="完整交互式调试工具" data-en="Interactive debugging tool"></span>: <a href="/openapi.json" data-zh="OpenAPI 规范" data-en="OpenAPI spec"></a>
-  </footer>
+      <h2 id="operations" data-zh="管理员与运维接口" data-en="Admin and operations"></h2>
+      <p class="security-note" data-zh="MAX_API_KEYS_PER_USER 默认 20；API_KEY_MUTATION_RATE_LIMIT_PER_DAY 默认 100（当前进程固定 24 小时窗口，重启会重置）；VIDEO_PART_RATE_LIMIT_PER_MINUTE 默认 1000；TRAFFIC_RETENTION_DAYS 默认 365，按 UTC 日聚合清理历史流量。" data-en="MAX_API_KEYS_PER_USER defaults to 20; API_KEY_MUTATION_RATE_LIMIT_PER_DAY to 100 (a fixed 24-hour in-process window that resets on restart); VIDEO_PART_RATE_LIMIT_PER_MINUTE to 1000; and TRAFFIC_RETENTION_DAYS to 365 with UTC-day pruning."></p>
+      <div class="reference-shell"><table><thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead><tbody>
+        <tr><td><span class="method m-get">GET</span></td><td><code>/api/admin/stats</code></td><td>JWT-only：用户、媒体、团队与存储总览</td></tr>
+        <tr><td><span class="method m-get">GET</span></td><td><code>/api/admin/traffic-stats?days=7</code></td><td>JWT-only：1–365 天请求数量、请求/响应流量、路由、API Key 与成员空间统计</td></tr>
+        <tr><td><span class="method m-get">GET</span></td><td><code>/healthz</code></td><td>轻量存活检查</td></tr>
+        <tr><td><span class="method m-get">GET</span></td><td><code>/readyz</code></td><td>SQLite 写探针、数据目录落盘与磁盘空间检查</td></tr>
+        <tr><td><span class="method m-get">GET</span></td><td><code>/openapi.json</code></td><td>机器可读 OpenAPI 规范</td></tr>
+      </tbody></table></div>
+      <footer>所有响应包含 <code>X-Request-ID</code>，排查问题时可提供该值。部署反代必须保留 Range 相关请求/响应头。</footer>
+    </main>
+  </div>
 </div>
+<div id="copy-status" class="sr-only" role="status" aria-live="polite"></div>
 
 <script>
-  // ---- base URL ----
-  var base = location.origin;
-  document.getElementById('base-url').textContent = base + '/';
-  document.querySelectorAll('pre code').forEach(function (el) {
-    el.textContent = el.textContent.split('{{BASE}}').join(base);
-  });
+  (function () {
+    var base = location.origin;
+    document.getElementById('base-url').textContent = base + '/';
+    document.querySelectorAll('pre code').forEach(function (code) {
+      code.textContent = code.textContent.split('{{BASE}}').join(base);
+    });
 
-  // ---- copy buttons ----
-  function copyText(text) {
-    if (navigator.clipboard && window.isSecureContext) {
-      return navigator.clipboard.writeText(text).then(function () { return true; }).catch(function () { return fallback(); });
-    }
-    return Promise.resolve(fallback());
-    function fallback() {
+    function fallbackCopy(text) {
       try {
-        var ta = document.createElement('textarea');
-        ta.value = text;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.focus(); ta.select();
-        var ok = document.execCommand('copy');
-        ta.remove();
-        return ok;
-      } catch (e) { return false; }
+        var textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        var copied = document.execCommand('copy');
+        textarea.remove();
+        return copied;
+      } catch (error) { return false; }
     }
-  }
-  document.querySelectorAll('.code-block').forEach(function (block) {
-    var btn = document.createElement('button');
-    btn.className = 'copy-btn';
-    btn.textContent = '复制';
-    btn.addEventListener('click', function () {
-      var code = block.querySelector('pre code');
-      copyText(code.textContent).then(function (ok) {
-        btn.textContent = ok ? '已复制 ✓' : '复制失败';
-        setTimeout(function () { btn.textContent = '复制'; }, 1200);
+
+    function copyText(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        return navigator.clipboard.writeText(text)
+          .then(function () { return true; })
+          .catch(function () { return fallbackCopy(text); });
+      }
+      return Promise.resolve(fallbackCopy(text));
+    }
+
+    function selectLanguage(example, language, focusTab) {
+      var tabs = Array.prototype.slice.call(example.querySelectorAll('[data-code-lang]'));
+      tabs.forEach(function (tab) {
+        var selected = tab.dataset.codeLang === language;
+        tab.setAttribute('aria-selected', String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+        if (selected && focusTab) tab.focus();
+      });
+      example.querySelectorAll('[data-code-panel]').forEach(function (panel) {
+        panel.hidden = panel.dataset.codePanel !== language;
+      });
+      var copy = example.querySelector('[data-copy]');
+      var title = example.closest('[data-example]').querySelector('h3').textContent.trim();
+      copy.setAttribute('aria-label', '复制' + title + ' ' + (language === 'python' ? 'Python 3' : 'cURL') + '示例');
+    }
+
+    document.querySelectorAll('.example').forEach(function (example) {
+      selectLanguage(example, example.dataset.defaultLang || 'python', false);
+      var tabs = Array.prototype.slice.call(example.querySelectorAll('[data-code-lang]'));
+      tabs.forEach(function (tab, index) {
+        tab.addEventListener('click', function () { selectLanguage(example, tab.dataset.codeLang, false); });
+        tab.addEventListener('keydown', function (event) {
+          var next = null;
+          if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+          if (event.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length;
+          if (event.key === 'Home') next = 0;
+          if (event.key === 'End') next = tabs.length - 1;
+          if (next === null) return;
+          event.preventDefault();
+          selectLanguage(example, tabs[next].dataset.codeLang, true);
+        });
+      });
+      example.querySelector('[data-copy]').addEventListener('click', function (event) {
+        var button = event.currentTarget;
+        var panel = example.querySelector('[data-code-panel]:not([hidden])');
+        var code = panel.querySelector('code').textContent;
+        copyText(code).then(function (ok) {
+          var status = document.getElementById('copy-status');
+          button.textContent = ok ? '已复制' : '复制失败';
+          if (status) status.textContent = ok ? '调用示例已复制到剪贴板' : '复制失败，请手动选择代码';
+          window.setTimeout(function () { button.textContent = '复制'; }, 1400);
+        });
       });
     });
-    block.appendChild(btn);
-  });
 
-  // ---- language toggle ----
-  var saved = null;
-  try { saved = localStorage.getItem('oss-docs-lang'); } catch (e) {}
-  var lang = saved === 'en' ? 'en' : 'zh';
-
-  function applyLang(l) {
-    lang = l;
-    document.documentElement.lang = l === 'zh' ? 'zh-CN' : 'en';
-    document.querySelectorAll('[data-zh][data-en]').forEach(function (el) {
-      el.textContent = el.getAttribute(l === 'zh' ? 'data-zh' : 'data-en');
+    var savedLanguage = null;
+    try { savedLanguage = localStorage.getItem('oss-docs-lang'); } catch (error) {}
+    function applyDocumentLanguage(language) {
+      document.documentElement.lang = language === 'en' ? 'en' : 'zh-CN';
+      document.querySelectorAll('[data-zh][data-en]').forEach(function (element) {
+        element.textContent = element.getAttribute(language === 'en' ? 'data-en' : 'data-zh');
+      });
+      document.querySelectorAll('[data-lang]').forEach(function (button) {
+        var active = button.dataset.lang === language;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', String(active));
+      });
+      try { localStorage.setItem('oss-docs-lang', language); } catch (error) {}
+    }
+    document.querySelectorAll('[data-lang]').forEach(function (button) {
+      button.addEventListener('click', function () { applyDocumentLanguage(button.dataset.lang); });
     });
-    document.querySelectorAll('.lang-switch button').forEach(function (b) {
-      b.classList.toggle('active', b.dataset.lang === l);
-    });
-    try { localStorage.setItem('oss-docs-lang', l); } catch (e) {}
-  }
-  document.querySelectorAll('.lang-switch button').forEach(function (b) {
-    b.addEventListener('click', function () { applyLang(b.dataset.lang); });
-  });
-  applyLang(lang);
+    applyDocumentLanguage(savedLanguage === 'en' ? 'en' : 'zh');
+  }());
 </script>
 </body>
 </html>

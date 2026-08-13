@@ -12,7 +12,8 @@ from ....services.library import (
     transfer_member_groups,
 )
 from ....services.teams import can_manage_team, get_membership
-from ...deps import get_current_user, get_db
+from ....services.identifiers import next_team_member_id
+from ...deps import get_db, require_jwt_user
 from ._common import get_team_or_404, member_out
 
 router = APIRouter(prefix="/api", tags=["teams"])
@@ -30,7 +31,7 @@ _TEAM_ROLES = ("member", "admin")
 def add_member(
     team_id: int,
     payload: AddMember,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_jwt_user),
     db: Session = Depends(get_db),
 ) -> TeamMemberOut:
     db.rollback()
@@ -49,7 +50,12 @@ def add_member(
     if get_membership(db, team.id, target.id) is not None:
         raise HTTPException(status_code=409, detail="user is already a member")
 
-    tm = TeamMember(team_id=team.id, user_id=target.id, role="member")
+    tm = TeamMember(
+        id=next_team_member_id(db),
+        team_id=team.id,
+        user_id=target.id,
+        role="member",
+    )
     db.add(tm)
     db.commit()
     db.refresh(tm)
@@ -65,7 +71,7 @@ def add_member(
 def remove_member(
     team_id: int,
     member_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_jwt_user),
     db: Session = Depends(get_db),
 ) -> None:
     # Resolve the target under the shared lifecycle lease before authorizing;
@@ -102,7 +108,7 @@ def change_member_role(
     team_id: int,
     member_id: int,
     payload: RoleUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_jwt_user),
     db: Session = Depends(get_db),
 ) -> TeamMemberOut:
     db.rollback()

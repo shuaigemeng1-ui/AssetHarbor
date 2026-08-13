@@ -58,6 +58,13 @@ def _settings(**overrides) -> Settings:
         ("registration_rate_limit_per_username", -1),
         ("images_rate_limit_per_minute", -1),
         ("upload_rate_limit_per_minute", -1),
+        ("video_part_rate_limit_per_minute", -1),
+        ("api_key_mutation_rate_limit_per_day", 0),
+        ("api_key_mutation_rate_limit_per_day", 100_001),
+        ("max_api_keys_per_user", 0),
+        ("max_api_keys_per_user", 1001),
+        ("traffic_retention_days", 0),
+        ("traffic_retention_days", 3651),
     ],
 )
 def test_invalid_numeric_settings_fail_validation(field, value):
@@ -76,22 +83,19 @@ def test_only_documented_disable_values_accept_zero():
         registration_rate_limit_per_username=0,
         images_rate_limit_per_minute=0,
         upload_rate_limit_per_minute=0,
+        video_part_rate_limit_per_minute=0,
     )
 
     assert configured.min_free_space_mb == 0
     assert configured.user_storage_quota_bytes == 0
     assert configured.team_storage_quota_bytes == 0
     assert configured.upload_rate_limit_per_minute == 0
+    assert configured.video_part_rate_limit_per_minute == 0
 
 
 def test_chunk_size_cannot_exceed_video_limit():
     with pytest.raises(ValidationError, match="must not exceed"):
         _settings(max_video_size_mb=8, video_chunk_size_mb=9)
-
-
-def test_invalid_visibility_fails_validation():
-    with pytest.raises(ValidationError):
-        _settings(default_visibility="unlisted")
 
 
 def test_invalid_process_environment_fails_during_module_import(tmp_path):
@@ -130,3 +134,7 @@ def test_default_numeric_behavior_is_unchanged():
     assert configured.short_code_length == 10
     assert configured.token_expire_minutes == 10080
     assert configured.signed_url_ttl_seconds == 86400
+    assert configured.max_api_keys_per_user == 20
+    assert configured.traffic_retention_days == 365
+    assert configured.video_part_rate_limit_per_minute == 1000
+    assert configured.api_key_mutation_rate_limit_per_day == 100

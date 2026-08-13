@@ -1,21 +1,30 @@
-"""Admin-only endpoints: stats, user management, team overview."""
+"""Admin-only endpoints: stats, traffic/storage, user management, team overview."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime, timedelta, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ...models import ApiKey, Image, Team, TeamMember, UploadSession, User
+from ...models import ApiKey, Image, Team, TeamMember, TrafficDaily, UploadSession, User
 from ...schemas import (
     AdminStats,
+    AdminTrafficStats,
     AdminUserCreate,
+    MemberUsagePoint,
     ResetPasswordRequest,
     RoleUpdate,
     TeamAdminOut,
+    TrafficApiKeyPoint,
+    TrafficDailyPoint,
+    TrafficRoutePoint,
+    TrafficTotals,
     UserOut,
 )
 from ...core.security import hash_password
 from ...services.images import delete_image
+from ...services.identifiers import next_user_id
 from ...services.library import (
     fresh_library_user,
     library_lifecycle_lease,
@@ -23,20 +32,51 @@ from ...services.library import (
     serialized_library_lifecycle,
 )
 from ...services.storage_quota import RESERVED_UPLOAD_STATUSES
+from ...services.traffic import flush_traffic, telemetry_integrity_status
 from ...services.videos import delete_upload_sessions_for_owner, dissolve_team_media
-from ..deps import get_db, require_admin
+from ..deps import get_db, require_jwt_admin
 
-router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
+router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_jwt_admin)])
 
 
 def _user_out(user: User) -> UserOut:
     return UserOut(id=user.id, username=user.username, role=user.role, created_at=user.created_at)
 
 
+def _traffic_totals(row) -> TrafficTotals:
+    """Normalize SQL aggregate rows and expose total transfer bytes."""
+    request_count, error_count, request_bytes, response_bytes = (int(value or 0) for value in row)
+    return TrafficTotals(
+        request_count=request_count,
+        error_count=error_count,
+        request_bytes=request_bytes,
+        response_bytes=response_bytes,
+        total_bytes=request_bytes + response_bytes,
+    )
+
+
+def _traffic_sum_columns():
+    return (
+        func.coalesce(func.sum(TrafficDaily.request_count), 0),
+        func.coalesce(func.sum(TrafficDaily.error_count), 0),
+        func.coalesce(func.sum(TrafficDaily.request_bytes), 0),
+        func.coalesce(func.sum(TrafficDaily.response_bytes), 0),
+    )
+
+
+def _flush_traffic_or_503() -> None:
+    """Never present a silently stale management traffic snapshot."""
+    if not flush_traffic():
+        raise HTTPException(
+            status_code=503,
+            detail="traffic statistics are temporarily unavailable",
+        )
+
+
 @router.post("/users", response_model=UserOut, status_code=201, summary="Create a user (admin)")
 def create_user(
     payload: AdminUserCreate,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_jwt_admin),
     db: Session = Depends(get_db),
 ) -> UserOut:
     if payload.role not in ("admin", "user"):
@@ -54,6 +94,7 @@ def create_user(
         ).scalar_one_or_none() is not None:
             raise HTTPException(status_code=409, detail="username already taken")
         user = User(
+            id=next_user_id(db),
             username=payload.username,
             password_hash=password_hash,
             role=payload.role,
@@ -69,7 +110,18 @@ def create_user(
 
 
 @router.get("/stats", response_model=AdminStats, summary="System statistics (admin)")
-def admin_stats(db: Session = Depends(get_db)) -> AdminStats:
+def admin_stats(
+    current_user: User = Depends(require_jwt_admin),
+    db: Session = Depends(get_db),
+) -> AdminStats:
+    # The admin view should reflect all requests completed before this one.
+    # A short telemetry-only barrier never affects normal API hot paths.
+    _flush_traffic_or_503()
+    telemetry_complete, telemetry_dropped_events = telemetry_integrity_status()
+    db.rollback()
+    current_user = fresh_library_user(db, current_user)
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="admin privileges required")
     users = db.scalar(select(func.count()).select_from(User)) or 0
     images = db.scalar(
         select(func.count()).select_from(Image).where(Image.media_kind == "image")
@@ -81,9 +133,11 @@ def admin_stats(db: Session = Depends(get_db)) -> AdminStats:
     storage = db.scalar(select(func.coalesce(func.sum(Image.size), 0))) or 0
     pending_upload_bytes = db.scalar(
         select(func.coalesce(func.sum(UploadSession.size), 0)).where(
-            UploadSession.status.in_(RESERVED_UPLOAD_STATUSES)
+            UploadSession.status.in_(RESERVED_UPLOAD_STATUSES),
+            UploadSession.expires_at > datetime.now(timezone.utc).replace(tzinfo=None),
         )
     ) or 0
+    traffic = _traffic_totals(db.execute(select(*_traffic_sum_columns())).one())
     return AdminStats(
         users=users,
         images=images,
@@ -92,6 +146,174 @@ def admin_stats(db: Session = Depends(get_db)) -> AdminStats:
         teams=teams,
         storage_bytes=storage,
         pending_upload_bytes=pending_upload_bytes,
+        traffic_request_count=traffic.request_count,
+        traffic_request_bytes=traffic.request_bytes,
+        traffic_response_bytes=traffic.response_bytes,
+        traffic_total_bytes=traffic.total_bytes,
+        telemetry_complete=telemetry_complete,
+        telemetry_dropped_events=telemetry_dropped_events,
+    )
+
+
+@router.get(
+    "/traffic-stats",
+    response_model=AdminTrafficStats,
+    summary="Traffic trends and per-member storage usage (admin)",
+)
+def admin_traffic_stats(
+    days: int = Query(default=7, ge=1, le=365, description="UTC calendar days, including today"),
+    current_user: User = Depends(require_jwt_admin),
+    db: Session = Depends(get_db),
+) -> AdminTrafficStats:
+    """Return global/daily/route/API-key traffic and every member's storage."""
+    _flush_traffic_or_503()
+    telemetry_complete, telemetry_dropped_events = telemetry_integrity_status()
+    db.rollback()
+    current_user = fresh_library_user(db, current_user)
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="admin privileges required")
+    end_date = datetime.now(timezone.utc).date()
+    start_date = end_date - timedelta(days=days - 1)
+    period_filter = TrafficDaily.day >= start_date
+
+    summary = _traffic_totals(
+        db.execute(select(*_traffic_sum_columns()).where(period_filter)).one()
+    )
+    anonymous = _traffic_totals(
+        db.execute(
+            select(*_traffic_sum_columns()).where(period_filter, TrafficDaily.user_id == 0)
+        ).one()
+    )
+
+    daily_rows = {
+        day: _traffic_totals((count, errors, request_bytes, response_bytes))
+        for day, count, errors, request_bytes, response_bytes in db.execute(
+            select(TrafficDaily.day, *_traffic_sum_columns())
+            .where(period_filter)
+            .group_by(TrafficDaily.day)
+            .order_by(TrafficDaily.day)
+        ).all()
+    }
+    daily: list[TrafficDailyPoint] = []
+    for offset in range(days):
+        day = start_date + timedelta(days=offset)
+        totals = daily_rows.get(day, TrafficTotals(
+            request_count=0, error_count=0, request_bytes=0, response_bytes=0, total_bytes=0
+        ))
+        daily.append(TrafficDailyPoint(date=day, **totals.model_dump()))
+
+    routes = [
+        TrafficRoutePoint(
+            route=route,
+            method=method,
+            **_traffic_totals((count, errors, request_bytes, response_bytes)).model_dump(),
+        )
+        for route, method, count, errors, request_bytes, response_bytes in db.execute(
+            select(TrafficDaily.route, TrafficDaily.method, *_traffic_sum_columns())
+            .where(period_filter)
+            .group_by(TrafficDaily.route, TrafficDaily.method)
+            .order_by(func.sum(TrafficDaily.request_count).desc(), TrafficDaily.route)
+            .limit(200)
+        ).all()
+    ]
+
+    api_key_rows = db.execute(
+        select(
+            TrafficDaily.api_key_id,
+            TrafficDaily.user_id,
+            *_traffic_sum_columns(),
+        )
+        .where(period_filter, TrafficDaily.api_key_id > 0)
+        .group_by(TrafficDaily.api_key_id, TrafficDaily.user_id)
+        .order_by(func.sum(TrafficDaily.request_count).desc())
+        .limit(200)
+    ).all()
+    key_ids = {row[0] for row in api_key_rows}
+    key_info = {
+        key.id: key
+        for key in db.execute(select(ApiKey).where(ApiKey.id.in_(key_ids))).scalars().all()
+    } if key_ids else {}
+    api_user_ids = {row[1] for row in api_key_rows}
+    api_usernames = dict(
+        db.execute(select(User.id, User.username).where(User.id.in_(api_user_ids))).all()
+    ) if api_user_ids else {}
+    api_keys = []
+    for key_id, user_id, count, errors, request_bytes, response_bytes in api_key_rows:
+        key = key_info.get(key_id)
+        api_keys.append(
+            TrafficApiKeyPoint(
+                api_key_id=key_id,
+                key_name=key.name if key else None,
+                key_prefix=key.key_prefix if key else None,
+                user_id=user_id,
+                username=api_usernames.get(user_id),
+                **_traffic_totals((count, errors, request_bytes, response_bytes)).model_dump(),
+            )
+        )
+
+    member_traffic = {
+        user_id: _traffic_totals((count, errors, request_bytes, response_bytes))
+        for user_id, count, errors, request_bytes, response_bytes in db.execute(
+            select(TrafficDaily.user_id, *_traffic_sum_columns())
+            .where(period_filter, TrafficDaily.user_id > 0)
+            .group_by(TrafficDaily.user_id)
+        ).all()
+    }
+    media_usage: dict[int, dict[str, int]] = {}
+    for owner_id, media_kind, size in db.execute(
+        select(Image.owner_id, Image.media_kind, func.coalesce(func.sum(Image.size), 0))
+        .where(Image.owner_id.is_not(None))
+        .group_by(Image.owner_id, Image.media_kind)
+    ).all():
+        media_usage.setdefault(owner_id, {})[media_kind] = int(size or 0)
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    pending_usage = dict(
+        db.execute(
+            select(UploadSession.owner_id, func.coalesce(func.sum(UploadSession.size), 0))
+            .where(
+                UploadSession.status.in_(RESERVED_UPLOAD_STATUSES),
+                UploadSession.expires_at > now,
+            )
+            .group_by(UploadSession.owner_id)
+        ).all()
+    )
+    zero = TrafficTotals(
+        request_count=0, error_count=0, request_bytes=0, response_bytes=0, total_bytes=0
+    )
+    members: list[MemberUsagePoint] = []
+    for user in db.execute(select(User).order_by(User.username, User.id)).scalars().all():
+        kinds = media_usage.get(user.id, {})
+        image_bytes = int(kinds.get("image", 0))
+        video_bytes = int(kinds.get("video", 0))
+        storage_bytes = image_bytes + video_bytes
+        pending_bytes = int(pending_usage.get(user.id, 0) or 0)
+        members.append(
+            MemberUsagePoint(
+                user_id=user.id,
+                username=user.username,
+                role=user.role,
+                storage_bytes=storage_bytes,
+                image_bytes=image_bytes,
+                video_bytes=video_bytes,
+                pending_upload_bytes=pending_bytes,
+                total_usage_bytes=storage_bytes + pending_bytes,
+                **member_traffic.get(user.id, zero).model_dump(),
+            )
+        )
+
+    return AdminTrafficStats(
+        telemetry_complete=telemetry_complete,
+        telemetry_dropped_events=telemetry_dropped_events,
+        days=days,
+        start_date=start_date,
+        end_date=end_date,
+        summary=summary,
+        anonymous=anonymous,
+        daily=daily,
+        routes=routes,
+        api_keys=api_keys,
+        members=members,
     )
 
 
@@ -128,7 +350,7 @@ def admin_teams(db: Session = Depends(get_db)) -> list[TeamAdminOut]:
 def set_user_role(
     user_id: int,
     payload: RoleUpdate,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_jwt_admin),
     db: Session = Depends(get_db),
 ) -> UserOut:
     db.rollback()
@@ -164,7 +386,7 @@ def set_user_role(
 def reset_password(
     user_id: int,
     payload: ResetPasswordRequest,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_jwt_admin),
     db: Session = Depends(get_db),
 ) -> None:
     # Dependency authorization may be stale after waiting for the lifecycle
@@ -193,7 +415,7 @@ def reset_password(
 @serialized_library_lifecycle
 def delete_user(
     user_id: int,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_jwt_admin),
     db: Session = Depends(get_db),
 ) -> None:
     # Fresh transaction after entering the no-FK lifecycle lease.
@@ -232,5 +454,8 @@ def delete_user(
     # Memberships in other teams, API keys, then the account itself.
     db.execute(delete(TeamMember).where(TeamMember.user_id == target.id))
     db.execute(delete(ApiKey).where(ApiKey.user_id == target.id))
+    # Traffic aggregates intentionally have no FK; account deletion therefore
+    # removes its history explicitly (including rows attributed to its keys).
+    db.execute(delete(TrafficDaily).where(TrafficDaily.user_id == target.id))
     db.delete(target)
     db.commit()

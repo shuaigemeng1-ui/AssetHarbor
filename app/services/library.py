@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from functools import wraps
 
 from fastapi import HTTPException, Request
@@ -11,6 +12,11 @@ from sqlalchemy import and_, delete, func, inspect as sa_inspect, or_, select, u
 from sqlalchemy.orm import Session
 
 from ..core.database import SessionLocal
+from ..core.auth_scope import (
+    copy_auth_scope,
+    get_bound_account_identity,
+    has_global_admin_scope,
+)
 from ..models import Image, MediaGroup, MediaGroupItem, Team, TeamMember, UploadSession, User
 from ..schemas import (
     LibraryStats,
@@ -61,14 +67,21 @@ def fresh_library_user(db: Session, user: User) -> User:
     # ``Session.get`` is allowed to satisfy the lookup from the identity map.
     # Force a database round trip so a user deleted by another request while
     # this request waited outside the lifecycle lease cannot be reused.
+    original = user
+    bound_identity = get_bound_account_identity(original)
+    if bound_identity is not None and bound_identity[0] != int(identity[0]):
+        raise HTTPException(status_code=401, detail="could not validate credentials")
     fresh = db.execute(
         select(User)
         .where(User.id == int(identity[0]))
         .execution_options(populate_existing=True)
     ).scalar_one_or_none()
-    if fresh is None:
+    if fresh is None or (
+        bound_identity is not None
+        and fresh.created_at.isoformat() != bound_identity[1]
+    ):
         raise HTTPException(status_code=401, detail="could not validate credentials")
-    return fresh
+    return copy_auth_scope(original, fresh)
 
 
 def _valid_group_item_scope():
@@ -94,7 +107,7 @@ def _not_found() -> HTTPException:
 
 
 def can_view_group(db: Session, user: User, group: MediaGroup) -> bool:
-    if user.role == "admin":
+    if has_global_admin_scope(user):
         return True
     if group.team_id is None:
         return group.owner_id == user.id
@@ -102,7 +115,7 @@ def can_view_group(db: Session, user: User, group: MediaGroup) -> bool:
 
 
 def can_manage_group(db: Session, user: User, group: MediaGroup) -> bool:
-    if user.role == "admin" or group.owner_id == user.id:
+    if has_global_admin_scope(user) or group.owner_id == user.id:
         return True
     return bool(
         group.team_id is not None
@@ -127,7 +140,7 @@ def validate_team_scope(db: Session, team_id: int, user: User) -> Team:
     team = db.get(Team, team_id)
     if team is None:
         raise HTTPException(status_code=404, detail="team not found")
-    if user.role != "admin" and get_membership(db, team_id, user.id) is None:
+    if not has_global_admin_scope(user) and get_membership(db, team_id, user.id) is None:
         raise HTTPException(status_code=404, detail="team not found")
     return team
 
@@ -272,7 +285,7 @@ def list_unified_media(
     elif team_id is not None:
         validate_team_scope(db, team_id, user)
         filters.append(Image.team_id == team_id)
-    elif user.role != "admin":
+    elif not has_global_admin_scope(user):
         filters.extend((Image.owner_id == user.id, Image.team_id.is_(None)))
 
     if kind != "all":
@@ -396,7 +409,7 @@ def cleanup_orphan_media_library() -> int:
                     delete_group(db, group, commit=False)
                     removed += 1
                 elif owner is None or (
-                    owner.role != "admin"
+                    not has_global_admin_scope(owner)
                     and get_membership(db, team.id, owner.id) is None
                 ):
                     group.owner_id = team.owner_id
@@ -432,7 +445,7 @@ def cleanup_orphan_media_library() -> int:
 
 
 def library_stats(db: Session, user: User) -> LibraryStats:
-    if user.role == "admin":
+    if has_global_admin_scope(user):
         media_scope = []
         upload_scope = []
         group_scope = []
@@ -460,6 +473,7 @@ def library_stats(db: Session, user: User) -> LibraryStats:
         select(func.coalesce(func.sum(UploadSession.size), 0)).where(
             *upload_scope,
             UploadSession.status.in_(RESERVED_UPLOAD_STATUSES),
+            UploadSession.expires_at > datetime.now(timezone.utc).replace(tzinfo=None),
         )
     ) or 0
     groups = db.scalar(

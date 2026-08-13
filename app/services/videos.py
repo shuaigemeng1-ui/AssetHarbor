@@ -24,6 +24,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
+from ..core.auth_scope import bind_auth_scope, has_global_admin_scope
 from ..core.database import SessionLocal
 from ..models import Image, Team, UploadPart, UploadSession, User
 from .library import (
@@ -191,7 +192,19 @@ def _new_expiry() -> datetime:
 
 
 def session_dir(upload_id: str) -> Path:
-    return settings.uploads_dir / upload_id
+    """Resolve a canonical UUID session path inside the uploads root."""
+    try:
+        parsed = uuid.UUID(upload_id)
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError("invalid upload id") from exc
+    canonical = str(parsed)
+    if upload_id != canonical:
+        raise ValueError("upload id is not canonical")
+    root = settings.uploads_dir.resolve()
+    candidate = (root / canonical).resolve()
+    if not candidate.is_relative_to(root):
+        raise ValueError("upload path escapes uploads directory")
+    return candidate
 
 
 def session_file(upload_id: str) -> Path:
@@ -372,7 +385,7 @@ def _check_team_access(db: Session, team_id: int | None, user: User) -> None:
     team = db.get(Team, team_id)
     if team is None:
         raise HTTPException(status_code=404, detail="team not found")
-    if user.role != "admin" and get_membership(db, team_id, user.id) is None:
+    if not has_global_admin_scope(user) and get_membership(db, team_id, user.id) is None:
         raise HTTPException(status_code=403, detail="you are not a member of this team")
 
 
@@ -493,8 +506,16 @@ def get_upload_for_user(
     *,
     cleanup_expired: bool = True,
 ) -> UploadSession:
+    try:
+        session_dir(upload_id)
+    except ValueError:
+        # Reject malformed IDs before touching any filesystem helper. Corrupt
+        # legacy rows are removed by the maintenance path below.
+        raise HTTPException(status_code=404, detail="upload session not found")
     upload = db.get(UploadSession, upload_id)
-    if upload is None or (upload.owner_id != user.id and user.role != "admin"):
+    if upload is None or (
+        upload.owner_id != user.id and not has_global_admin_scope(user)
+    ):
         raise HTTPException(status_code=404, detail="upload session not found")
     if upload.expires_at <= _now() and upload.status == "finalizing":
         recover_finalizing_session(db, upload)
@@ -599,7 +620,7 @@ async def store_upload_part(
         gated_upload = _fresh_upload_session(db, upload_id)
         if gated_upload is None:
             raise HTTPException(status_code=404, detail="upload session not found")
-        if gated_upload.owner_id != user.id and user.role != "admin":
+        if gated_upload.owner_id != user.id and not has_global_admin_scope(user):
             raise HTTPException(status_code=404, detail="upload session not found")
         _check_team_access(db, gated_upload.team_id, user)
         if gated_upload.expires_at <= _now():
@@ -702,7 +723,7 @@ def _commit_upload_part(
                     current = _fresh_upload_session(commit_db, upload_id)
                     if current is None:
                         raise HTTPException(status_code=404, detail="upload session not found")
-                    if current.owner_id != user.id and user.role != "admin":
+                    if current.owner_id != user.id and not has_global_admin_scope(user):
                         raise HTTPException(status_code=404, detail="upload session not found")
                     _check_team_access(commit_db, current.team_id, user)
 
@@ -860,7 +881,7 @@ def complete_upload_session(db: Session, upload: UploadSession, user: User) -> I
                 current = db.get(UploadSession, upload_id)
                 if current is None:
                     raise HTTPException(status_code=404, detail="upload session not found")
-                if current.owner_id != user.id and user.role != "admin":
+                if current.owner_id != user.id and not has_global_admin_scope(user):
                     raise HTTPException(status_code=404, detail="upload session not found")
                 if current.status == "completed" and current.final_code:
                     image = db.execute(select(Image).where(
@@ -970,7 +991,7 @@ def complete_upload_session(db: Session, upload: UploadSession, user: User) -> I
                 except HTTPException:
                     _return_verifying_to_active(db, current, nonce)
                     raise
-                if current.owner_id != user.id and user.role != "admin":
+                if current.owner_id != user.id and not has_global_admin_scope(user):
                     _return_verifying_to_active(db, current, nonce)
                     raise HTTPException(status_code=404, detail="upload session not found")
                 if not _has_verification_nonce(current, nonce):
@@ -1006,6 +1027,16 @@ def complete_upload_session(db: Session, upload: UploadSession, user: User) -> I
                         "stored_path": str(rel_path),
                         "content_type": content_type,
                         "sha256": digest,
+                        # Recovery reloads the owner from the database, so the
+                        # request's non-persistent credential scope must be
+                        # made durable before the atomic move. A tenant scope
+                        # includes ordinary JWT users and every API key,
+                        # including keys owned by global administrators.
+                        "auth_scope": (
+                            "global_admin"
+                            if has_global_admin_scope(user)
+                            else "tenant"
+                        ),
                     }
 
                     # Persist recovery metadata before the atomic move. On a
@@ -1116,7 +1147,7 @@ def _reset_verifying_upload(db: Session, upload_id: str, nonce: str) -> None:
 
 def _validated_finalizing_info(
     raw_info: str,
-) -> tuple[dict[str, str], Path]:
+) -> tuple[dict[str, str], Path, bool]:
     """Parse recovery metadata and derive a destination without trusting it."""
     try:
         info = json.loads(raw_info)
@@ -1129,6 +1160,12 @@ def _validated_finalizing_info(
     content_type = info["content_type"]
     sha256 = info["sha256"]
     stored_path = info["stored_path"]
+    # Records created before auth-scope persistence are deliberately treated
+    # as tenant-scoped. This may require a retry after a legacy admin crash,
+    # but can never publish data using an authority that was not recorded.
+    recovery_auth_scope = info.get("auth_scope", "tenant")
+    if recovery_auth_scope not in ("tenant", "global_admin"):
+        raise ValueError("invalid recovery authorization scope")
     if (
         not isinstance(code, str)
         or re.fullmatch(rf"[0-9A-Za-z]{{{settings.short_code_length}}}", code)
@@ -1152,7 +1189,7 @@ def _validated_finalizing_info(
         "stored_path": str(expected_relative),
         "content_type": content_type,
         "sha256": sha256,
-    }, destination
+    }, destination, recovery_auth_scope == "global_admin"
 
 
 @serialized_library_lifecycle
@@ -1168,7 +1205,9 @@ def recover_finalizing_session(db: Session, upload: UploadSession) -> None:
     if upload.status != "finalizing":
         return
     try:
-        info, destination = _validated_finalizing_info(upload.resume_info)
+        info, destination, global_admin_authorized = _validated_finalizing_info(
+            upload.resume_info
+        )
     except ValueError:
         source = session_file(upload.upload_id)
         upload.status = "active" if source.is_file() else "failed"
@@ -1193,6 +1232,10 @@ def recover_finalizing_session(db: Session, upload: UploadSession) -> None:
     try:
         if owner is None:
             raise HTTPException(status_code=404, detail="upload owner not found")
+        # Never infer recovery authority from the persisted account role. In
+        # particular, an administrator's API key is tenant-scoped even though
+        # the freshly loaded owner row still has role=admin.
+        bind_auth_scope(owner, "jwt" if global_admin_authorized else "tenant")
         _check_team_access(db, upload.team_id, owner)
     except HTTPException:
         # Authorization may have been revoked while the process was down.
@@ -1265,7 +1308,9 @@ def _delete_upload_session_locked(db: Session, upload_id: str) -> None:
     destination: Path | None = None
     if current is not None and current.status == "finalizing":
         try:
-            _info, destination = _validated_finalizing_info(current.resume_info)
+            _info, destination, _global_admin_authorized = (
+                _validated_finalizing_info(current.resume_info)
+            )
         except ValueError:
             # Corrupt recovery metadata is never interpreted as a filesystem
             # path. The upload directory remains safe to remove by upload_id.
@@ -1274,7 +1319,18 @@ def _delete_upload_session_locked(db: Session, upload_id: str) -> None:
     if current is not None:
         db.delete(current)
     db.commit()
-    shutil.rmtree(session_dir(upload_id), ignore_errors=True)
+    try:
+        directory = session_dir(upload_id)
+    except ValueError:
+        directory = None
+    if directory is not None:
+        if directory.is_symlink():
+            try:
+                directory.unlink(missing_ok=True)
+            except OSError:
+                pass
+        else:
+            shutil.rmtree(directory, ignore_errors=True)
     if destination is not None:
         try:
             destination.unlink(missing_ok=True)
@@ -1308,7 +1364,7 @@ def cancel_upload_session(
                 if current is None:
                     raise HTTPException(status_code=404, detail="upload session not found")
                 actor = fresh_library_user(db, actor)
-                if current.owner_id != actor.id and actor.role != "admin":
+                if current.owner_id != actor.id and not has_global_admin_scope(actor):
                     raise HTTPException(status_code=404, detail="upload session not found")
                 _delete_upload_session_locked(db, upload_id)
 
@@ -1329,100 +1385,293 @@ def delete_upload_sessions_for_owner(db: Session, owner_id: int) -> None:
         cancel_upload_session_internal(db, upload)
 
 
-def _cleanup_upload_directory(child: Path, stale_before: float) -> bool:
-    """Recheck one upload directory under its PUT/cancel gate.
+def _cleanup_candidate_snapshot() -> tuple[
+    list[str], list[str], list[str], list[tuple[str, int]]
+]:
+    """Collect cleanup candidates without holding a process-global lock.
 
-    Returns ``True`` when an untracked directory was removed.  This separate
-    helper keeps the snapshot-race invariant directly unit-testable.
+    The session and part scans can grow with the whole installation.  Their
+    results are hints only: every destructive helper below reloads the current
+    row while holding the same locks as PUT/cancel before it changes anything.
     """
-    if not child.is_dir():
-        return False
-    with _leased_inbound_upload_gate_sync(child.name):
-        with SessionLocal() as verification_db:
-            still_tracked = verification_db.get(UploadSession, child.name) is not None
-        if not still_tracked:
-            shutil.rmtree(child, ignore_errors=True)
-            return True
-        # A normally completed request removes its unique temp file in a
-        # finally block.  The gate proves no current PUT owns this path; age
-        # protects crash leftovers from clock/filesystem anomalies.
-        for tmp in child.glob("part-*.tmp"):
+    now = _now()
+    with SessionLocal() as db:
+        sessions = db.execute(select(UploadSession)).scalars().all()
+        parts = db.execute(select(UploadPart)).scalars().all()
+
+    expired_ids = [
+        upload.upload_id for upload in sessions if upload.expires_at <= now
+    ]
+    known = {upload.upload_id for upload in sessions}
+    orphan_part_ids = sorted({
+        part.upload_id for part in parts if part.upload_id not in known
+    })
+    by_upload: dict[str, list[UploadPart]] = {}
+    for part in parts:
+        if part.upload_id in known:
+            by_upload.setdefault(part.upload_id, []).append(part)
+
+    invalid_session_ids: list[str] = []
+    invalid_parts: list[tuple[str, int]] = []
+    for upload in sessions:
+        if upload.status != "active":
+            continue
+        try:
+            path = session_file(upload.upload_id)
+        except ValueError:
+            invalid_session_ids.append(upload.upload_id)
+            continue
+        try:
+            file_size = path.stat().st_size if path.is_file() else 0
+        except OSError:
+            # A transient filesystem error must not turn a valid DB row into
+            # a destructive candidate.  A later maintenance pass can retry.
+            continue
+        for part in by_upload.get(upload.upload_id, []):
+            expected_offset = part.part_number * upload.chunk_size
+            expected_size = (
+                min(upload.chunk_size, upload.size - expected_offset)
+                if 0 <= part.part_number < upload.total_parts
+                else -1
+            )
+            if (
+                part.offset != expected_offset
+                or part.size != expected_size
+                or part.offset + part.size > file_size
+                or not _SHA256_RE.fullmatch(part.sha256)
+            ):
+                invalid_parts.append((upload.upload_id, part.part_number))
+    return expired_ids, invalid_session_ids, orphan_part_ids, invalid_parts
+
+
+def _cleanup_expired_candidate(upload_id: str) -> bool:
+    """Fresh-check and retire one expired upload under canonical locks."""
+    with library_lifecycle_lease():
+        with SessionLocal() as db:
+            db.rollback()
+            current = _fresh_upload_session(db, upload_id)
+            if current is None or current.expires_at > _now():
+                return False
             try:
-                if tmp.stat().st_mtime <= stale_before:
-                    tmp.unlink(missing_ok=True)
+                session_dir(upload_id)
+            except ValueError:
+                cancel_upload_session_internal(db, current)
+                return True
+            if current.status in ("verifying", "finalizing"):
+                try:
+                    if current.status == "verifying":
+                        recover_verifying_session(db, current)
+                    else:
+                        recover_finalizing_session(db, current)
+                except OSError:
+                    db.rollback()
+                    return False
+                db.expire_all()
+                current = _fresh_upload_session(db, upload_id)
+                if current is None or current.expires_at > _now():
+                    return False
+            # The nested helper follows library -> inbound -> upload.  PUT
+            # releases its streaming gate before requesting the library lease,
+            # so waiting here cannot invert the established lock order.
+            cancel_upload_session_internal(db, current)
+            return True
+
+
+def _cleanup_invalid_session_candidate(upload_id: str) -> bool:
+    """Remove a still-active session whose id cannot address safe storage."""
+    with library_lifecycle_lease():
+        with _leased_inbound_upload_gate_sync(upload_id):
+            with _leased_upload_lock(upload_id):
+                with SessionLocal() as db:
+                    current = _fresh_upload_session(db, upload_id)
+                    if current is None or current.status != "active":
+                        return False
+                    try:
+                        session_dir(upload_id)
+                    except ValueError:
+                        _delete_upload_session_locked(db, upload_id)
+                        return True
+                    return False
+
+
+def _cleanup_orphan_parts_candidate(upload_id: str) -> None:
+    """Delete part rows only if their parent session is still absent."""
+    with library_lifecycle_lease():
+        with _session_create_lock:
+            with _leased_inbound_upload_gate_sync(upload_id):
+                with _leased_upload_lock(upload_id):
+                    with SessionLocal() as db:
+                        if _fresh_upload_session(db, upload_id) is not None:
+                            return
+                        db.execute(
+                            delete(UploadPart).where(UploadPart.upload_id == upload_id)
+                        )
+                        db.commit()
+
+
+def _cleanup_invalid_part_candidate(upload_id: str, part_number: int) -> None:
+    """Fresh-check one structurally invalid part before deleting its row."""
+    with library_lifecycle_lease():
+        with _leased_inbound_upload_gate_sync(upload_id):
+            with _leased_upload_lock(upload_id):
+                with SessionLocal() as db:
+                    upload = _fresh_upload_session(db, upload_id)
+                    if upload is None or upload.status != "active":
+                        return
+                    part = db.execute(select(UploadPart).where(
+                        UploadPart.upload_id == upload_id,
+                        UploadPart.part_number == part_number,
+                    )).scalar_one_or_none()
+                    if part is None:
+                        return
+                    try:
+                        path = session_file(upload_id)
+                        file_size = path.stat().st_size if path.is_file() else 0
+                    except (OSError, ValueError):
+                        return
+                    expected_offset = part.part_number * upload.chunk_size
+                    expected_size = (
+                        min(upload.chunk_size, upload.size - expected_offset)
+                        if 0 <= part.part_number < upload.total_parts
+                        else -1
+                    )
+                    if (
+                        part.offset == expected_offset
+                        and part.size == expected_size
+                        and part.offset + part.size <= file_size
+                        and _SHA256_RE.fullmatch(part.sha256)
+                    ):
+                        return
+                    db.delete(part)
+                    db.commit()
+
+
+def _snapshot_upload_directories(
+    stale_before: float,
+) -> list[tuple[Path, tuple[Path, ...]]]:
+    """Enumerate upload directories and stale temp candidates without locks."""
+    candidates: list[tuple[Path, tuple[Path, ...]]] = []
+    try:
+        children = list(settings.uploads_dir.iterdir())
+    except OSError:
+        return candidates
+    for child in children:
+        stale_temps: list[Path] = []
+        try:
+            if not child.is_symlink() and child.is_dir():
+                for tmp in child.glob("part-*.tmp"):
+                    try:
+                        if tmp.stat().st_mtime <= stale_before:
+                            stale_temps.append(tmp)
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+        candidates.append((child, tuple(stale_temps)))
+    return candidates
+
+
+def _cleanup_upload_directory(
+    child: Path,
+    stale_before: float,
+    stale_temp_candidates: tuple[Path, ...] | None = None,
+) -> bool:
+    """Fresh-check and atomically retire one untracked upload directory.
+
+    Directory enumeration happens before this helper.  If the path is still
+    untracked, it is atomically renamed while create/PUT/cancel are excluded;
+    potentially slow recursive removal then happens after releasing all locks.
+    """
+    root = settings.uploads_dir.resolve()
+    try:
+        if child.parent.resolve() != root:
+            return False
+    except OSError:
+        return False
+    if stale_temp_candidates is None:
+        stale_temp_candidates = tuple(
+            tmp for tmp in child.glob("part-*.tmp")
+            if _is_stale_temp_candidate(tmp, stale_before)
+        ) if child.is_dir() and not child.is_symlink() else ()
+
+    retired: Path | None = None
+    with library_lifecycle_lease():
+        with _session_create_lock:
+            with _leased_inbound_upload_gate_sync(child.name):
+                with _leased_upload_lock(child.name):
+                    with SessionLocal() as verification_db:
+                        still_tracked = (
+                            _fresh_upload_session(verification_db, child.name)
+                            is not None
+                        )
+                    if not still_tracked:
+                        if not child.is_symlink() and not child.is_dir():
+                            return False
+                        retired = root / f".cleanup-{uuid.uuid4().hex}"
+                        try:
+                            os.replace(child, retired)
+                        except OSError:
+                            return False
+                    else:
+                        # A normally completed PUT removes its unique temp file
+                        # in a finally block. The gate proves no current PUT
+                        # owns this path; the snapshot age avoids fresh files.
+                        try:
+                            safe_child = session_dir(child.name)
+                        except ValueError:
+                            return False
+                        if child.is_symlink() or safe_child != child.resolve():
+                            return False
+                        for tmp in stale_temp_candidates:
+                            if tmp.parent != child or not tmp.name.startswith("part-"):
+                                continue
+                            try:
+                                if tmp.stat().st_mtime <= stale_before:
+                                    tmp.unlink(missing_ok=True)
+                            except OSError:
+                                pass
+    if retired is not None:
+        if retired.is_symlink():
+            try:
+                retired.unlink(missing_ok=True)
             except OSError:
                 pass
+        else:
+            shutil.rmtree(retired, ignore_errors=True)
+        return True
     return False
 
 
-@serialized_library_lifecycle
-@_serialized(_session_create_lock)
+def _is_stale_temp_candidate(path: Path, stale_before: float) -> bool:
+    try:
+        return path.stat().st_mtime <= stale_before
+    except OSError:
+        return False
+
+
 def cleanup_expired_uploads() -> int:
-    """Delete expired tracking/temp data and old orphan upload directories."""
+    """Delete expired/corrupt data without long process-global lock holds."""
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
-    removed = 0
-    with SessionLocal() as db:
-        expired = db.execute(
-            select(UploadSession).where(UploadSession.expires_at <= _now())
-        ).scalars().all()
-        for upload in expired:
-            upload_id = upload.upload_id
-            if upload.status in ("verifying", "finalizing"):
-                try:
-                    if upload.status == "verifying":
-                        recover_verifying_session(db, upload)
-                    else:
-                        recover_finalizing_session(db, upload)
-                    db.expire_all()
-                    refreshed = _fresh_upload_session(db, upload_id)
-                    if refreshed is not None and refreshed.expires_at > _now():
-                        continue
-                    upload = refreshed or upload
-                except OSError:
-                    db.rollback()
-                    continue
-            cancel_upload_session_internal(db, upload)
-            removed += 1
-
-        sessions = db.execute(select(UploadSession)).scalars().all()
-        known = {upload.upload_id for upload in sessions}
-
-        # Drop orphan/structurally invalid metadata.  Hashing every live video
-        # hourly would be prohibitively expensive; full chunk hashes are still
-        # rechecked synchronously before finalization.
-        parts = db.execute(select(UploadPart)).scalars().all()
-        by_upload: dict[str, list[UploadPart]] = {}
-        for part in parts:
-            if part.upload_id not in known:
-                db.delete(part)
-            else:
-                by_upload.setdefault(part.upload_id, []).append(part)
-        for upload in sessions:
-            if upload.status != "active":
-                continue
-            path = session_file(upload.upload_id)
-            file_size = path.stat().st_size if path.is_file() else 0
-            for part in by_upload.get(upload.upload_id, []):
-                expected_offset = part.part_number * upload.chunk_size
-                expected_size = (
-                    min(upload.chunk_size, upload.size - expected_offset)
-                    if 0 <= part.part_number < upload.total_parts
-                    else -1
-                )
-                if (
-                    part.offset != expected_offset
-                    or part.size != expected_size
-                    or part.offset + part.size > file_size
-                    or not _SHA256_RE.fullmatch(part.sha256)
-                ):
-                    db.delete(part)
-        db.commit()
     stale_before = time.time() - max(60, settings.video_cleanup_interval_seconds)
-    for child in settings.uploads_dir.iterdir():
-        # ``known`` is only a snapshot.  Serialize with PUT/cancel, then query
-        # again before destructive filesystem work.  The outer create lock
-        # also spans session commit + mkdir, closing the new-session window.
-        _cleanup_upload_directory(child, stale_before)
+    directory_candidates = _snapshot_upload_directories(stale_before)
+    (
+        expired_ids,
+        invalid_session_ids,
+        orphan_part_ids,
+        invalid_parts,
+    ) = _cleanup_candidate_snapshot()
+
+    removed = sum(_cleanup_expired_candidate(upload_id) for upload_id in expired_ids)
+    removed += sum(
+        _cleanup_invalid_session_candidate(upload_id)
+        for upload_id in invalid_session_ids
+    )
+    for upload_id in orphan_part_ids:
+        _cleanup_orphan_parts_candidate(upload_id)
+    for upload_id, part_number in invalid_parts:
+        _cleanup_invalid_part_candidate(upload_id, part_number)
+    for child, stale_temps in directory_candidates:
+        _cleanup_upload_directory(child, stale_before, stale_temps)
     return removed
 
 

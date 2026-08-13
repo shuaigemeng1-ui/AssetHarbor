@@ -20,4 +20,3 @@ class PublicConfig(BaseModel):
     video_chunk_concurrency: int
     user_storage_quota_bytes: int
     team_storage_quota_bytes: int
-    default_visibility: str

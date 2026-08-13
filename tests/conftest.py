@@ -27,7 +27,6 @@ os.environ["OSS_SHORT_CODE_LENGTH"] = "8"
 os.environ["OSS_ADMIN_PASSWORD"] = "admin-pass"
 os.environ["OSS_ALLOW_REGISTRATION"] = "open"
 os.environ["OSS_JWT_SECRET"] = "test-secret-0123456789abcdef0123456789abcdef"
-os.environ["OSS_DEFAULT_VISIBILITY"] = "public"
 os.environ["OSS_SIGNED_URL_TTL_SECONDS"] = "86400"
 # Rate limits defaulted very high so unrelated tests never trip them;
 # dedicated tests monkeypatch individual limits down.
@@ -196,15 +195,19 @@ def _fresh_data_dir():
 @pytest.fixture(autouse=True)
 def _reset_rate_limit_windows():
     """Keep fixed-window limiter state from leaking between tests."""
-    from app.services.ratelimit import _LOCK, _WINDOWS
+    from app.services.ratelimit import _LOCK, _LONG_WINDOWS, _NEXT_PRUNE_AT, _WINDOWS
 
     with _LOCK:
         _WINDOWS.clear()
+        _LONG_WINDOWS.clear()
+        _NEXT_PRUNE_AT.update(short=0.0, long=0.0)
     try:
         yield
     finally:
         with _LOCK:
             _WINDOWS.clear()
+            _LONG_WINDOWS.clear()
+            _NEXT_PRUNE_AT.update(short=0.0, long=0.0)
 
 
 @pytest.fixture()

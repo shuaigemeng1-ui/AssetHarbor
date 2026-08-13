@@ -29,9 +29,11 @@ from .api.routes import admin, auth, gallery, images, keys, library, teams, uplo
 from .core.config import settings
 from .core.database import SessionLocal, init_db
 from .core.request_logging import RequestLogMiddleware
+from .core.security_headers import SecurityHeadersMiddleware
 from .core.security import ensure_admin, validate_bootstrap_state
 from .schemas import HealthResponse
 from .services.library import cleanup_orphan_media_library
+from .services.traffic import shutdown_traffic_recorder
 from .services.videos import cleanup_expired_uploads, ensure_free_space, recover_finalizing_uploads
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -77,6 +79,7 @@ async def lifespan(_: FastAPI):
     finally:
         stop.set()
         await cleanup_task
+        await asyncio.to_thread(shutdown_traffic_recorder)
 
 
 app = FastAPI(
@@ -92,6 +95,7 @@ app = FastAPI(
     redoc_url=None,
 )
 app.add_middleware(RequestLogMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(auth.router)
 app.include_router(upload.router)
@@ -103,6 +107,35 @@ app.include_router(admin.router)
 app.include_router(keys.router)
 app.include_router(videos.router)
 app.include_router(library.router)
+
+# FastAPI correctly exposes the JWT/API-Key OR schemes from dependencies, but
+# optional security dependencies still omit the anonymous alternative. These
+# four public operations explicitly allow `{}` while retaining authenticated
+# variants for private owner/team access in generated clients.
+_ANONYMOUS_MEDIA_OPERATIONS = frozenset(
+    {
+        ("/i/{code}", "get"),
+        ("/v/{code}", "get"),
+        ("/api/media/{code}", "get"),
+        ("/api/media/{code}/link", "get"),
+    }
+)
+_default_openapi = app.openapi
+
+
+def _openapi_with_optional_media_auth():
+    schema = _default_openapi()
+    for path, method in _ANONYMOUS_MEDIA_OPERATIONS:
+        operation = schema.get("paths", {}).get(path, {}).get(method)
+        if operation is None:
+            continue
+        declared = operation.setdefault("security", [])
+        if {} not in declared:
+            declared.insert(0, {})
+    return schema
+
+
+app.openapi = _openapi_with_optional_media_auth
 
 if STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

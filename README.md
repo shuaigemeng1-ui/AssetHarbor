@@ -80,7 +80,7 @@ and its code together.
 
 > Compose prints "Published ports are discarded when using host network mode" — that's expected in host mode.
 
-Images, videos, unfinished parts, and SQLite persist under `./data`. Schema upgrades are idempotent, but back up this directory before upgrading.
+Images, videos, unfinished parts, and SQLite persist under `./data`. Schema upgrades are idempotent, but back up this directory before upgrading. The first upgrade to this security release invalidates existing JWT sessions because account-generation claims are now mandatory; users must sign in again, while API keys remain valid.
 
 ### One-liner upload
 
@@ -123,18 +123,24 @@ curl -X POST http://<server-ip>:8080/api/upload \
 | `REGISTRATION_RATE_LIMIT_PER_MINUTE` / `REGISTRATION_RATE_LIMIT_PER_USERNAME` | `10` / `3` | Registration attempts per IP/username per minute (`0` disables; max `1000000`) |
 | `IMAGES_RATE_LIMIT_PER_MINUTE` | `240` | Public media requests per IP per minute (`0` disables; max `1000000`) |
 | `UPLOAD_RATE_LIMIT_PER_MINUTE` | `60` | Upload requests per user per minute (`0` disables; max `1000000`) |
-| `JWT_SECRET` | *(empty)* | JWT signing secret; empty = ephemeral (all sessions reset on restart). Use `openssl rand -hex 32` |
-| `DEFAULT_VISIBILITY` | `private` | Default visibility for new uploads: `private` (only you/team/admins + signed links) or `public` (anyone with the link) |
+| `VIDEO_PART_RATE_LIMIT_PER_MINUTE` | `1000` | Video chunk PUT requests per account per minute (`0` disables; max `1000000`); the default leaves headroom for a 2 GiB/8 MiB upload plus retries |
+| `API_KEY_MUTATION_RATE_LIMIT_PER_DAY` | `100` | API-key create/rotate/revoke operations per account per in-process fixed 24-hour window (`1..100000`); restarting the process resets this abuse guard |
+| `MAX_API_KEYS_PER_USER` | `20` | Maximum active API keys owned by one user (`1..1000`) |
+| `TRAFFIC_RETENTION_DAYS` | `365` | Retain UTC daily API traffic aggregates for `1..3650` days |
+| `JWT_SECRET` | *(empty)* | JWT signing secret; empty = ephemeral (all sessions reset on restart). A configured value must contain at least 32 UTF-8 bytes; use `openssl rand -hex 32` |
 | `SIGNED_URL_TTL_SECONDS` | `86400` | Private-media signed-link TTL in seconds (`60..604800`) |
 
 Numeric settings are validated during configuration import. Invalid values
 raise a Pydantic `ValidationError` before the application accepts traffic.
+Omitting `visibility` is a fixed API contract: image uploads and video-upload
+initialization are always `public` unless the request explicitly sends `private`.
+There is no deployment setting that changes this behavior.
 
 ## 🔌 API Overview
 
-Interactive documentation: a readable bilingual (中文/English) page at `GET /docs` — endpoint tables, curl examples with one-click copy, and a language toggle.
+Interactive documentation: a readable bilingual (中文/English) page at `GET /docs` — endpoint cards with copy-ready Python 3 (default) and cURL examples.
 
-All endpoints except register / login / public image fetch / health require `Authorization: Bearer <token>` (JWT or API key). API keys are also accepted via the `X-API-Key` header.
+Media data-plane endpoints accept `Authorization: Bearer <JWT or API key>`; API keys are also accepted via `X-API-Key`. Password changes, API-key governance, team/group management, user management and all `/api/admin/**` endpoints are JWT-only. Public media reads and public metadata/link resolution do not require authentication; private-media authorization failures return 404.
 
 ### Auth
 
@@ -150,9 +156,9 @@ All endpoints except register / login / public image fetch / health require `Aut
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/api/upload` | multipart `file`, optional `name`, `visibility`, `team_id` (defaults to private) |
+| POST | `/api/upload` | multipart `file`, optional `name`, `visibility`, `team_id` (`visibility` defaults to `public`) |
 | GET | `/i/{code}` | fetch image (public: anyone; private: owner/team/admin/signed link) |
-| GET | `/api/images?limit&offset&q` | list my images (admins see all), search by name/filename/code |
+| GET | `/api/images?limit&offset&q` | list my images (administrator JWT sees all; administrator API keys remain owner/team scoped), search by name/filename/code |
 | PATCH | `/api/images/{code}` | update `name` / `visibility` (owner/admin/team-manager) |
 | DELETE | `/api/images/{code}` | delete (owner/admin/team-manager) |
 | GET | `/api/images/{code}/link?ttl` | expiring signed link (owner/admin/team-member) |
@@ -163,13 +169,13 @@ Compute SHA-256 for up to 1 MiB at the start, middle, and end, then set `fingerp
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/api/video-uploads` | initialize `{filename,size,name?,visibility?,team_id?,fingerprint}`; returns `upload_id`, `chunk_size`, `total_parts`, `uploaded_parts`, `expires_at` |
+| POST | `/api/video-uploads` | initialize `{filename,size,name?,visibility?,team_id?,fingerprint}` (`visibility` defaults to `public`); returns `upload_id`, `chunk_size`, `total_parts`, `uploaded_parts`, `expires_at` |
 | GET | `/api/video-uploads` | discover the current user's resumable sessions after refresh or IndexedDB loss; also returns `max_active` and `part_concurrency` |
 | GET | `/api/video-uploads/{upload_id}` | authoritative status and uploaded part numbers |
 | PUT | `/api/video-uploads/{upload_id}/parts/{part_number}` | raw bytes with `Content-Range` and `X-Chunk-SHA256`; identical replay is idempotent |
 | POST | `/api/video-uploads/{upload_id}/complete` | verify all parts, fingerprint and real container type, then atomically publish |
 | DELETE | `/api/video-uploads/{upload_id}` | cancel an unfinished session and remove its temporary data |
-| GET | `/api/videos?limit&offset&q` | list personal videos (admins see all) |
+| GET | `/api/videos?limit&offset&q` | list personal videos (administrator JWT sees all; administrator API keys remain owner/team scoped) |
 | PATCH | `/api/videos/{code}` | update `name` / `visibility` |
 | DELETE | `/api/videos/{code}` | delete the stored video |
 | GET | `/api/videos/{code}/link?ttl` | create a signed link |
@@ -190,17 +196,23 @@ Part numbers are zero-based and may arrive out of order. A successful part refre
 
 ### Unified library and groups
 
+Unified media reads are part of the JWT/API-key data plane. Media-group CRUD and item management are JWT-only control-plane operations.
+
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/library/stats` | current personal-library overview; global overview for admins |
+| GET | `/api/library/stats` | current personal-library overview; global overview only with an administrator JWT |
 | GET | `/api/media?kind&team_id&group_id&q&limit&offset` | unified, searchable image/video listing |
-| GET | `/api/media-groups?team_id&q&limit&offset` | list personal or team groups |
+| GET | `/api/media/{code}` | unified metadata; anonymous public responses hide owner/team/original-filename fields, while private media require an authorized JWT/API key and otherwise return 404 |
+| GET | `/api/media/{code}/link?ttl` | public media resolve anonymously to the canonical URL; authorized private media return an expiring signed URL |
+| GET | `/api/media-groups?team_id&q&limit&offset` | JWT-only: list personal or team groups |
 | POST | `/api/media-groups` | create `{name,description?,color?,sort_order?,team_id?,codes?}`; `codes` atomically creates and adds media |
 | GET / PATCH / DELETE | `/api/media-groups/{id}` | view, update, or delete a group without deleting its media |
 | GET / POST | `/api/media-groups/{id}/items` | paginate group media or add `{codes:[...]}` |
 | DELETE | `/api/media-groups/{id}/items/{code}` | remove media from a group without deleting the asset |
 
 ### API keys
+
+Key listing, creation, rotation and revocation are JWT-only control-plane operations. An API key is limited to the media data plane and cannot manage passwords, keys, teams, groups, users or administrators. Each user may own at most `MAX_API_KEYS_PER_USER` active keys (default `20`).
 
 | Method | Path | Description |
 |---|---|---|
@@ -219,6 +231,8 @@ curl -X DELETE "http://<server-ip>:8080/api/images/<code>" -H "Authorization: Be
 
 ### Teams
 
+Team creation, listing, details, deletion and membership changes are JWT-only. Team image/video data endpoints accept either JWT or API-key authentication and still enforce membership.
+
 | Method | Path | Description |
 |---|---|---|
 | POST | `/api/teams` | create team (creator becomes owner) |
@@ -235,7 +249,8 @@ curl -X DELETE "http://<server-ip>:8080/api/images/<code>" -H "Authorization: Be
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/admin/stats` | `{users,images,videos,media_total,pending_upload_bytes,teams,storage_bytes}` |
+| GET | `/api/admin/stats` | media/storage totals plus aggregate request count and request/response traffic bytes |
+| GET | `/api/admin/traffic-stats?days=7` | JWT-only 1–365 day traffic summary, daily trend, routes, top 200 API keys, anonymous usage and per-member image/video/pending storage; `telemetry_complete` only reports detected queue loss in the current process |
 | GET | `/api/admin/teams` | all teams with member counts |
 | GET | `/api/users` | all users |
 | POST | `/api/admin/users` | create `{username,password,role?}` while self-registration is closed |
@@ -287,7 +302,8 @@ starts the application.
 - Persist all of `/data`, including `/data/uploads`. The entrypoint initializes ownership once and then avoids recursively changing a large volume on every restart.
 - For Nginx, set `client_max_body_size` above `max(MAX_UPLOAD_SIZE_MB, VIDEO_CHUNK_SIZE_MB)` with room for multipart framing (with the defaults, use at least `12m`). Do not strip `Range`, `If-Range`, `Content-Range`, or `Accept-Ranges`; apply the equivalent body limit in Caddy.
 - Set `FORWARDED_ALLOW_IPS` to only the Nginx/Caddy source IP or Docker network CIDR. Otherwise every proxied visitor may share the proxy's rate-limit identity; trusting unverified sources lets clients spoof their address.
-- Starlette is pinned to `1.0.1`, which includes the earlier FileResponse Range DoS fix and the `1.0.1` malformed-Host fix. Keep dependencies updated when exposing media publicly.
+- Signed URLs are replayable bearer credentials until expiry. Configure the reverse proxy access log to omit or redact query strings so `expires`/`sig` never reach Nginx/Caddy logs.
+- Starlette is pinned to `1.3.1`, which includes the upstream multipart parser and Range hardening fixes. Keep this security baseline or a newer reviewed release when exposing media publicly.
 - `/healthz` is a lightweight liveness check. `/readyz` acquires a real SQLite writer lock, performs a zero-row update and rolls it back, then performs a durable write/remove probe in `/data` and checks the free-space reserve. Probes are single-flight and cache success or failure for about three seconds to prevent health-check bursts from multiplying writes. Point traffic readiness checks at `/readyz`.
 - Every response includes `X-Request-ID`. A caller-supplied ID is reused only when it matches the safe 1–64 character format; otherwise the app generates one. Request logs contain that safe request ID plus method, decoded path, status and duration—never other request headers or query parameters such as signed-link `sig`/`expires`.
 - Uvicorn's default access log is disabled to avoid duplicate or query-bearing records. Compose uses Docker's bounded `local` log driver (`10m`, 3 files); adjust these limits to match the host's retention policy.
@@ -350,7 +366,7 @@ oss/
 - **SVG = potential stored XSS**: always served as an attachment, never rendered inline
 - **Auth**: bcrypt password hashes; HS256 JWT; set `JWT_SECRET` explicitly
 - **User isolation**: list endpoints filter by owner; private images return 404 to others (existence is not disclosed)
-- **Private-image access**: owner/team/admin login, or a **time-limited signed link** (HMAC-SHA256 over `code:expires`, bound to one image, anti-forgery/anti-replay, expires) — guessing codes or replaying old links fails
+- **Private-image access**: owner/team/admin login, or a **time-limited signed link** (HMAC-SHA256 over `code:expires`, bound to one image, tamper-resistant and expiring). A valid link is a bearer credential that can be replayed until expiry; protect it like a temporary password and prefer a short TTL.
 - **Rate limiting** (in-process fixed window; swap for a shared store when scaling out):
   - Login: 20/min per IP + 5/min per account (anti brute-force)
   - `GET /i/{code}`: 240/min per IP (anti enumeration)

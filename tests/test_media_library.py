@@ -36,6 +36,22 @@ def _create_team(client, token):
     return response.json()["id"]
 
 
+def test_stale_media_group_url_never_aliases_new_group(client):
+    _, token = new_user(client)
+    first = _create_group(client, token, name="aba-first-group")
+    assert client.delete(
+        f"/api/media-groups/{first['id']}", headers=auth(token)
+    ).status_code == 204
+    second = _create_group(client, token, name="aba-second-group")
+    assert second["id"] > first["id"]
+    assert client.delete(
+        f"/api/media-groups/{first['id']}", headers=auth(token)
+    ).status_code == 404
+    assert client.get(
+        f"/api/media-groups/{second['id']}", headers=auth(token)
+    ).status_code == 200
+
+
 def test_personal_group_crud_mixed_media_and_unified_listing(client):
     _, token = new_user(client)
     image = upload(client, token, data={"name": "brand-mark"}).json()

@@ -24,6 +24,8 @@ let roundRobinIndex = 0
 let sessionGeneration = 0
 const activeJobs = new Map()
 const retryTimers = new Map()
+let partRateLimitGate = null
+let nextPartRateLimitGateId = 1
 const fingerprintJobs = new Map()
 const admissionBatches = new Map()
 let openAdmissionBatch = null
@@ -70,7 +72,7 @@ function makeTask(values) {
     filename: '',
     size: 0,
     name: '',
-    visibility: 'private',
+    visibility: 'public',
     teamId: null,
     fingerprint: '',
     serverStatus: '',
@@ -85,6 +87,7 @@ function makeTask(values) {
     chunkProgress: {},
     partRetries: {},
     retryAt: {},
+    rateLimitGateId: null,
     initController: null,
     initializationPromise: null,
     speed: 0,
@@ -229,6 +232,131 @@ function taskJobKey(task, partNumber) {
   return `${task.localId}:${partNumber}`
 }
 
+function clearPartRateLimitGate() {
+  if (!partRateLimitGate) return
+  const gate = partRateLimitGate
+  window.clearTimeout(gate.timer)
+  for (const controller of gate.controllers.values()) controller.abort()
+  gate.controllers.clear()
+  for (const task of videoUploadState.tasks) {
+    if (task.rateLimitGateId === gate.id) task.rateLimitGateId = null
+  }
+  partRateLimitGate = null
+}
+
+function abortTaskRateLimitRecovery(task) {
+  if (!partRateLimitGate) return
+  partRateLimitGate.controllers.get(task.localId)?.abort()
+  partRateLimitGate.controllers.delete(task.localId)
+  task.rateLimitGateId = null
+}
+
+function partRateLimitDelay(error) {
+  const serverDelay = Number(error?.retryAfterMs)
+  return Number.isFinite(serverDelay) && serverDelay > 0
+    ? Math.min(5 * 60 * 1000, Math.max(1000, Math.ceil(serverDelay)))
+    : 60 * 1000
+}
+
+function markTaskWaitingForPartRateLimit(task, gate) {
+  const until = gate.until
+  const seconds = Math.max(1, Math.ceil((until - Date.now()) / 1000))
+  task.rateLimitGateId = gate.id
+  task.status = 'retrying'
+  task.error = `请求过快，服务端要求等待 ${seconds} 秒，随后将自动核对进度并继续上传`
+}
+
+function isTaskWaitingForRateLimit(task, gate) {
+  return partRateLimitGate === gate
+    && gate.generation === sessionGeneration
+    && task.rateLimitGateId === gate.id
+    && task.status === 'retrying'
+    && videoUploadState.online
+    && isCurrentTask(task, gate.generation)
+}
+
+function schedulePartRateLimitRecovery(error, task, generation) {
+  if (!isCurrentTask(task, generation)) return
+  const until = Date.now() + partRateLimitDelay(error)
+  const previousGate = partRateLimitGate?.generation === generation
+    ? partRateLimitGate
+    : null
+  const currentUntil = previousGate?.until || 0
+  const waitingTasks = new Set(videoUploadState.tasks.filter(candidate => (
+    isCurrentTask(candidate, generation)
+    && candidate.file
+    && candidate.uploadId
+    && (
+      ['uploading', 'retrying'].includes(candidate.status)
+      || candidate.rateLimitGateId === previousGate?.id
+    )
+  )))
+  clearPartRateLimitGate()
+  const gate = {
+    id: nextPartRateLimitGateId++,
+    generation,
+    until: Math.max(currentUntil, until),
+    timer: null,
+    controllers: new Map(),
+  }
+  partRateLimitGate = gate
+  for (const candidate of waitingTasks) {
+    markTaskWaitingForPartRateLimit(candidate, gate)
+    saveTask(candidate)
+  }
+  gate.timer = window.setTimeout(() => recoverAfterPartRateLimit(gate), Math.max(0, gate.until - Date.now()))
+}
+
+async function recoverAfterPartRateLimit(gate) {
+  if (partRateLimitGate !== gate || gate.generation !== sessionGeneration) return
+  const tasks = videoUploadState.tasks.filter(task => (
+    isCurrentTask(task, gate.generation)
+    && ['uploading', 'retrying'].includes(task.status)
+    && task.file
+    && task.uploadId
+  ))
+  for (const task of tasks) {
+    if (partRateLimitGate !== gate || gate.generation !== sessionGeneration) return
+    if (!isTaskWaitingForRateLimit(task, gate)) continue
+    const controller = new AbortController()
+    gate.controllers.set(task.localId, controller)
+    try {
+      const complete = await reconcileTask(task, {
+        signal: controller.signal,
+        shouldApply: () => isTaskWaitingForRateLimit(task, gate),
+      })
+      if (partRateLimitGate !== gate || gate.generation !== sessionGeneration) return
+      if (complete === null || !isTaskWaitingForRateLimit(task, gate)) continue
+      task.rateLimitGateId = null
+      if (!complete) {
+        task.status = 'uploading'
+        task.error = ''
+        resetMetrics(task)
+        saveTask(task)
+      }
+    } catch (error) {
+      if (partRateLimitGate !== gate || gate.generation !== sessionGeneration) return
+      if (!isTaskWaitingForRateLimit(task, gate)) continue
+      if (error.status === 429) {
+        schedulePartRateLimitRecovery(error, task, gate.generation)
+        return
+      }
+      task.status = 'failed'
+      task.error = error.message
+      abortTaskJobs(task)
+      saveTask(task)
+    } finally {
+      if (gate.controllers.get(task.localId) === controller) gate.controllers.delete(task.localId)
+    }
+  }
+  if (partRateLimitGate !== gate || gate.generation !== sessionGeneration) return
+  for (const task of videoUploadState.tasks) {
+    if (task.rateLimitGateId === gate.id) task.rateLimitGateId = null
+  }
+  partRateLimitGate = null
+  pumpChunks()
+}
+
 function abortTaskJobs(task) {
   for (const [key, job] of activeJobs) {
     if (job.task === task) {
@@ -254,6 +382,7 @@ function installNetworkListeners() {
       if (['uploading', 'retrying'].includes(task.status)) {
         task.status = 'network_paused'
         task.error = ''
+        abortTaskRateLimitRecovery(task)
         abortTaskJobs(task)
         saveTask(task)
       }
@@ -310,7 +439,7 @@ export async function initializeVideoUploads(userId) {
           filename: session.filename,
           size: Number(session.size || 0),
           name: session.name || '',
-          visibility: session.visibility || 'private',
+          visibility: session.visibility || 'public',
           teamId: session.team_id,
           fingerprint: session.fingerprint || '',
           status: 'waiting_file',
@@ -337,6 +466,7 @@ export async function initializeVideoUploads(userId) {
 
 export function resetVideoUploads() {
   sessionGeneration++
+  clearPartRateLimitGate()
   for (const task of videoUploadState.tasks) {
     task.status = 'cancelled'
     // Do not abort an initialization POST here. It may already be executing on
@@ -352,6 +482,7 @@ export function resetVideoUploads() {
   ownerId = null
   initializedOwnerId = null
   initializingCount = 0
+  roundRobinIndex = 0
   videoUploadState.restored = false
   videoUploadState.maxActiveSessions = 3
   videoUploadState.maxConcurrentParts = MAX_CONCURRENT_PARTS
@@ -470,7 +601,7 @@ function currentAdmissionBatch() {
 
 export function addVideoFiles(files, {
   name = '',
-  visibility = 'private',
+  visibility = 'public',
   teamId = null,
   maxSize = Infinity,
 } = {}) {
@@ -745,7 +876,7 @@ function nextChunkCandidate() {
 }
 
 function pumpChunks() {
-  if (!videoUploadState.online) return
+  if (!videoUploadState.online || partRateLimitGate) return
   while (activeJobs.size < videoUploadState.maxConcurrentParts) {
     const candidate = nextChunkCandidate()
     if (!candidate) break
@@ -783,12 +914,16 @@ async function startChunk(task, partNumber) {
     }
     delete task.partRetries[partNumber]
     delete task.retryAt[partNumber]
-    task.error = ''
-    task.status = 'uploading'
+    if (partRateLimitGate?.generation === generation) {
+      markTaskWaitingForPartRateLimit(task, partRateLimitGate)
+    } else {
+      task.error = ''
+      task.status = 'uploading'
+    }
     saveTask(task)
   } catch (error) {
     if (!isCurrentTask(task, generation)) return
-    if (error.aborted || ['manual_paused', 'network_paused', 'cancelled'].includes(task.status)) return
+    if (error.aborted || ['manual_paused', 'network_paused', 'cancelled', 'cancelling'].includes(task.status)) return
     if (!navigator.onLine || error.status === 0) {
       task.status = 'network_paused'
       task.error = ''
@@ -821,6 +956,10 @@ async function startChunk(task, partNumber) {
       task.error = retryCause.message
       abortTaskJobs(task)
       saveTask(task)
+      return
+    }
+    if (retryCause.status === 429) {
+      schedulePartRateLimitRecovery(retryCause, task, generation)
       return
     }
     const attempts = (task.partRetries[partNumber] || 0) + 1
@@ -880,10 +1019,12 @@ async function markCompleted(task, result) {
   maybeInitializeTasks()
 }
 
-async function reconcileTask(task) {
+async function reconcileTask(task, { signal, shouldApply } = {}) {
   if (!task.uploadId) return false
+  const canApply = () => !shouldApply || shouldApply()
   try {
-    const session = await getVideoUpload(task.uploadId)
+    const session = await getVideoUpload(task.uploadId, { signal })
+    if (!canApply()) return null
     applySession(task, session)
     if (session.status === 'completed' && session.video) {
       await markCompleted(task, session.video)
@@ -893,7 +1034,9 @@ async function reconcileTask(task) {
     return false
   } catch (error) {
     if (error.status === 404 || error.status === 410) {
+      if (!canApply()) return null
       await removePersistedUpload(persistenceKey(task))
+      if (!canApply()) return null
       task.uploadId = null
       task.uploadedParts = []
       task.chunkSize = 0
@@ -909,6 +1052,7 @@ export function pauseVideoTask(task) {
   if (!['uploading', 'retrying'].includes(task.status)) return
   task.status = 'manual_paused'
   task.error = ''
+  abortTaskRateLimitRecovery(task)
   abortTaskJobs(task)
   saveTask(task)
   pumpChunks()
@@ -974,7 +1118,14 @@ export async function retryVideoTask(task) {
 
 export async function cancelVideoTask(task) {
   task.status = 'cancelling'
+  abortTaskRateLimitRecovery(task)
   abortTaskJobs(task)
+  if (partRateLimitGate && !videoUploadState.tasks.some(candidate => (
+    candidate !== task
+    && ['uploading', 'retrying'].includes(candidate.status)
+    && candidate.file
+    && candidate.uploadId
+  ))) clearPartRateLimitGate()
   try {
     if (task.initializationPromise) await task.initializationPromise
     if (task.uploadId) {

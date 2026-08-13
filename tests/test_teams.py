@@ -50,6 +50,42 @@ def test_team_lifecycle(client):
     assert client.get(f"/api/teams/{tid}", headers=h).status_code == 404
 
 
+def test_stale_team_and_membership_urls_never_alias_replacements(client):
+    _, owner_token = new_user(client)
+    first_name, _ = new_user(client)
+    second_name, _ = new_user(client)
+    headers = auth(owner_token)
+
+    first_team = client.post(
+        "/api/teams", headers=headers, json={"name": "aba-first-team"}
+    ).json()
+    first_member = client.post(
+        f"/api/teams/{first_team['id']}/members",
+        headers=headers,
+        json={"username": first_name},
+    ).json()
+    assert client.delete(
+        f"/api/teams/{first_team['id']}/members/{first_member['id']}", headers=headers
+    ).status_code == 204
+    second_member = client.post(
+        f"/api/teams/{first_team['id']}/members",
+        headers=headers,
+        json={"username": second_name},
+    ).json()
+    assert second_member["id"] > first_member["id"]
+    assert client.delete(
+        f"/api/teams/{first_team['id']}/members/{first_member['id']}", headers=headers
+    ).status_code == 404
+
+    assert client.delete(f"/api/teams/{first_team['id']}", headers=headers).status_code == 204
+    second_team = client.post(
+        "/api/teams", headers=headers, json={"name": "aba-second-team"}
+    ).json()
+    assert second_team["id"] > first_team["id"]
+    assert client.delete(f"/api/teams/{first_team['id']}", headers=headers).status_code == 404
+    assert client.get(f"/api/teams/{second_team['id']}", headers=headers).status_code == 200
+
+
 def test_team_membership_management(client):
     _, otoken = new_user(client)
     _, token = new_user(client)  # 将被邀请的成员

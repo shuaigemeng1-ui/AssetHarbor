@@ -78,7 +78,7 @@ docker compose up -d
 
 > host 模式下 Compose 会提示 "Published ports are discarded when using host network mode"，属正常现象。
 
-图片、视频、未完成分片和 SQLite 都持久化在 `./data`。数据库升级保持幂等，但升级镜像前仍应备份该目录。
+图片、视频、未完成分片和 SQLite 都持久化在 `./data`。数据库升级保持幂等，但升级镜像前仍应备份该目录。首次升级到此安全版本时，因 JWT 新增强制账号世代声明，已有登录态会统一失效并需要重新登录；API Key 不受影响。
 
 ### 一行命令上传
 
@@ -121,18 +121,24 @@ curl -X POST http://服务器IP:8080/api/upload \
 | `REGISTRATION_RATE_LIMIT_PER_MINUTE` / `REGISTRATION_RATE_LIMIT_PER_USERNAME` | `10` / `3` | 每 IP/用户名每分钟注册次数（`0` 禁用，上限 `1000000`） |
 | `IMAGES_RATE_LIMIT_PER_MINUTE` | `240` | 每 IP 每分钟公开媒体请求数（`0` 禁用，上限 `1000000`） |
 | `UPLOAD_RATE_LIMIT_PER_MINUTE` | `60` | 每用户每分钟上传请求数（`0` 禁用，上限 `1000000`） |
-| `JWT_SECRET` | *(空)* | JWT 签名密钥；留空则每次重启登录态失效（建议 `openssl rand -hex 32` 生成） |
-| `DEFAULT_VISIBILITY` | `private` | 新上传图片的默认可见性：`private`（仅自己/团队/管理员 + 签名链接）或 `public`（任何人可访问） |
+| `VIDEO_PART_RATE_LIMIT_PER_MINUTE` | `1000` | 每账号每分钟视频分片 PUT 请求数（`0` 禁用，上限 `1000000`）；默认值可容纳 2 GiB/8 MiB 的全部分片及重试余量 |
+| `API_KEY_MUTATION_RATE_LIMIT_PER_DAY` | `100` | 每账号在当前进程固定 24 小时窗口内创建、轮换、撤销 API Key 的次数（`1..100000`）；进程重启会重置该防滥用窗口 |
+| `MAX_API_KEYS_PER_USER` | `20` | 每位用户可持有的有效 API Key 上限（`1..1000`） |
+| `TRAFFIC_RETENTION_DAYS` | `365` | UTC 每日 API 流量聚合数据保留天数（`1..3650`） |
+| `JWT_SECRET` | *(空)* | JWT 签名密钥；留空则每次重启登录态失效；非空值必须至少 32 个 UTF-8 字节（建议 `openssl rand -hex 32` 生成） |
 | `SIGNED_URL_TTL_SECONDS` | `86400` | 私密媒体签名链接有效秒数（`60..604800`） |
 
 所有数值配置都会在导入配置时校验；非法值会在接收流量前明确抛出
 Pydantic `ValidationError`。
+省略 `visibility` 是固定 API 契约：图片上传和视频会话初始化始终按
+`public` 处理，需要受限访问必须在请求中显式传 `private`；不存在可改变
+这一行为的部署配置。
 
 ## 🔌 API 概览
 
-交互式文档：`GET /docs` —— 自建**双语（中文/English）可读文档页**，含端点表、可一键复制的 curl 示例与语言切换。
+交互式文档：`GET /docs` —— 自建**双语（中文/English）可读文档页**，常用端点默认展示可复制的 Python 3 示例，并可切换 cURL。
 
-除 `注册/登录/获取公开图片/健康检查` 外，所有接口都需要携带 `Authorization: Bearer <token>`（JWT 或 API Key）。API Key 也支持 `X-API-Key` 请求头。
+媒体数据面支持 `Authorization: Bearer <JWT 或 API Key>`，API Key 也可放在 `X-API-Key`。修改密码、API Key 治理、团队/分组管理、用户管理及全部 `/api/admin/**` 接口仅接受 JWT。公开媒体读取、公开元数据和公开链接解析无需鉴权；私密媒体越权统一返回 404。
 
 ### 认证
 
@@ -148,9 +154,9 @@ Pydantic `ValidationError`。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/upload` | multipart `file`，可选 `name`、`visibility`、`team_id`（默认私密） |
+| POST | `/api/upload` | multipart `file`，可选 `name`、`visibility`、`team_id`（未传 `visibility` 默认 `public`） |
 | GET | `/i/{code}` | 获取图片（公开：任何人；私密：属主/团队成员/管理员/签名链接） |
-| GET | `/api/images?limit&offset&q` | 列出我的图片（管理员看全部），按名称/文件名/短码搜索 |
+| GET | `/api/images?limit&offset&q` | 列出我的图片（仅管理员 JWT 看全部；管理员 API Key 仍按属主/团队隔离），按名称/文件名/短码搜索 |
 | PATCH | `/api/images/{code}` | 修改 `name` / `visibility`（属主/管理员/团队管理员） |
 | DELETE | `/api/images/{code}` | 删除图片（属主/管理员/团队管理员） |
 | GET | `/api/images/{code}/link?ttl` | 生成限时签名链接（属主/团队成员/管理员） |
@@ -161,13 +167,13 @@ Pydantic `ValidationError`。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/video-uploads` | 初始化 `{filename,size,name?,visibility?,team_id?,fingerprint}`；返回 `upload_id`、`chunk_size`、`total_parts`、`uploaded_parts`、`expires_at` |
+| POST | `/api/video-uploads` | 初始化 `{filename,size,name?,visibility?,team_id?,fingerprint}`（未传 `visibility` 默认 `public`）；返回 `upload_id`、`chunk_size`、`total_parts`、`uploaded_parts`、`expires_at` |
 | GET | `/api/video-uploads` | 刷新或 IndexedDB 丢失后找回当前用户的可续传会话，同时返回 `max_active` 与 `part_concurrency` |
 | GET | `/api/video-uploads/{upload_id}` | 查询服务端真实状态和已上传分片序号 |
 | PUT | `/api/video-uploads/{upload_id}/parts/{part_number}` | 原始二进制，请求头必须含 `Content-Range` 与 `X-Chunk-SHA256`；相同内容重复提交幂等成功 |
 | POST | `/api/video-uploads/{upload_id}/complete` | 校验全部分片、快速指纹和真实容器格式后原子发布 |
 | DELETE | `/api/video-uploads/{upload_id}` | 取消未完成会话并清理临时文件 |
-| GET | `/api/videos?limit&offset&q` | 个人视频列表（管理员查看全部） |
+| GET | `/api/videos?limit&offset&q` | 个人视频列表（仅管理员 JWT 查看全部；管理员 API Key 仍按属主/团队隔离） |
 | PATCH | `/api/videos/{code}` | 修改 `name` / `visibility` |
 | DELETE | `/api/videos/{code}` | 删除正式视频 |
 | GET | `/api/videos/{code}/link?ttl` | 生成限时签名链接 |
@@ -178,17 +184,23 @@ Pydantic `ValidationError`。
 
 ### 统一媒体库与分组
 
+统一媒体读取属于 JWT/API Key 数据面；媒体分组 CRUD 与组内条目管理属于仅 JWT 控制面。
+
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/library/stats` | 当前用户个人媒体库概览；管理员返回全局概览 |
+| GET | `/api/library/stats` | 当前用户个人媒体库概览；仅管理员 JWT 返回全局概览 |
 | GET | `/api/media?kind&team_id&group_id&q&limit&offset` | 图片/视频统一分页、搜索与范围筛选 |
-| GET | `/api/media-groups?team_id&q&limit&offset` | 列出个人或团队分组 |
+| GET | `/api/media/{code}` | 统一媒体元数据；匿名访问公开媒体时隐藏属主、团队和原文件名，私密媒体仅限有权 JWT/API Key，越权返回 404 |
+| GET | `/api/media/{code}/link?ttl` | 公开媒体可匿名取得规范直链；私密媒体需有权 JWT/API Key 并返回限时签名链接 |
+| GET | `/api/media-groups?team_id&q&limit&offset` | 仅 JWT：列出个人或团队分组 |
 | POST | `/api/media-groups` | 创建 `{name,description?,color?,sort_order?,team_id?,codes?}`；传 `codes` 时原子创建并加入媒体 |
 | GET / PATCH / DELETE | `/api/media-groups/{id}` | 查看、修改或删除分组；删除分组不会删除媒体 |
 | GET / POST | `/api/media-groups/{id}/items` | 分页读取组内媒体，或用 `{codes:[...]}` 批量加入 |
 | DELETE | `/api/media-groups/{id}/items/{code}` | 从分组移出媒体，不删除资产 |
 
 ### API Key 鉴权（脚本/命令行）
+
+Key 的查看、创建、轮换和撤销属于仅 JWT 控制面。API Key 仅能调用媒体数据面，不能修改密码或管理 Key、团队、分组、用户和管理员；每位用户最多持有 `MAX_API_KEYS_PER_USER` 个有效 Key（默认 `20`）。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -209,6 +221,8 @@ curl -X DELETE "http://服务器IP:8080/api/images/<code>" -H "Authorization: Be
 
 ### 团队
 
+团队创建、列表、详情、解散及成员治理仅接受 JWT；团队图片/视频数据接口支持 JWT 或 API Key，但每次仍校验成员关系。
+
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | POST | `/api/teams` | 创建团队（创建者为 owner） |
@@ -227,7 +241,8 @@ curl -X DELETE "http://服务器IP:8080/api/images/<code>" -H "Authorization: Be
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/admin/stats` | `{users,images,videos,media_total,pending_upload_bytes,teams,storage_bytes}` |
+| GET | `/api/admin/stats` | 媒体/存储总量及累计调用数、请求流量、响应流量 |
+| GET | `/api/admin/traffic-stats?days=7` | 仅 JWT：1–365 天流量汇总、每日趋势、路由、前 200 个 API Key、匿名调用及每成员图片/视频/待完成空间；`telemetry_complete` 仅表示当前进程检测到的队列完整性 |
 | GET | `/api/admin/teams` | 全部团队（含拥有者、成员数） |
 | GET | `/api/users` | 全部用户 |
 | POST | `/api/admin/users` | 在关闭自助注册时创建 `{username,password,role?}` 用户 |
@@ -241,11 +256,11 @@ curl -X DELETE "http://服务器IP:8080/api/images/<code>" -H "Authorization: Be
 GET /i/{code}[?expires=...&sig=...]
 ```
 
-返回图片本体，带 `Cache-Control: public, max-age=31536000, immutable`。
+返回图片本体；公开媒体使用 `Cache-Control: public, max-age=0, must-revalidate`，私密媒体使用 `private, no-store`。
 
 - **公开**图片：任何人可访问
 - **私密**图片：仅属主/团队成员/管理员（带登录令牌）或**持有有效签名链接**者可访问；其他人一律 404（不暴露存在性）
-- 签名链接由 `GET /api/images/{code}/link?ttl=86400` 生成，限时有效、绑定单张图片、防伪造防重放
+- 签名链接由 `GET /api/images/{code}/link?ttl=86400` 生成，限时有效、绑定单张图片且防篡改；有效期内可重复访问，应像临时密码一样保护并尽量使用短 TTL
 - 本接口按 IP 限速（默认 240 次/分钟，防短码枚举）
 
 SVG 类图片一律以附件形式下发（`Content-Disposition: attachment` + `X-Content-Type-Options: nosniff`），浏览器不会内联渲染，防止脚本注入。
@@ -293,7 +308,8 @@ daemon 的 CLI 作业检查空白错误和 Compose 配置。Git Tag 会自动通
 - 持久化整个 `/data`，其中 `/data/uploads` 保存未完成分片。入口脚本只在首次挂载时递归初始化权限，后续启动不会扫描全部媒体文件。
 - Nginx 的 `client_max_body_size` 必须大于 `max(MAX_UPLOAD_SIZE_MB, VIDEO_CHUNK_SIZE_MB)`，并为 multipart 边界留出余量（默认配置建议至少 `12m`）；不要移除 `Range`、`If-Range`、`Content-Range`、`Accept-Ranges`。Caddy 同样需要放宽请求体限制。
 - 将 `FORWARDED_ALLOW_IPS` 仅配置为 Nginx/Caddy 的来源 IP 或 Docker 网段，否则所有反代访客可能共用代理的限流身份；信任未知来源会允许客户端伪造地址。
-- Starlette 精确锁定为 `1.0.1`，包含此前的 FileResponse Range DoS 修复以及 `1.0.1` 的畸形 Host 修复；公网开放媒体时请持续更新依赖。
+- 签名 URL 在到期前是可重放的 bearer 凭据；请让 Nginx/Caddy 访问日志省略或脱敏查询串，避免 `expires`/`sig` 落入代理日志。
+- Starlette 精确锁定为 `1.3.1`，包含上游 multipart 解析器与 Range 安全加固；公网开放媒体时应保持此安全基线或升级到经审查的新版本。
 - `/healthz` 仅做轻量存活检查；`/readyz` 会获取真实 SQLite 写锁、执行零行更新后回滚，再在 `/data` 完成可落盘且会删除的写探测，并检查磁盘保留空间。探测采用单飞机制，成功和失败都会缓存约 3 秒，避免健康检查突发流量放大写锁与 `fsync`；流量就绪探针应使用 `/readyz`。
 - 每个响应都带 `X-Request-ID`。只有符合安全格式（1–64 个字母、数字、点、下划线或连字符）的入站 ID 才会透传，否则自动生成。请求日志包含这个安全请求 ID、方法、解码路径、状态码和耗时，绝不记录其他请求头或签名链接的 `sig`/`expires` 查询参数。
 - Uvicorn 默认 access log 已关闭，避免重复或包含查询串的日志。Compose 使用有界 `local` 日志驱动（每文件 `10m`、保留 3 个）；可按宿主机留存策略调整。
@@ -356,7 +372,7 @@ oss/
 - **SVG = 潜在 XSS**：始终以附件下发，禁止内联渲染
 - **认证**：密码 bcrypt 哈希存储；JWT 签名（HS256）；`JWT_SECRET` 建议显式配置
 - **用户隔离**：列表接口强制按属主过滤；私密图对他人返回 404（不暴露存在性）
-- **私密图访问控制**：只能通过（a）属主/团队成员/管理员登录态，或（b）**限时签名链接**访问。签名 = HMAC-SHA256(code:expires)，绑定单图、防伪造、防重放、到期失效——猜测短码或截获旧链接都无法访问
+- **私密图访问控制**：只能通过（a）属主/团队成员/管理员登录态，或（b）**限时签名链接**访问。签名 = HMAC-SHA256(code:expires)，绑定单图、防篡改、到期失效；但持有者可在有效期内重复访问，因此必须像临时密码一样保护
 - **速率限制**（内存固定窗口，单容器适用；多副本需换共享存储）：
   - 登录：每 IP 20 次/分 + 每账号 5 次/分（防暴力破解）
   - 取图 `GET /i/{code}`：每 IP 240 次/分（防短码枚举）
@@ -373,7 +389,7 @@ oss/
 - [x] 认证与角色：JWT 登录、admin/user、注册策略（开放/邀请码）、管理员密码环境变量
 - [x] 多租户隔离：用户独立命名空间，图片 private/public，私有图仅本人可见
 - [x] 上传命名 + 画廊搜索
-- [x] 鉴权增强：私密图限时签名链接（HMAC 防伪造/重放）、登录/取图/上传速率限制
+- [x] 鉴权增强：私密图限时签名链接（HMAC 防篡改、到期失效；有效期内可重放）、登录/取图/上传速率限制
 - [x] 团队与团队空间：建队、邀请成员、角色管理、团队共享图片库
 - [x] 管理员界面：统计、用户角色管理、团队总览、图片删除
 - [x] API Key 鉴权（明文仅显示一次、哈希存储、轮换/撤销）与密码管理

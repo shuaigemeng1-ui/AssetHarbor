@@ -2,6 +2,8 @@
 
 import re
 
+import pytest
+
 from app.core import request_logging
 
 
@@ -48,3 +50,38 @@ def test_unsafe_request_id_is_replaced_and_not_logged(client, monkeypatch):
     message = "\n".join(sink.messages)
     assert "unsafe id" not in message
     assert f"request_id={generated}" in message
+
+
+@pytest.mark.anyio
+async def test_failed_asgi_body_send_is_not_counted(monkeypatch):
+    recorded = []
+    monkeypatch.setattr(request_logging, "record_traffic", lambda **values: recorded.append(values))
+
+    async def downstream(_scope, _receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"first", "more_body": True})
+        await send({"type": "http.response.body", "body": b"second", "more_body": False})
+
+    middleware = request_logging.RequestLogMiddleware(downstream)
+    sends = 0
+
+    async def failing_send(_message):
+        nonlocal sends
+        sends += 1
+        if sends == 3:
+            raise OSError("client disconnected")
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/test",
+        "query_string": b"",
+        "headers": [],
+        "route": type("Route", (), {"path": "/api/test"})(),
+    }
+    with pytest.raises(OSError, match="client disconnected"):
+        await middleware(scope, receive, failing_send)
+    assert recorded[-1]["response_bytes"] == len(b"first")
