@@ -45,6 +45,9 @@ export function formatApiErrorDetail(detail, status) {
       'user storage quota exceeded': '用户累计存储额度不足',
       'team storage quota exceeded': '团队累计存储额度不足',
       'insufficient storage space': '服务器可用存储空间不足',
+      'current password is incorrect': '当前密码不正确',
+      'new password must differ from the current one': '新密码不能与当前密码相同',
+      'credentials changed concurrently; sign in again': '账户凭据已发生变化，请重新登录',
     }
     return localized[detail.trim()] || detail
   }

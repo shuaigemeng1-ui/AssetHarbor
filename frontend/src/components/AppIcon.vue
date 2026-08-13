@@ -6,6 +6,8 @@ import {
   Copy,
   Circle,
   Eye,
+  EyeOff,
+  ExternalLink,
   FolderOpen,
   Gauge,
   Globe2,
@@ -59,6 +61,9 @@ const icons = {
   check: Check,
   retry: RefreshCw,
   preview: Eye,
+  eyeOff: EyeOff,
+  external: ExternalLink,
+  key: KeyRound,
   play: Play,
   plus: Plus,
 }

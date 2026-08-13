@@ -14,12 +14,14 @@ import VideoUploadQueue from './components/VideoUploadQueue.vue'
 import BaseModal from './components/BaseModal.vue'
 import { fetchMe, getToken, setToken } from './api'
 import { activeVideoUploadCount, initializeVideoUploads, resetVideoUploads } from './stores/videoUploads'
+import { toast } from './stores/feedback'
 
 const user = ref(null)
 const view = ref('overview')
 const authLoading = ref(Boolean(getToken()))
 const uploadCenterOpen = ref(false)
 const openImageUpload = ref(false)
+const accountCredentialBusy = ref(false)
 const isAdmin = computed(() => user.value?.role === 'admin')
 
 const viewMeta = {
@@ -39,7 +41,6 @@ const currentMeta = computed(() => {
   if (isAdmin.value && view.value === 'videos') return { section: '全站媒体库', title: '全站视频' }
   return viewMeta[view.value] || viewMeta.overview
 })
-const isSettingsView = computed(() => view.value === 'admin' || view.value === 'account')
 const adminOnlyViews = new Set(['admin', 'my-images', 'my-videos'])
 
 function viewFromHash() {
@@ -61,6 +62,7 @@ function authorizedView(next) {
 }
 
 function onUnauthorized() {
+  accountCredentialBusy.value = false
   resetVideoUploads()
   uploadCenterOpen.value = false
   user.value = null
@@ -69,6 +71,10 @@ function onUnauthorized() {
 
 function navigate(next, { replace = false, upload = false } = {}) {
   if (!viewMeta[next]) return
+  if (accountCredentialBusy.value && next !== view.value) {
+    toast('凭据操作正在进行，请等待完成后再离开此页面', 'info')
+    return
+  }
   const target = authorizedView(next)
   openImageUpload.value = ['images', 'my-images'].includes(target) && upload
   view.value = target
@@ -82,6 +88,14 @@ function navigate(next, { replace = false, upload = false } = {}) {
 
 function onHashChange() {
   const next = viewFromHash()
+  if (accountCredentialBusy.value && next !== view.value) {
+    // Restore the current route as a new entry instead of overwriting the
+    // destination the user tried to visit. Once the mutation finishes, Back
+    // can still reach that original destination.
+    window.history.pushState(null, '', `#/${view.value}`)
+    toast('凭据操作正在进行，请等待完成后再离开此页面', 'info')
+    return
+  }
   const target = authorizedView(next)
   view.value = target
   if (target !== next) window.history.replaceState(null, '', `#/${target}`)
@@ -112,6 +126,10 @@ function handleAuthed(value) {
 }
 
 function logout() {
+  if (accountCredentialBusy.value) {
+    toast('凭据操作正在进行，请等待完成后再退出登录', 'info')
+    return
+  }
   setToken(null)
   resetVideoUploads()
   uploadCenterOpen.value = false
@@ -130,150 +148,81 @@ function logout() {
     </div>
     <AuthView v-else-if="!user" @authed="handleAuthed" />
 
-    <div v-else class="workspace-shell">
-      <aside class="global-rail" aria-label="全局导航">
-        <button
-          class="rail-brand"
-          :class="{ active: view === 'overview' }"
-          :aria-current="view === 'overview' ? 'page' : undefined"
-          aria-label="回到媒体概览"
-          title="媒体概览"
-          @click="navigate('overview')"
-        >
-          <span class="brand-mark"><span>OSS</span><span>MEDIA</span></span>
-        </button>
-
-        <nav class="rail-nav" aria-label="主要功能">
-          <button
-            :class="{ active: ['images', 'my-images', 'videos', 'my-videos', 'groups'].includes(view) }"
-            aria-label="媒体库"
-            title="媒体库"
-            @click="navigate('images')"
-          >
-            <AppIcon name="image" />
-          </button>
-          <button
-            :class="{ active: view === 'teams' }"
-            :aria-current="view === 'teams' ? 'page' : undefined"
-            aria-label="团队空间"
-            title="团队空间"
-            @click="navigate('teams')"
-          >
-            <AppIcon name="teams" />
-          </button>
-          <button
-            v-if="isAdmin"
-            :class="{ active: view === 'admin' }"
-            :aria-current="view === 'admin' ? 'page' : undefined"
-            aria-label="管理中心"
-            title="管理中心"
-            @click="navigate('admin')"
-          >
-            <AppIcon name="admin" />
-          </button>
-          <button
-            :class="{ active: view === 'account' }"
-            :aria-current="view === 'account' ? 'page' : undefined"
-            aria-label="账户与密钥"
-            title="账户与密钥"
-            @click="navigate('account')"
-          >
-            <AppIcon name="account" />
-          </button>
-          <button
-            class="rail-upload-center"
-            :aria-label="activeVideoUploadCount ? `打开视频上传中心，${activeVideoUploadCount} 个进行中任务` : '打开视频上传中心'"
-            title="视频上传中心"
-            @click="uploadCenterOpen = true"
-          >
-            <AppIcon name="upload" />
-            <span v-if="activeVideoUploadCount" class="nav-upload-count">{{ activeVideoUploadCount }}</span>
-          </button>
-        </nav>
-      </aside>
-
-      <aside class="app-sidebar context-sidebar">
+    <div v-else class="workspace-shell" :inert="accountCredentialBusy || undefined" :aria-busy="accountCredentialBusy || undefined">
+      <aside class="app-sidebar context-sidebar" aria-label="工作台导航">
         <div class="sidebar-head">
-          <span class="context-kicker">OSS Media</span>
-          <strong class="context-title">{{ currentMeta.section }}</strong>
+          <button class="sidebar-brand" type="button" aria-label="回到媒体概览" @click="navigate('overview')">
+            <span class="sidebar-brand-mark">OSS</span>
+            <span class="sidebar-brand-copy">
+              <span class="context-kicker">OSS Media</span>
+              <strong class="context-title">{{ currentMeta.section }}</strong>
+            </span>
+          </button>
         </div>
 
         <div class="sidebar-nav-scroll">
-          <template v-if="!isSettingsView">
-            <div v-if="isAdmin" class="sidebar-nav-group">
-              <span class="sidebar-section-label">全站媒体库</span>
-              <nav class="side-nav" aria-label="全站媒体库导航">
-                <button :class="{ active: view === 'images' }" :aria-current="view === 'images' ? 'page' : undefined" @click="navigate('images')">
-                  <AppIcon name="image" /><span>全站图片</span>
-                </button>
-                <div class="nav-video-row">
-                  <button :class="{ active: view === 'videos' }" :aria-current="view === 'videos' ? 'page' : undefined" @click="navigate('videos')">
-                    <AppIcon name="video" /><span>全站视频</span>
-                  </button>
-                  <button
-                    class="nav-upload-center"
-                    :aria-label="activeVideoUploadCount ? `打开全局上传中心，${activeVideoUploadCount} 个进行中任务` : '打开全局上传中心'"
-                    title="全局上传中心"
-                    @click="uploadCenterOpen = true"
-                  >
-                    <AppIcon name="upload" size="14" />
-                    <span v-if="activeVideoUploadCount" class="nav-upload-count">{{ activeVideoUploadCount }}</span>
-                  </button>
-                </div>
-              </nav>
-            </div>
+          <div class="sidebar-nav-group">
+            <span class="sidebar-section-label">工作台</span>
+            <nav class="side-nav" aria-label="工作台导航">
+              <button :class="{ active: view === 'overview' }" :aria-current="view === 'overview' ? 'page' : undefined" @click="navigate('overview')">
+                <AppIcon name="overview" /><span>媒体概览</span>
+              </button>
+              <button
+                class="nav-upload-center"
+                :aria-label="activeVideoUploadCount ? `打开视频上传中心，${activeVideoUploadCount} 个进行中任务` : '打开视频上传中心'"
+                @click="uploadCenterOpen = true"
+              >
+                <AppIcon name="upload" /><span>视频上传中心</span>
+                <span v-if="activeVideoUploadCount" class="nav-upload-count">{{ activeVideoUploadCount }}</span>
+              </button>
+            </nav>
+          </div>
 
-            <div class="sidebar-nav-group">
-              <span class="sidebar-section-label">个人空间</span>
-              <nav class="side-nav" aria-label="个人空间导航">
-                <button
-                  :class="{ active: view === (isAdmin ? 'my-images' : 'images') }"
-                  :aria-current="view === (isAdmin ? 'my-images' : 'images') ? 'page' : undefined"
-                  @click="navigate(isAdmin ? 'my-images' : 'images')"
-                >
-                  <AppIcon name="image" /><span>我的图片</span>
-                </button>
-                <div class="nav-video-row">
-                  <button
-                    :class="{ active: view === (isAdmin ? 'my-videos' : 'videos') }"
-                    :aria-current="view === (isAdmin ? 'my-videos' : 'videos') ? 'page' : undefined"
-                    @click="navigate(isAdmin ? 'my-videos' : 'videos')"
-                  >
-                    <AppIcon name="video" /><span>我的视频</span>
-                  </button>
-                  <button
-                    class="nav-upload-center"
-                    :aria-label="activeVideoUploadCount ? `打开全局上传中心，${activeVideoUploadCount} 个进行中任务` : '打开全局上传中心'"
-                    title="全局上传中心"
-                    @click="uploadCenterOpen = true"
-                  >
-                    <AppIcon name="upload" size="14" />
-                    <span v-if="activeVideoUploadCount" class="nav-upload-count">{{ activeVideoUploadCount }}</span>
-                  </button>
-                </div>
-              </nav>
-            </div>
+          <div v-if="isAdmin" class="sidebar-nav-group">
+            <span class="sidebar-section-label">全站媒体库</span>
+            <nav class="side-nav" aria-label="全站媒体库导航">
+              <button :class="{ active: view === 'images' }" :aria-current="view === 'images' ? 'page' : undefined" @click="navigate('images')">
+                <AppIcon name="image" /><span>全站图片</span>
+              </button>
+              <button :class="{ active: view === 'videos' }" :aria-current="view === 'videos' ? 'page' : undefined" @click="navigate('videos')">
+                <AppIcon name="video" /><span>全站视频</span>
+              </button>
+            </nav>
+          </div>
 
-            <div class="sidebar-nav-group">
-              <span class="sidebar-section-label">团队空间</span>
-              <nav class="side-nav" aria-label="团队空间导航">
-                <button :class="{ active: view === 'teams' }" :aria-current="view === 'teams' ? 'page' : undefined" @click="navigate('teams')">
-                  <AppIcon name="teams" /><span>团队</span>
-                </button>
-              </nav>
-            </div>
+          <div class="sidebar-nav-group">
+            <span class="sidebar-section-label">个人空间</span>
+            <nav class="side-nav" aria-label="个人空间导航">
+              <button
+                :class="{ active: view === (isAdmin ? 'my-images' : 'images') }"
+                :aria-current="view === (isAdmin ? 'my-images' : 'images') ? 'page' : undefined"
+                @click="navigate(isAdmin ? 'my-images' : 'images')"
+              >
+                <AppIcon name="image" /><span>我的图片</span>
+              </button>
+              <button
+                :class="{ active: view === (isAdmin ? 'my-videos' : 'videos') }"
+                :aria-current="view === (isAdmin ? 'my-videos' : 'videos') ? 'page' : undefined"
+                @click="navigate(isAdmin ? 'my-videos' : 'videos')"
+              >
+                <AppIcon name="video" /><span>我的视频</span>
+              </button>
+            </nav>
+          </div>
 
-            <div class="sidebar-nav-group">
-              <span class="sidebar-section-label">分组</span>
-              <nav class="side-nav" aria-label="分组导航">
-                <button :class="{ active: view === 'groups' }" :aria-current="view === 'groups' ? 'page' : undefined" @click="navigate('groups')">
-                  <AppIcon name="collection" /><span>所有分组</span>
-                </button>
-              </nav>
-            </div>
-          </template>
+          <div class="sidebar-nav-group">
+            <span class="sidebar-section-label">协作与整理</span>
+            <nav class="side-nav" aria-label="协作与整理导航">
+              <button :class="{ active: view === 'teams' }" :aria-current="view === 'teams' ? 'page' : undefined" @click="navigate('teams')">
+                <AppIcon name="teams" /><span>团队</span>
+              </button>
+              <button :class="{ active: view === 'groups' }" :aria-current="view === 'groups' ? 'page' : undefined" @click="navigate('groups')">
+                <AppIcon name="collection" /><span>所有分组</span>
+              </button>
+            </nav>
+          </div>
 
-          <div v-else class="sidebar-nav-group">
+          <div class="sidebar-nav-group">
             <span class="sidebar-section-label">设置</span>
             <nav class="side-nav" aria-label="设置导航">
               <button v-if="isAdmin" :class="{ active: view === 'admin' }" :aria-current="view === 'admin' ? 'page' : undefined" @click="navigate('admin')">
@@ -281,6 +230,9 @@ function logout() {
               </button>
               <button :class="{ active: view === 'account' }" :aria-current="view === 'account' ? 'page' : undefined" @click="navigate('account')">
                 <AppIcon name="account" /><span>账户与密钥</span>
+              </button>
+              <button class="nav-logout" type="button" @click="logout">
+                <AppIcon name="logout" /><span>退出登录</span>
               </button>
             </nav>
           </div>
@@ -290,9 +242,6 @@ function logout() {
         <div class="sidebar-user">
           <span class="user-avatar">{{ user.username.slice(0, 1).toUpperCase() }}</span>
           <span class="user-details"><strong>{{ user.username }}</strong><small>{{ isAdmin ? '系统管理员' : '媒体库用户' }}</small></span>
-          <button class="sidebar-logout" aria-label="退出登录" title="退出登录" @click="logout">
-            <AppIcon name="logout" size="17" />
-          </button>
         </div>
       </aside>
 
@@ -328,7 +277,7 @@ function logout() {
           <CollectionsView v-if="view === 'groups'" :user="user" />
           <TeamsView v-if="view === 'teams'" :user="user" />
           <AdminView v-if="view === 'admin' && isAdmin" :user="user" />
-          <AccountView v-if="view === 'account'" />
+          <AccountView v-if="view === 'account'" @credential-busy="accountCredentialBusy = $event" />
         </main>
 
         <footer class="site-footer">

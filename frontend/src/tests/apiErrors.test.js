@@ -19,4 +19,10 @@ describe('API error detail formatting', () => {
     expect(formatApiErrorDetail('team storage quota exceeded', 413)).toBe('团队累计存储额度不足')
     expect(formatApiErrorDetail('insufficient storage space', 507)).toBe('服务器可用存储空间不足')
   })
+
+  it('localizes stable password change errors', () => {
+    expect(formatApiErrorDetail('current password is incorrect', 400)).toBe('当前密码不正确')
+    expect(formatApiErrorDetail('new password must differ from the current one', 400)).toBe('新密码不能与当前密码相同')
+    expect(formatApiErrorDetail('credentials changed concurrently; sign in again', 409)).toBe('账户凭据已发生变化，请重新登录')
+  })
 })
