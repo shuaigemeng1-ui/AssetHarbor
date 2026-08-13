@@ -13,6 +13,7 @@ import {
 } from '../api'
 import { confirmAction, toast } from '../stores/feedback'
 import { formatBytes } from '../utils/format'
+import AppIcon from './AppIcon.vue'
 import BaseModal from './BaseModal.vue'
 
 const props = defineProps({ user: { type: Object, required: true } })
@@ -236,7 +237,7 @@ async function doDeleteTeam(team) {
         <h2>管理中心</h2>
         <p>查看媒体存储与 API 使用状态，管理用户与协作团队。</p>
       </div>
-      <button class="primary" type="button" @click="openCreateUser">＋ 创建用户</button>
+      <button class="primary" type="button" @click="openCreateUser"><AppIcon name="plus" size="15" />创建用户</button>
     </div>
 
     <div class="stat-cards" :aria-busy="loading">
@@ -489,65 +490,117 @@ async function doDeleteTeam(team) {
 </template>
 
 <style scoped>
-.admin-section-head {
-  margin: 34px 0 12px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
+.admin-view { min-width: 0; }
+
+.admin-view .stat-cards {
+  margin: 12px 0 28px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
 }
 
-.admin-section-head h3 { margin: 0 0 2px; font-size: 17px; }
-.admin-section-head p { margin: 0; color: var(--muted); font-size: 12px; }
-.traffic-section-head { margin-top: 38px; }
-.traffic-range { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 650; }
+.admin-view .stat-card {
+  min-width: 0;
+  min-height: 78px;
+  border: 1px solid var(--border, #e5e5e3);
+  border-radius: 8px;
+  padding: 13px 14px;
+  background: #fff;
+  box-shadow: none;
+}
+
+.admin-view .stat-num {
+  overflow: hidden;
+  color: var(--text, #242424);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -.025em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-view .stat-label { margin-top: 2px; color: var(--muted, #737373); font-size: 10px; }
+
+.admin-section-head {
+  margin: 30px 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border, #e5e5e3);
+  padding-bottom: 10px;
+}
+
+.admin-section-head h3 { margin: 0 0 2px; color: var(--text, #242424); font-size: 15px; }
+.admin-section-head p { margin: 0; color: var(--muted, #737373); font-size: 11px; }
+.traffic-section-head { margin-top: 34px; }
+.traffic-range { display: grid; gap: 5px; color: var(--muted, #737373); font-size: 10px; font-weight: 650; }
 .traffic-range select {
   min-width: 118px;
-  min-height: 38px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  min-height: 36px;
+  border: 1px solid var(--border-strong, #d1d1ce);
+  border-radius: 5px;
   padding: 7px 10px;
-  background: var(--panel);
-  color: var(--text);
+  background: #fff;
+  color: var(--text, #242424);
   outline: 0;
 }
-.traffic-range select:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px rgb(91 91 214 / 12%); }
+.traffic-range select:focus-visible {
+  border-color: var(--accent, #0b63e5);
+  box-shadow: 0 0 0 2px rgb(11 99 229 / 10%);
+}
 .traffic-stat-cards {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
 }
 .traffic-stat-card {
   min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 14px;
-  background: var(--panel);
-  box-shadow: 0 7px 24px rgb(34 45 73 / 4%);
+  border: 1px solid var(--border, #e5e5e3);
+  border-radius: 8px;
+  padding: 13px;
+  background: #fff;
+  box-shadow: none;
 }
-.traffic-stat-card span { display: block; color: var(--muted); font-size: 10px; font-weight: 650; }
-.traffic-stat-card strong { display: block; margin-top: 5px; color: #252d3b; font-size: clamp(18px, 2vw, 24px); letter-spacing: -.03em; }
-.traffic-stat-card small { display: block; margin-top: 3px; overflow: hidden; color: var(--muted-light); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.traffic-stat-card span { display: block; color: var(--muted, #737373); font-size: 10px; font-weight: 650; }
+.traffic-stat-card strong {
+  display: block;
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--text, #242424);
+  font-size: clamp(17px, 1.8vw, 22px);
+  letter-spacing: -.03em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.traffic-stat-card small {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--muted-light, #a3a3a3);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .traffic-error {
   margin-top: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border: 1px solid #f3c9c6;
-  border-radius: 12px;
+  border: 1px solid #edc8c5;
+  border-radius: 6px;
   padding: 10px 12px;
-  background: #fff7f6;
-  color: var(--danger);
+  background: #fffafa;
+  color: var(--danger, #d82727);
   font-size: 11px;
 }
 .traffic-warning {
   margin-top: 12px;
-  border: 1px solid #e8cf91;
-  border-radius: 12px;
+  border: 1px solid #dccba8;
+  border-radius: 6px;
   padding: 10px 12px;
-  background: #fffaf0;
-  color: #765314;
+  background: #fdfcf8;
+  color: #6b4d1f;
   font-size: 11px;
   line-height: 1.6;
 }
@@ -555,87 +608,120 @@ async function doDeleteTeam(team) {
 .traffic-panel {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--panel);
-  box-shadow: 0 7px 24px rgb(34 45 73 / 4%);
+  border: 1px solid var(--border, #e5e5e3);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: none;
 }
 .traffic-panel-head {
-  min-height: 62px;
+  min-height: 60px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border, #e5e5e3);
   padding: 12px 15px;
 }
-.traffic-panel-head h4 { margin: 0; color: var(--text); font-size: 13px; }
-.traffic-panel-head p { margin: 2px 0 0; color: var(--muted); font-size: 10px; }
+.traffic-panel-head h4 { margin: 0; color: var(--text, #242424); font-size: 13px; }
+.traffic-panel-head p { margin: 2px 0 0; color: var(--muted, #737373); font-size: 10px; }
+.total-badge,
+.role-badge {
+  border: 1px solid var(--border, #e5e5e3);
+  border-radius: 4px;
+  background: #fafaf9;
+  color: #57534e;
+}
+.total-badge { padding: 4px 8px; font-size: 10px; }
+.role-badge.admin { border-color: #d6d3d1; background: #f5f5f4; color: #44403c; }
 .traffic-trend-scroll { max-height: 340px; overflow: auto; }
 .traffic-table { width: 100%; border-collapse: collapse; font-size: 11px; }
 .traffic-table th,
-.traffic-table td { border-bottom: 1px solid #edf0f5; padding: 9px 11px; text-align: left; vertical-align: middle; }
-.traffic-table thead th { position: sticky; z-index: 1; top: 0; background: #fafbfd; color: var(--muted); font-size: 9px; font-weight: 700; white-space: nowrap; }
+.traffic-table td {
+  border-bottom: 1px solid var(--border, #e5e5e3);
+  padding: 9px 11px;
+  text-align: left;
+  vertical-align: middle;
+}
+.traffic-table thead th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  background: #fafaf9;
+  color: var(--muted, #737373);
+  font-size: 9px;
+  font-weight: 700;
+  white-space: nowrap;
+}
 .traffic-table tbody tr:last-child td { border-bottom: 0; }
-.traffic-table time { color: var(--muted); white-space: nowrap; }
+.traffic-table time { color: var(--muted, #737373); white-space: nowrap; }
 .trend-cell { width: 42%; min-width: 160px; }
 .trend-cell progress {
   width: 100%;
-  height: 7px;
+  height: 6px;
   display: block;
   overflow: hidden;
   border: 0;
-  border-radius: 999px;
-  background: #eceefa;
-  color: var(--accent);
+  border-radius: 2px;
+  background: #e7e5e4;
+  color: #78716c;
 }
-.trend-cell progress::-webkit-progress-bar { border-radius: 999px; background: #eceefa; }
-.trend-cell progress::-webkit-progress-value { border-radius: 999px; background: #5b5bd6; }
-.trend-cell progress::-moz-progress-bar { border-radius: 999px; background: #5b5bd6; }
+.trend-cell progress::-webkit-progress-bar { border-radius: 2px; background: #e7e5e4; }
+.trend-cell progress::-webkit-progress-value { border-radius: 2px; background: #78716c; }
+.trend-cell progress::-moz-progress-bar { border-radius: 2px; background: #78716c; }
 .member-usage-table { min-width: 820px; }
 .member-usage-table td:first-child { white-space: nowrap; }
 .member-usage-table .role-badge { margin-left: 7px; }
 .traffic-breakdown-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .compact-traffic-table { min-width: 480px; }
-.compact-traffic-table code { margin-left: 7px; color: var(--text); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
-.compact-traffic-table small { display: block; margin: 2px 0 0; color: var(--muted-light); font: 9px ui-monospace, monospace; }
-.route-method { display: inline-block; min-width: 36px; color: var(--accent); font: 750 9px ui-monospace, monospace; }
-.empty-table-cell { padding-block: 20px !important; color: var(--muted); text-align: center !important; }
-.table-shell { overflow-x: auto; border-radius: 14px; }
-.admin-table { min-width: 720px; margin: 0; }
+.compact-traffic-table code { margin-left: 7px; color: var(--text, #242424); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.compact-traffic-table small { display: block; margin: 2px 0 0; color: var(--muted-light, #a3a3a3); font: 9px ui-monospace, monospace; }
+.route-method { display: inline-block; min-width: 36px; color: #57534e; font: 750 9px ui-monospace, monospace; }
+.empty-table-cell { padding-block: 20px !important; color: var(--muted, #737373); text-align: center !important; }
+.table-shell {
+  overflow-x: auto;
+  border: 1px solid var(--border, #e5e5e3);
+  border-radius: 8px;
+  background: #fff;
+}
+.traffic-panel .table-shell { border: 0; border-radius: 0; }
+.admin-table { min-width: 720px; margin: 0; border: 0; border-radius: 0; }
 .admin-table td:first-child { white-space: nowrap; }
 .admin-table td:last-child { text-align: right; }
-.admin-table small { margin-left: 7px; color: var(--muted-light); }
+.admin-table small { margin-left: 7px; color: var(--muted-light, #a3a3a3); }
 .admin-user-avatar {
   width: 28px;
   height: 28px;
   margin-right: 9px;
   display: inline-grid;
   place-items: center;
-  border-radius: 9px;
-  background: var(--accent-soft);
-  color: var(--accent);
+  border: 1px solid var(--border, #e5e5e3);
+  border-radius: 5px;
+  background: #fafaf9;
+  color: #57534e;
   font-size: 11px;
   font-weight: 750;
 }
 
 .user-actions { justify-content: flex-end; }
 .admin-user-form { display: grid; gap: 15px; }
-.admin-user-form label { display: grid; gap: 6px; color: var(--text); font-size: 12px; font-weight: 650; }
+.admin-user-form label { display: grid; gap: 6px; color: var(--text, #242424); font-size: 12px; font-weight: 650; }
 .admin-user-form input,
 .admin-user-form select {
   width: 100%;
-  min-height: 42px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 9px 11px;
-  background: var(--panel);
-  color: var(--text);
+  min-height: 40px;
+  border: 1px solid var(--border-strong, #d1d1ce);
+  border-radius: 5px;
+  padding: 8px 10px;
+  background: #fff;
+  color: var(--text, #242424);
   outline: 0;
 }
 .admin-user-form input:focus,
-.admin-user-form select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgb(37 99 235 / 10%); }
-.admin-user-form small { color: var(--muted); font-size: 10px; font-weight: 400; }
+.admin-user-form select:focus {
+  border-color: var(--accent, #0b63e5);
+  box-shadow: 0 0 0 2px rgb(11 99 229 / 10%);
+}
+.admin-user-form small { color: var(--muted, #737373); font-size: 10px; font-weight: 400; }
 .admin-user-form .form-error { margin: 0; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
@@ -647,15 +733,18 @@ async function doDeleteTeam(team) {
 }
 
 @media (max-width: 1120px) {
+  .admin-view .stat-cards,
   .traffic-stat-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (max-width: 760px) {
+  .admin-view .stat-cards,
   .traffic-stat-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .traffic-breakdown-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 430px) {
+  .admin-view .stat-cards,
   .traffic-stat-cards { grid-template-columns: 1fr; }
 }
 </style>

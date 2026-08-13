@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const api = vi.hoisted(() => ({
   deleteImage: vi.fn(),
@@ -20,6 +20,8 @@ vi.mock('../stores/feedback', () => ({
 import GalleryView from '../components/GalleryView.vue'
 
 describe('GalleryView image uploads', () => {
+  const mountedWrappers = []
+
   beforeEach(() => {
     vi.clearAllMocks()
     api.listImages.mockResolvedValue({ items: [], total: 0 })
@@ -27,26 +29,41 @@ describe('GalleryView image uploads', () => {
     api.fetchPublicConfig.mockResolvedValue({ max_upload_size_mb: 10 })
   })
 
+  afterEach(() => {
+    mountedWrappers.splice(0).forEach(wrapper => wrapper.unmount())
+  })
+
   function mountGallery(props = {}) {
-    return mount(GalleryView, {
+    const wrapper = mount(GalleryView, {
       props: { user: { id: 1, role: 'user' }, ...props },
       global: {
         stubs: {
+          AppIcon: { template: '<i class="icon-stub" />' },
+          BaseModal: { template: '<div class="modal-stub"><slot /><slot name="footer" /></div>' },
           ImageResult: {
-            props: ['item', 'groupable'],
-            emits: ['retry', 'add-to-group'],
-            template: '<button class="image-result-stub" :data-status="item.status" :data-groupable="String(groupable)" @click="$emit(\'retry\')">{{ item.status }}|{{ item.result?.code || item.file?.name }}|{{ item.error }}<span v-if="groupable" class="group-trigger" @click.stop="$emit(\'add-to-group\')">group</span></button>',
+            props: ['item', 'selectable', 'selected'],
+            emits: ['retry', 'select', 'remove-pending'],
+            template: '<button class="image-result-stub" :data-status="item.status" :data-selected="String(selected)" @click="item.status === \'done\' ? $emit(\'select\') : $emit(\'retry\')">{{ item.status }}|{{ item.result?.code || item.file?.name }}|{{ item.error }}</button>',
           },
-          CollectionPickerModal: {
-            props: ['media', 'teamId', 'userId', 'canManage'],
-            template: '<div class="picker-stub" :data-code="media.code" :data-team-id="teamId == null ? \'personal\' : String(teamId)" />',
+          ImageInspector: {
+            props: ['item', 'groupable', 'teamId', 'canManageGroups'],
+            template: '<aside class="inspector-stub" :data-code="item.code" :data-groupable="String(groupable)" :data-can-manage-groups="String(canManageGroups)" :data-team-id="teamId == null ? \'personal\' : String(teamId)" />',
           },
         },
       },
     })
+    mountedWrappers.push(wrapper)
+    return wrapper
+  }
+
+  async function openUpload(wrapper) {
+    if (!wrapper.find('input[type="file"]').exists()) {
+      await wrapper.get('.library-upload-button').trigger('click')
+    }
   }
 
   async function selectFile(wrapper, filename = 'stamp.png') {
+    await openUpload(wrapper)
     const file = new File(['png'], filename, { type: 'image/png' })
     const input = wrapper.get('input[type="file"]')
     Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
@@ -54,10 +71,19 @@ describe('GalleryView image uploads', () => {
   }
 
   async function selectFiles(wrapper, files) {
+    await openUpload(wrapper)
     const input = wrapper.get('input[type="file"]')
     Object.defineProperty(input.element, 'files', { value: files, configurable: true })
     await input.trigger('change')
   }
+
+  it('opens a one-shot upload request and marks it consumed', async () => {
+    const wrapper = mountGallery({ openUpload: true })
+    await flushPromises()
+
+    expect(wrapper.find('input[type="file"]').exists()).toBe(true)
+    expect(wrapper.emitted('upload-request-consumed')).toHaveLength(1)
+  })
 
   it('reactively removes the temporary card when the upload completes', async () => {
     let finishUpload
@@ -65,6 +91,7 @@ describe('GalleryView image uploads', () => {
 
     const wrapper = mountGallery()
     await flushPromises()
+    await openUpload(wrapper)
     expect(wrapper.get('.vis-select').element.value).toBe('public')
     await selectFile(wrapper)
 
@@ -86,6 +113,7 @@ describe('GalleryView image uploads', () => {
     expect(wrapper.find('.pending-grid').exists()).toBe(false)
     expect(wrapper.findAll('.image-result-stub')).toHaveLength(1)
     expect(wrapper.get('.image-result-stub').text()).toContain('image-code')
+    expect(wrapper.get('.inspector-stub').attributes('data-code')).toBe('image-code')
     expect(wrapper.text()).toContain('1 张')
   })
 
@@ -125,7 +153,7 @@ describe('GalleryView image uploads', () => {
     expect(wrapper.text()).toContain('1 张')
   })
 
-  it('scopes admin group actions to team media or the admin\'s own personal media', async () => {
+  it('scopes inspector group actions to team media or the admin\'s own personal media', async () => {
     api.listImages.mockResolvedValue({
       items: [
         { code: 'admin-own', owner_id: 99, team_id: null, visibility: 'private' },
@@ -138,11 +166,48 @@ describe('GalleryView image uploads', () => {
     await flushPromises()
 
     const cards = wrapper.findAll('.image-result-stub')
-    expect(cards.map(card => card.attributes('data-groupable'))).toEqual(['true', 'false', 'true'])
+    expect(wrapper.get('.inspector-stub').attributes('data-groupable')).toBe('true')
+    await cards[1].trigger('click')
+    expect(wrapper.get('.inspector-stub').attributes('data-code')).toBe('other-personal')
+    expect(wrapper.get('.inspector-stub').attributes('data-groupable')).toBe('false')
+    await cards[2].trigger('click')
+    expect(wrapper.get('.inspector-stub').attributes('data-code')).toBe('team-media')
+    expect(wrapper.get('.inspector-stub').attributes('data-team-id')).toBe('42')
+    expect(wrapper.get('.inspector-stub').attributes('data-can-manage-groups')).toBe('true')
+  })
 
-    await cards[2].get('.group-trigger').trigger('click')
-    expect(wrapper.get('.picker-stub').attributes('data-code')).toBe('team-media')
-    expect(wrapper.get('.picker-stub').attributes('data-team-id')).toBe('42')
+  it('does not grant team group management just because the user owns the image', async () => {
+    api.listTeamImages.mockResolvedValue({
+      items: [{ code: 'owned-team-image', owner_id: 1, team_id: 42, visibility: 'private' }],
+      total: 1,
+    })
+    const wrapper = mountGallery({ teamId: 42, canManage: false })
+    await flushPromises()
+
+    expect(wrapper.get('.inspector-stub').attributes('data-can-manage-groups')).toBe('false')
+  })
+
+  it('closes the responsive inspector with Escape unless a modal owns the key', async () => {
+    api.listImages.mockResolvedValue({
+      items: [{ code: 'drawer-image', owner_id: 1, visibility: 'public' }],
+      total: 1,
+    })
+    const wrapper = mountGallery()
+    await flushPromises()
+    await wrapper.get('.image-result-stub').trigger('click')
+    expect(wrapper.classes()).toContain('inspector-open')
+    expect(wrapper.get('.inspector-stub').attributes('role')).toBe('dialog')
+    expect(wrapper.get('.inspector-stub').attributes('aria-modal')).toBe('true')
+
+    const nestedModal = document.createElement('div')
+    nestedModal.className = 'base-modal-panel'
+    document.body.appendChild(nestedModal)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(wrapper.classes()).toContain('inspector-open')
+    nestedModal.remove()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.classes()).not.toContain('inspector-open')
   })
 
   it('rejects an oversized image before making an upload request', async () => {

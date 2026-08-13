@@ -302,7 +302,7 @@ onBeforeUnmount(() => {
         <h2>{{ isTeam ? '团队分组' : '我的分组' }}</h2>
         <p>用分组整理图片和视频，媒体仍保留在原始空间中。</p>
       </div>
-      <button class="primary" type="button" @click="openCreate">＋ 新建分组</button>
+      <button class="primary" type="button" @click="openCreate">新建分组</button>
     </div>
 
     <div class="collections-layout">
@@ -319,21 +319,19 @@ onBeforeUnmount(() => {
             :key="group.id"
             type="button"
             :class="{ active: selected?.id === group.id }"
+            :style="{ '--group-color': group.color || '#2563eb' }"
             @click="selectGroup(group)"
           >
-            <span class="folder-mark" :style="{ '--group-color': group.color || '#2563eb' }">◇</span>
             <span class="folder-copy">
               <strong>{{ group.name }}</strong>
               <small>{{ group.item_count || 0 }} 项</small>
             </span>
-            <span aria-hidden="true">›</span>
           </button>
           <button v-if="groups.length < groupTotal" class="load-groups" type="button" :disabled="loadingMoreGroups" @click="loadGroups({ append: true })">
             {{ loadingMoreGroups ? '加载中…' : `加载更多（${groupTotal - groups.length}）` }}
           </button>
         </div>
         <div v-else class="sidebar-empty">
-          <span>◇</span>
           <p>{{ groupQuery ? '没有匹配分组' : '还没有分组' }}</p>
           <button v-if="!groupQuery" class="ghost" type="button" @click="openCreate">新建第一个分组</button>
         </div>
@@ -341,8 +339,7 @@ onBeforeUnmount(() => {
 
       <main v-if="selected" class="collection-detail">
         <header class="collection-head">
-          <div class="collection-title">
-            <span class="folder-mark large" :style="{ '--group-color': selected.color || '#2563eb' }">◇</span>
+          <div class="collection-title" :style="{ '--group-color': selected.color || '#2563eb' }">
             <div>
               <h3>{{ selected.name }}</h3>
               <p>{{ selected.description || '这个分组还没有说明。' }}</p>
@@ -391,7 +388,6 @@ onBeforeUnmount(() => {
             </template>
           </div>
           <div v-else class="collection-empty">
-            <span>{{ itemQuery ? '⌕' : '＋' }}</span>
             <h3>{{ itemQuery ? '没有匹配媒体' : '这个分组还是空的' }}</h3>
             <p>{{ itemQuery ? '换个关键词或类型试试看。' : '在图片或视频卡片中点击“加入分组”。' }}</p>
           </div>
@@ -402,7 +398,6 @@ onBeforeUnmount(() => {
       </main>
 
       <main v-else class="collection-detail detail-placeholder">
-        <span>◇</span>
         <h3>{{ loadingGroups ? '正在加载…' : '选择或创建一个分组' }}</h3>
         <p>将相关图片和视频集中到一起，查找更轻松。</p>
       </main>
@@ -456,133 +451,369 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.collections-view > .section-heading {
+  margin-bottom: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.section-heading h2 {
+  margin: 0 0 5px;
+  font-size: 24px;
+  font-weight: 680;
+  letter-spacing: -.025em;
+}
+
+.section-heading .eyebrow {
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: .1em;
+}
+
+.section-heading p:not(.eyebrow) {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.section-heading > .primary {
+  min-height: 38px;
+  border-radius: 5px;
+  padding: 0 13px;
+  box-shadow: none;
+  font-size: 12px;
+}
+
 .collections-layout {
   min-height: 560px;
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
+  grid-template-columns: 230px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
 }
 
-.collections-sidebar,
-.collection-detail {
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: var(--panel);
-  box-shadow: var(--shadow-sm);
+.collections-sidebar {
+  min-width: 0;
+  border-right: 1px solid var(--border);
+  background: #faf9f7;
 }
-.collections-sidebar { position: sticky; top: 16px; padding: 13px; }
-.group-search { position: relative; margin-bottom: 10px; }
+
+.group-search {
+  position: relative;
+  padding: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
 .group-search input,
 .item-search {
-  min-height: 40px;
+  min-height: 38px;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 8px 11px;
-  background: var(--panel);
+  border-radius: 5px;
+  padding: 8px 10px;
+  background: #fff;
   color: var(--text);
+  box-shadow: none;
+  font-size: 12px;
   outline: 0;
 }
-.group-search input { width: 100%; padding-right: 42px; }
+
+.group-search input:focus,
+.item-search:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgb(11 99 229 / 10%);
+}
+
+.group-search input {
+  width: 100%;
+  padding-right: 42px;
+}
+
 .group-search > span {
   position: absolute;
   top: 50%;
-  right: 10px;
-  min-width: 20px;
-  padding: 1px 5px;
-  border-radius: 999px;
-  background: var(--panel-soft);
+  right: 24px;
+  min-width: 18px;
   color: var(--muted);
   font-size: 10px;
   text-align: center;
   transform: translateY(-50%);
 }
-.group-list { display: grid; gap: 5px; }
+
+.group-list {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+}
+
 .group-list button {
+  --group-color: var(--accent);
   width: 100%;
+  min-height: 46px;
   display: flex;
   align-items: center;
-  gap: 10px;
   border: 1px solid transparent;
-  border-radius: 11px;
-  padding: 9px;
+  border-left: 3px solid transparent;
+  border-radius: 4px;
+  padding: 7px 9px;
   background: transparent;
-  color: var(--muted);
+  color: var(--text);
   cursor: pointer;
   text-align: left;
 }
-.group-list button:hover { background: var(--panel-soft); color: var(--text); }
-.group-list button.active { border-color: #cbdafe; background: var(--accent-soft); color: var(--accent); }
-.group-list .load-groups { justify-content: center; border-color: var(--border); color: var(--accent); font-size: 11px; }
-.folder-mark {
-  --group-color: #2563eb;
-  width: 34px;
-  height: 34px;
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--group-color) 13%, white);
-  color: var(--group-color);
-  font-size: 18px;
-  font-weight: 750;
+
+.group-list button:hover {
+  background: #f2f0ec;
 }
-.folder-mark.large { width: 48px; height: 48px; border-radius: 14px; font-size: 23px; }
-.folder-copy { min-width: 0; flex: 1; display: grid; }
-.folder-copy strong { overflow: hidden; color: var(--text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.folder-copy small { color: var(--muted); font-size: 10px; }
-.sidebar-status, .sidebar-empty { padding: 35px 8px; color: var(--muted); font-size: 12px; text-align: center; }
-.sidebar-empty > span { color: var(--accent); font-size: 25px; }
-.sidebar-empty p { margin: 5px 0 10px; }
-.collection-detail { min-width: 0; padding: 18px; }
-.collection-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
-.collection-title { min-width: 0; display: flex; align-items: center; gap: 12px; }
-.collection-title h3 { margin: 0 0 2px; font-size: 18px; }
-.collection-title p { margin: 0; color: var(--muted); font-size: 12px; }
-.collection-title small { color: var(--muted-light); font-size: 10px; }
-.collection-actions { display: flex; gap: 6px; }
-.collection-toolbar { margin: 16px 0; display: flex; justify-content: space-between; gap: 12px; }
-.kind-tabs { display: flex; gap: 3px; padding: 3px; border-radius: 10px; background: var(--panel-soft); }
-.kind-tabs button { border: 0; border-radius: 7px; padding: 6px 12px; background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; }
-.kind-tabs button.active { background: var(--panel); box-shadow: var(--shadow-sm); color: var(--accent); font-weight: 650; }
-.item-search { width: min(260px, 100%); }
-.detail-status { min-height: 260px; display: grid; place-content: center; color: var(--muted); font-size: 12px; }
-.collection-media-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.group-list button.active {
+  border-color: var(--border);
+  border-left-color: var(--group-color);
+  background: #fff;
+}
+
+.group-list .load-groups {
+  justify-content: center;
+  border: 1px solid var(--border);
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.folder-copy {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.folder-copy strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-copy small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.sidebar-status,
+.sidebar-empty {
+  padding: 36px 14px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.sidebar-empty p {
+  margin: 0 0 10px;
+}
+
+.collection-detail {
+  min-width: 0;
+  padding: 20px;
+  background: #fff;
+}
+
+.collection-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 17px;
+  border-bottom: 1px solid var(--border);
+}
+
+.collection-title {
+  --group-color: var(--accent);
+  min-width: 0;
+  border-left: 3px solid var(--group-color);
+  padding-left: 12px;
+}
+
+.collection-title h3 {
+  margin: 0 0 3px;
+  font-size: 18px;
+  font-weight: 660;
+}
+
+.collection-title p {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.collection-title small {
+  color: var(--muted-light);
+  font-size: 10px;
+}
+
+.collection-actions {
+  display: flex;
+  gap: 5px;
+}
+
+.collection-actions button,
+.sidebar-empty button {
+  border-radius: 4px;
+}
+
+.collection-toolbar {
+  margin: 16px 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kind-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+}
+
+.kind-tabs button {
+  margin-bottom: -1px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 7px 11px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.kind-tabs button.active {
+  border-bottom-color: var(--text);
+  background: transparent;
+  color: var(--text);
+  font-weight: 650;
+}
+
+.item-search {
+  width: min(260px, 100%);
+}
+
+.detail-status {
+  min-height: 260px;
+  display: grid;
+  place-content: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.collection-media-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+:deep(.media-card) {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: none;
+}
+
 .collection-empty,
-.detail-placeholder { min-height: 380px; display: grid; place-content: center; justify-items: center; text-align: center; }
-.collection-empty > span,
-.detail-placeholder > span { width: 48px; height: 48px; margin-bottom: 10px; display: grid; place-items: center; border-radius: 14px; background: var(--accent-soft); color: var(--accent); font-size: 21px; }
+.detail-placeholder {
+  min-height: 380px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  padding: 24px;
+  background: var(--panel-soft);
+  text-align: center;
+}
+
 .collection-empty h3,
-.detail-placeholder h3 { margin: 0 0 4px; font-size: 15px; }
+.detail-placeholder h3 {
+  margin: 0 0 5px;
+  font-size: 14px;
+  font-weight: 630;
+}
+
 .collection-empty p,
-.detail-placeholder p { margin: 0; color: var(--muted); font-size: 12px; }
-.group-editor { display: grid; gap: 14px; }
-.group-editor label { display: grid; gap: 5px; color: var(--text); font-size: 11px; font-weight: 650; }
+.detail-placeholder p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.group-editor {
+  display: grid;
+  gap: 14px;
+}
+
+.group-editor label {
+  display: grid;
+  gap: 5px;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 650;
+}
+
 .group-editor input,
 .group-editor textarea {
   width: 100%;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 9px 11px;
-  background: var(--panel);
+  border-radius: 5px;
+  padding: 9px 10px;
+  background: #fff;
   color: var(--text);
+  box-shadow: none;
   outline: 0;
   resize: vertical;
 }
-.group-editor input { min-height: 42px; }
-.group-editor input[type='color'] { width: 60px; padding: 4px; }
-.editor-row { display: grid; grid-template-columns: auto 1fr; gap: 15px; }
-.group-editor .error-text { margin: 0; font-size: 12px; }
+
+.group-editor input:focus,
+.group-editor textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgb(11 99 229 / 10%);
+}
+
+.group-editor input {
+  min-height: 40px;
+}
+
+.group-editor input[type='color'] {
+  width: 58px;
+  padding: 4px;
+}
+
+.editor-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 15px;
+}
+
+.group-editor .error-text {
+  margin: 0;
+  font-size: 12px;
+}
+
+@media (max-width: 1000px) {
+  .collection-media-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 @media (max-width: 840px) {
   .collections-layout { grid-template-columns: 1fr; }
-  .collections-sidebar { position: static; }
-  .group-list { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+  .collections-sidebar { border-right: 0; border-bottom: 1px solid var(--border); }
+  .group-list { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
 }
+
 @media (max-width: 580px) {
-  .section-heading, .collection-head, .collection-toolbar { flex-direction: column; }
+  .section-heading,
+  .collection-head,
+  .collection-toolbar { flex-direction: column; }
   .section-heading > button { align-self: flex-start; }
-  .collection-actions, .item-search { width: 100%; }
+  .collection-actions,
+  .item-search { width: 100%; }
   .collection-media-grid { grid-template-columns: 1fr; }
 }
 </style>

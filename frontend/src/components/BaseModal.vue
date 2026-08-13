@@ -1,5 +1,6 @@
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import AppIcon from './AppIcon.vue'
 import { acquireModalLock, releaseModalLock } from '../stores/modalLock'
 
 const props = defineProps({
@@ -89,7 +90,9 @@ onBeforeUnmount(() => {
             <h2 :id="labelledBy">{{ title }}</h2>
             <p v-if="description" :id="`${labelledBy}-description`">{{ description }}</p>
           </div>
-          <button class="base-modal-close" type="button" aria-label="关闭" @click="close">×</button>
+          <button class="base-modal-close" type="button" aria-label="关闭" @click="close">
+            <AppIcon name="close" :size="17" />
+          </button>
         </header>
         <div class="base-modal-content"><slot /></div>
         <footer v-if="$slots.footer" class="base-modal-footer"><slot name="footer" /></footer>
@@ -105,17 +108,16 @@ onBeforeUnmount(() => {
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 20px;
-  background: rgb(15 23 42 / 58%);
-  backdrop-filter: blur(6px);
+  padding: 24px;
+  background: rgb(35 32 27 / 48%);
 }
 
 .base-modal-panel {
   width: min(520px, 100%);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  background: var(--panel);
-  box-shadow: 0 30px 90px rgb(15 23 42 / 28%);
+  border: 1px solid var(--border, #dedbd4);
+  border-radius: 8px;
+  background: var(--panel, #fff);
+  box-shadow: 0 6px 20px rgb(35 32 27 / 12%);
 }
 
 .base-modal-panel.scrollable {
@@ -124,21 +126,22 @@ onBeforeUnmount(() => {
 }
 
 .base-modal-panel.viewport-fit {
-  height: min(760px, calc(100vh - 40px));
-  height: min(760px, calc(100dvh - 40px));
+  height: min(760px, calc(100vh - 48px));
+  height: min(760px, calc(100dvh - 48px));
   max-height: none;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
 }
 
 .base-modal-panel.viewport-fit .base-modal-head {
   position: static;
-  border-radius: 19px 19px 0 0;
 }
 
 .base-modal-panel.viewport-fit .base-modal-content {
   min-height: 0;
   display: grid;
+  overflow: hidden;
 }
 
 .base-modal-panel.wide {
@@ -152,60 +155,73 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
-  padding: 21px 22px 17px;
-  border-bottom: 1px solid var(--border);
-  background: rgb(255 255 255 / 96%);
-  backdrop-filter: blur(10px);
+  gap: 16px;
+  padding: 18px 20px 15px;
+  border-bottom: 1px solid var(--border, #dedbd4);
+  background: var(--panel, #fff);
 }
 
 .base-modal-head h2 {
   margin: 0;
-  font-size: 18px;
+  color: var(--text, #24211d);
+  font-size: 16px;
+  font-weight: 650;
   line-height: 1.35;
 }
 
 .base-modal-head p {
-  margin: 4px 0 0;
-  color: var(--muted);
+  margin: 5px 0 0;
+  color: var(--muted, #746f67);
   font-size: 12px;
+  line-height: 1.55;
 }
 
 .base-modal-close {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   flex: 0 0 auto;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel);
-  color: var(--muted);
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted, #746f67);
   cursor: pointer;
-  font-size: 20px;
-  line-height: 1;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.base-modal-close:hover {
+  border-color: var(--border, #dedbd4);
+  background: var(--soft, #f5f3ef);
+  color: var(--text, #24211d);
+}
+
+.base-modal-close:focus-visible {
+  outline: 2px solid var(--accent, #36322d);
+  outline-offset: 2px;
 }
 
 .base-modal-content {
-  padding: 20px 22px;
+  padding: 18px 20px;
 }
 
 .base-modal-footer {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding: 15px 22px 20px;
-  border-top: 1px solid var(--border);
+  padding: 14px 20px 18px;
+  border-top: 1px solid var(--border, #dedbd4);
 }
 
 @media (max-width: 580px) {
   .base-modal-backdrop { padding: 8px; }
-  .base-modal-panel { border-radius: 16px; }
+  .base-modal-panel { border-radius: 6px; }
   .base-modal-panel.scrollable { max-height: calc(100vh - 16px); }
   .base-modal-panel.viewport-fit {
     height: calc(100vh - 16px);
     height: calc(100dvh - 16px);
   }
-  .base-modal-panel.viewport-fit .base-modal-head { border-radius: 15px 15px 0 0; }
-  .base-modal-head, .base-modal-content { padding-inline: 17px; }
-  .base-modal-footer { padding-inline: 17px; }
+  .base-modal-head, .base-modal-content { padding-inline: 16px; }
+  .base-modal-footer { padding-inline: 16px; }
 }
 </style>

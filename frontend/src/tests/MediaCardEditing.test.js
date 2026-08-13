@@ -36,17 +36,82 @@ describe('media card editing', () => {
   })
   afterEach(() => { document.body.innerHTML = '' })
 
-  it('renames an image with the custom modal', async () => {
+  it('selects an image by click or Enter and reflects its selected state', async () => {
     const result = {
+      code: 'image-code', name: '图片名称', original_filename: 'image.png', visibility: 'public',
+      size: 1, content_type: 'image/png', url: '/i/image-code',
+    }
+    const wrapper = mount(ImageResult, {
+      props: { item: { status: 'done', result }, selectable: true, selected: true },
+    })
+    await flushPromises()
+
+    expect(wrapper.classes()).toContain('selected')
+    expect(wrapper.attributes('role')).toBe('button')
+    expect(wrapper.attributes('tabindex')).toBe('0')
+    expect(wrapper.attributes('aria-pressed')).toBe('true')
+
+    await wrapper.trigger('click')
+    await wrapper.trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('select')).toEqual([[result], [result]])
+  })
+
+  it('keeps retry and remove controls for a failed upload', async () => {
+    const wrapper = mount(ImageResult, {
+      props: {
+        item: {
+          status: 'error',
+          error: '网络连接中断',
+          retryable: true,
+          file: { name: 'failed.png', type: '' },
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('failed.png')
+    expect(wrapper.text()).toContain('网络连接中断')
+    expect(wrapper.find('.preview-placeholder .app-icon').exists()).toBe(true)
+
+    const buttons = wrapper.findAll('button')
+    await buttons.find(button => button.text() === '重试上传').trigger('click')
+    await buttons.find(button => button.text() === '移除').trigger('click')
+    expect(wrapper.emitted('retry')).toHaveLength(1)
+    expect(wrapper.emitted('remove-pending')).toHaveLength(1)
+    expect(wrapper.emitted('select')).toBeUndefined()
+  })
+
+  it('keeps contextual group actions without adding controls to gallery cards', async () => {
+    const result = {
+      code: 'grouped-image', name: '分组图片', original_filename: 'grouped.png', visibility: 'public',
+      size: 1, content_type: 'image/png', url: '/i/grouped-image',
+    }
+    const plain = mount(ImageResult, { props: { item: { status: 'done', result } } })
+    expect(plain.find('.context-card-actions').exists()).toBe(false)
+
+    const contextual = mount(ImageResult, {
+      props: { item: { status: 'done', result }, groupable: true, removable: true },
+    })
+    const buttons = contextual.findAll('button')
+    await buttons.find(button => button.text() === '加入分组').trigger('click')
+    await buttons.find(button => button.text() === '移出分组').trigger('click')
+
+    expect(contextual.emitted('add-to-group')).toHaveLength(1)
+    expect(contextual.emitted('remove')).toHaveLength(1)
+  })
+
+  it('renames an image from a contextual card', async () => {
+    const item = {
       code: 'image-code', name: '旧图片名', original_filename: 'old.png', visibility: 'public',
       size: 1, content_type: 'image/png', url: '/i/image-code',
     }
-    api.updateImage.mockResolvedValue({ ...result, name: '新图片名' })
+    api.updateImage.mockResolvedValue({ ...item, name: '新图片名' })
     const wrapper = mount(ImageResult, {
       attachTo: document.body,
-      props: { item: { status: 'done', result }, editable: true },
+      props: { item: { status: 'done', result: item }, editable: true },
     })
+    await flushPromises()
     await submitRename(wrapper, '新图片名')
+
     expect(api.updateImage).toHaveBeenCalledWith('image-code', { name: '新图片名' })
     expect(wrapper.text()).toContain('新图片名')
     expect(document.body.querySelector('.base-modal-panel')).toBeNull()

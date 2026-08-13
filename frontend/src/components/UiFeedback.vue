@@ -1,5 +1,6 @@
 <script setup>
 import { dismissToast, feedback, resolveConfirm } from '../stores/feedback'
+import AppIcon from './AppIcon.vue'
 import BaseModal from './BaseModal.vue'
 </script>
 
@@ -7,7 +8,7 @@ import BaseModal from './BaseModal.vue'
   <div class="toast-region" aria-live="polite" aria-atomic="true">
     <div v-for="item in feedback.toasts" :key="item.id" class="toast" :class="`toast-${item.type}`">
       <span>{{ item.message }}</span>
-      <button aria-label="关闭提示" @click="dismissToast(item.id)">×</button>
+      <button aria-label="关闭提示" @click="dismissToast(item.id)"><AppIcon name="close" size="15" /></button>
     </div>
   </div>
 
@@ -21,7 +22,7 @@ import BaseModal from './BaseModal.vue'
     @close="resolveConfirm(false)"
   >
     <div class="confirm-body">
-      <div class="dialog-icon" :class="{ danger: feedback.confirm.danger }">{{ feedback.confirm.danger ? '!' : '?' }}</div>
+      <div class="dialog-icon" :class="{ danger: feedback.confirm.danger }"><AppIcon name="alert" size="19" /></div>
       <p id="confirm-message">{{ feedback.confirm.message }}</p>
       <div class="dialog-actions">
         <button data-confirm-cancel class="ghost" @click="resolveConfirm(false)">取消</button>

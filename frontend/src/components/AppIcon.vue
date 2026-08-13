@@ -1,20 +1,30 @@
 <script setup>
 import {
+  Check,
   CircleAlert,
   ChevronRight,
+  Copy,
   Circle,
+  Eye,
   FolderOpen,
   Gauge,
+  Globe2,
   Image,
   KeyRound,
   LockKeyhole,
   LogOut,
   Menu,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
   ShieldCheck,
+  Trash2,
   Upload,
   UserRound,
   UsersRound,
   Video,
+  X,
 } from 'lucide-vue-next'
 
 defineProps({
@@ -38,6 +48,17 @@ const icons = {
   logout: LogOut,
   menu: Menu,
   chevron: ChevronRight,
+  search: Search,
+  close: X,
+  copy: Copy,
+  edit: Pencil,
+  delete: Trash2,
+  public: Globe2,
+  private: LockKeyhole,
+  check: Check,
+  retry: RefreshCw,
+  preview: Eye,
+  plus: Plus,
 }
 </script>
 

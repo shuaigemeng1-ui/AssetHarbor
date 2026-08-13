@@ -195,8 +195,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="library-view">
-    <div class="section-heading">
+  <section class="library-view video-library-view">
+    <div class="section-heading video-heading">
       <div>
         <p class="eyebrow">{{ isTeam ? '团队媒体库' : isGlobalAdmin ? '全站媒体库' : '断点续传' }}</p>
         <h2>{{ isTeam ? '团队视频' : isGlobalAdmin ? '全站视频' : '我的视频' }}</h2>
@@ -224,10 +224,10 @@ onBeforeUnmount(() => {
 
     <VideoUploadQueue :team-id="teamId" />
 
-    <div class="library-toolbar">
+    <div class="library-toolbar video-toolbar">
       <div class="search-row">
         <input v-model="query" class="search" type="search" placeholder="搜索名称、文件名或短码" aria-label="搜索视频" @input="onQueryInput" />
-        <button v-if="query" class="clear" aria-label="清除搜索" @click="clearSearch">×</button>
+        <button v-if="query" class="clear" aria-label="清除搜索" @click="clearSearch">清除</button>
       </div>
     </div>
 
@@ -249,7 +249,6 @@ onBeforeUnmount(() => {
         />
       </div>
       <div v-else class="empty-state">
-        <div class="empty-icon">▶</div>
         <h3>{{ query ? '没有找到匹配视频' : '这里还没有视频' }}</h3>
         <p>{{ query ? '换个关键词试试看。' : '从上方上传第一个视频吧。' }}</p>
       </div>
@@ -271,3 +270,191 @@ onBeforeUnmount(() => {
     />
   </section>
 </template>
+
+<style scoped>
+.video-library-view {
+  color: var(--text);
+}
+
+.video-heading {
+  margin-bottom: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.video-heading h2 {
+  margin: 0 0 5px;
+  font-size: 24px;
+  font-weight: 680;
+  letter-spacing: -.025em;
+}
+
+.video-heading .eyebrow {
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: .1em;
+}
+
+.video-heading p:not(.eyebrow) {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.total-badge {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 9px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 550;
+}
+
+.video-upload-panel {
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+  background: #fff;
+  box-shadow: none;
+}
+
+.options {
+  margin-bottom: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 230px;
+  gap: 8px;
+}
+
+.name-input,
+.vis-select {
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0 11px;
+  background: #fff;
+  color: var(--text);
+  box-shadow: none;
+  font-size: 12px;
+  outline: 0;
+}
+
+.name-input:focus,
+.vis-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgb(11 99 229 / 10%);
+}
+
+:deep(.drop) {
+  min-height: 126px;
+  border-radius: 6px;
+  background: var(--panel-soft);
+}
+
+:deep(.upload-queue) {
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: none;
+}
+
+.video-toolbar {
+  margin: 18px 0;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.search-row {
+  width: min(360px, 100%);
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0 6px 0 11px;
+  background: #fff;
+}
+
+.search-row:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgb(11 99 229 / 10%);
+}
+
+.search-row .search {
+  min-width: 0;
+  min-height: 38px;
+  flex: 1;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 12px;
+  outline: 0;
+}
+
+.search-row .clear {
+  border: 0;
+  border-radius: 4px;
+  padding: 5px 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.search-row .clear:hover {
+  background: var(--panel-soft);
+  color: var(--text);
+}
+
+.media-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+:deep(.video-card) {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: none;
+}
+
+:deep(.video-preview),
+:deep(.video-preview video),
+:deep(.video-placeholder) {
+  border-radius: 5px 5px 0 0;
+}
+
+.empty-state {
+  min-height: 260px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: var(--panel-soft);
+}
+
+.empty-state h3 {
+  margin: 0 0 5px;
+  font-size: 14px;
+  font-weight: 630;
+}
+
+.empty-state p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 980px) {
+  .media-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 620px) {
+  .video-heading { flex-direction: column; gap: 10px; }
+  .options { grid-template-columns: 1fr; }
+  .media-grid { grid-template-columns: 1fr; }
+}
+</style>

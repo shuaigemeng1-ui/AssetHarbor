@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { addMediaGroupItems, createMediaGroup, listMediaGroups } from '../api'
 import { toast } from '../stores/feedback'
+import AppIcon from './AppIcon.vue'
 import BaseModal from './BaseModal.vue'
 
 const props = defineProps({
@@ -158,7 +159,10 @@ async function createAndAdd() {
     </template>
 
     <template #footer>
-      <button v-if="!creating" class="ghost" type="button" @click="creating = true">＋ 新建分组</button>
+      <button v-if="!creating" class="ghost" type="button" @click="creating = true">
+        <AppIcon name="plus" size="14" />
+        新建分组
+      </button>
       <span class="footer-spacer"></span>
       <button class="ghost" type="button" :disabled="saving" @click="emit('close')">取消</button>
       <button v-if="!creating" class="primary" type="button" :disabled="!selectedId || saving" @click="addToSelected">

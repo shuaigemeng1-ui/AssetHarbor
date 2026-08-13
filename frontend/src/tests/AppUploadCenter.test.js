@@ -53,5 +53,6 @@ describe('global upload center navigation', () => {
     await button.trigger('click')
     expect(wrapper.find('.modal-stub').exists()).toBe(true)
     expect(wrapper.find('.queue-stub').exists()).toBe(true)
+    expect(wrapper.get('.rail-upload-center').attributes('aria-label')).toBe('打开视频上传中心')
   })
 })

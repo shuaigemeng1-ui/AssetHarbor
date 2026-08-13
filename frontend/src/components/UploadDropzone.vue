@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue'
+import AppIcon from './AppIcon.vue'
 
 const props = defineProps({
   accept: { type: String, default: 'image/*' },
@@ -49,8 +50,83 @@ function onDrop(event) {
     @drop.prevent="onDrop"
   >
     <input ref="input" type="file" :accept="accept" :multiple="multiple" hidden @change="onInput" />
-    <div class="drop-icon" aria-hidden="true">↑</div>
+    <div class="drop-icon" aria-hidden="true">
+      <AppIcon name="upload" :size="18" />
+    </div>
     <p class="hint">{{ label }}</p>
     <p v-if="description" class="sub">{{ description }}</p>
   </div>
 </template>
+
+<style scoped>
+.drop {
+  min-height: 148px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  padding: 28px 20px;
+  border: 1px dashed var(--border, #c9c5bd);
+  border-radius: 8px;
+  background: var(--panel, #fff);
+  color: var(--text, #24211d);
+  cursor: pointer;
+  text-align: center;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.drop:hover,
+.drop.dragover {
+  border-color: var(--muted, #746f67);
+  background: var(--soft, #f6f4ef);
+  transform: none;
+}
+
+.drop:focus-visible {
+  border-color: var(--text, #24211d);
+  outline: 2px solid color-mix(in srgb, var(--text, #24211d) 18%, transparent);
+  outline-offset: 2px;
+  background: var(--soft, #f6f4ef);
+  transform: none;
+}
+
+.drop.compact {
+  min-height: 104px;
+  padding: 20px 16px;
+}
+
+.drop-icon {
+  width: 36px;
+  height: 36px;
+  margin-bottom: 10px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border, #dedbd4);
+  border-radius: 6px;
+  background: var(--soft, #f6f4ef);
+  box-shadow: none;
+  color: var(--text, #24211d);
+}
+
+.drop .hint {
+  margin: 0 0 4px;
+  color: var(--text, #24211d);
+  font-size: 13px;
+  font-weight: 620;
+  line-height: 1.45;
+}
+
+.drop .sub {
+  max-width: 660px;
+  margin: 0;
+  color: var(--muted, #746f67);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+@media (max-width: 580px) {
+  .drop {
+    min-height: 132px;
+    padding: 22px 14px;
+  }
+}
+</style>

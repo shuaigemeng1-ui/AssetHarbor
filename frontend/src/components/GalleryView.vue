@@ -1,9 +1,12 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { deleteImage, fetchPublicConfig, listImages, listTeamImages, updateImage, uploadFile } from '../api'
 import { confirmAction, toast } from '../stores/feedback'
+import { acquireModalLock, releaseModalLock } from '../stores/modalLock'
 import { formatBytes } from '../utils/format'
-import CollectionPickerModal from './CollectionPickerModal.vue'
+import AppIcon from './AppIcon.vue'
+import BaseModal from './BaseModal.vue'
+import ImageInspector from './ImageInspector.vue'
 import ImageResult from './ImageResult.vue'
 import UploadDropzone from './UploadDropzone.vue'
 
@@ -11,7 +14,11 @@ const props = defineProps({
   user: { type: Object, required: true },
   teamId: { type: [Number, String], default: null },
   canManage: { type: Boolean, default: false },
+  embedded: { type: Boolean, default: false },
+  openUpload: { type: Boolean, default: false },
 })
+
+const emit = defineEmits(['upload-request-consumed'])
 
 const images = ref([])
 const uploads = ref([])
@@ -21,24 +28,31 @@ const loadingMore = ref(false)
 const loadError = ref('')
 const query = ref('')
 const uploadName = ref('')
+const uploadOpen = ref(props.openUpload)
+const selectedImage = ref(null)
+const inspectorOpen = ref(false)
+const inspectorPanel = ref(null)
+const isNarrowLayout = ref(typeof window !== 'undefined' && window.innerWidth <= 1160)
 // Omitted visibility is a fixed public API contract. Users must explicitly
 // select "private" when they want restricted access.
 const uploadVisibility = ref('public')
-const groupTarget = ref(null)
 const publicConfig = ref(null)
 const PAGE_SIZE = 12
 let nextId = 1
 let searchTimer = null
 let loadGeneration = 0
 let publicConfigPromise = null
+let layoutMedia = null
+let drawerLocked = false
+let previousInspectorFocus = null
 const uploadQueue = []
 const IMAGE_UPLOAD_CONCURRENCY = 3
 let activeUploadCount = 0
 
 const isTeam = computed(() => props.teamId !== null && props.teamId !== undefined)
 const hasMore = computed(() => images.value.length < total.value)
-const groupTargetTeamId = computed(() => groupTarget.value?.team_id ?? props.teamId)
 const isGlobalAdmin = computed(() => props.user.role === 'admin' && !isTeam.value)
+const drawerActive = computed(() => inspectorOpen.value && (props.embedded || isNarrowLayout.value))
 const uploadDescription = computed(() => {
   const parts = ['支持 JPG、PNG、GIF、WebP、SVG、AVIF 等常用格式']
   if (Number(publicConfig.value?.max_upload_size_mb) > 0) {
@@ -67,6 +81,10 @@ async function loadGallery({ append = false } = {}) {
     const incoming = response.items || []
     images.value = append ? [...images.value, ...incoming] : incoming
     total.value = Number(response.total || 0)
+    if (!append || !selectedImage.value) {
+      selectedImage.value = incoming[0] || null
+      if (!selectedImage.value) inspectorOpen.value = false
+    }
   } catch (error) {
     if (generation === loadGeneration) loadError.value = error.message
   } finally {
@@ -153,17 +171,22 @@ async function runUpload(pending) {
   pending.status = 'uploading'
   pending.error = ''
   try {
-    const result = await uploadFile(pending.file, {
+    const response = await uploadFile(pending.file, {
       name: pending.name,
       visibility: pending.visibility,
       teamId: pending.teamId,
     })
+    const result = {
+      ...response,
+      original_filename: response.original_filename || pending.file.name,
+    }
     pending.result = result
     pending.status = 'done'
     uploads.value = uploads.value.filter(item => item.id !== pending.id)
     if (!query.value.trim()) {
       images.value.unshift(result)
       total.value++
+      selectedImage.value = result
     } else {
       await loadGallery()
     }
@@ -188,6 +211,49 @@ function wrapped(item) {
   return { id: `image-${item.id || item.code}`, status: 'done', result: item, file: null }
 }
 
+async function selectImage(item) {
+  selectedImage.value = item
+  inspectorOpen.value = true
+}
+
+function closeInspector() {
+  inspectorOpen.value = false
+}
+
+function onInspectorKeydown(event) {
+  if (!drawerActive.value || document.querySelector('.base-modal-panel')) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeInspector()
+    return
+  }
+  if (event.key !== 'Tab') return
+  const root = inspectorPanel.value?.getElement?.()
+  if (!root) return
+  const focusable = [...root.querySelectorAll(
+    'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [href], [tabindex]:not([tabindex="-1"])',
+  )]
+  const closeButton = root.parentElement?.querySelector('.inspector-mobile-close')
+  if (closeButton && !closeButton.disabled) focusable.push(closeButton)
+  if (!focusable.length) {
+    event.preventDefault()
+    root.focus()
+    return
+  }
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (event.shiftKey && (document.activeElement === first || document.activeElement === root)) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  } else if (!root.contains(document.activeElement)) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
 async function onDelete(item) {
   const ok = await confirmAction({
     title: '删除图片',
@@ -198,8 +264,13 @@ async function onDelete(item) {
   if (!ok) return
   try {
     await deleteImage(item.code)
+    const deletedIndex = images.value.findIndex(image => image.code === item.code)
     images.value = images.value.filter(image => image.code !== item.code)
     total.value = Math.max(0, total.value - 1)
+    if (selectedImage.value?.code === item.code) {
+      selectedImage.value = images.value[deletedIndex] || images.value[deletedIndex - 1] || null
+      if (!selectedImage.value) inspectorOpen.value = false
+    }
     toast('图片已删除', 'success')
   } catch (error) {
     toast(`删除失败：${error.message}`, 'error')
@@ -243,90 +314,193 @@ function clearSearch() {
 watch(() => props.teamId, () => {
   query.value = ''
   uploads.value = []
+  selectedImage.value = null
+  inspectorOpen.value = false
+  uploadOpen.value = false
   loadGallery()
+})
+
+watch(() => props.openUpload, next => {
+  if (next) {
+    uploadOpen.value = true
+    emit('upload-request-consumed')
+  }
+})
+
+watch(drawerActive, async active => {
+  if (active) {
+    previousInspectorFocus = document.activeElement
+    if (!drawerLocked) {
+      acquireModalLock()
+      drawerLocked = true
+    }
+    await nextTick()
+    inspectorPanel.value?.focus?.()
+  } else {
+    if (drawerLocked) {
+      releaseModalLock()
+      drawerLocked = false
+    }
+    await nextTick()
+    previousInspectorFocus?.focus?.()
+    previousInspectorFocus = null
+  }
 })
 
 onMounted(async () => {
+  window.addEventListener('keydown', onInspectorKeydown)
+  if (window.matchMedia) {
+    layoutMedia = window.matchMedia('(max-width: 1160px)')
+    isNarrowLayout.value = layoutMedia.matches
+    layoutMedia.onchange = event => { isNarrowLayout.value = event.matches }
+  }
+  if (props.openUpload) emit('upload-request-consumed')
   loadGallery()
   try { await ensurePublicConfig() } catch { /* upload APIs remain usable when optional public config is unavailable */ }
 })
-onBeforeUnmount(() => clearTimeout(searchTimer))
+onBeforeUnmount(() => {
+  clearTimeout(searchTimer)
+  window.removeEventListener('keydown', onInspectorKeydown)
+  if (layoutMedia) layoutMedia.onchange = null
+  if (drawerLocked) {
+    releaseModalLock()
+    drawerLocked = false
+  }
+})
 </script>
 
 <template>
-    <section class="library-view">
-    <div class="section-heading">
-      <div>
-        <p class="eyebrow">{{ isTeam ? '团队媒体库' : isGlobalAdmin ? '全站媒体库' : '个人媒体库' }}</p>
-        <h2>{{ isTeam ? '团队图片' : isGlobalAdmin ? '全站图片' : '我的图片' }}</h2>
-        <p>上传原图并获得可分享的短链接。</p>
-      </div>
-      <span class="total-badge">{{ total }} 张</span>
-    </div>
+  <section class="asset-library" :class="{ 'asset-library-embedded': embedded, 'inspector-open': inspectorOpen }">
+    <div class="asset-library-main" :inert="drawerActive ? '' : undefined">
+      <header class="library-heading">
+        <div class="library-title">
+          <p>{{ isTeam ? '团队媒体库' : isGlobalAdmin ? '全站媒体库' : '个人媒体库' }}</p>
+          <div>
+            <h1>{{ isTeam ? '团队图片' : isGlobalAdmin ? '全站图片' : '我的图片' }}</h1>
+            <span>{{ total }} 张</span>
+          </div>
+        </div>
+      </header>
 
-    <div class="upload-panel">
-      <div class="options">
-        <input v-model="uploadName" class="name-input" type="text" placeholder="图片命名（可选，多张自动加序号）" maxlength="255" aria-label="图片显示名称" />
-        <select v-model="uploadVisibility" class="vis-select" aria-label="图片可见性">
-          <option value="private">私密 · 仅自己/团队可见</option>
-          <option value="public">公开 · 任何人可访问</option>
-        </select>
-      </div>
-      <UploadDropzone
-        accept="image/*"
-        label="选择图片，或拖拽到这里"
-        :description="uploadDescription"
-        aria-label="选择或拖拽图片上传"
-        @files="handleFiles"
-      />
-    </div>
-
-    <div class="library-toolbar">
-      <div class="search-row">
-        <input v-model="query" class="search" type="search" placeholder="搜索名称、文件名或短码" aria-label="搜索图片" @input="onQueryInput" />
-        <button v-if="query" class="clear" aria-label="清除搜索" @click="clearSearch">×</button>
-      </div>
-    </div>
-
-    <div v-if="uploads.length" class="media-grid pending-grid">
-      <ImageResult v-for="item in uploads" :key="item.id" :item="item" @retry="retryUpload(item)" @remove-pending="removeUpload(item)" />
-    </div>
-
-    <p v-if="loading" class="status loading-state" aria-live="polite">正在加载图片…</p>
-    <div v-else-if="loadError" class="status error" role="alert">加载失败：{{ loadError }} <button class="secondary" @click="loadGallery()">重试</button></div>
-    <template v-else>
-      <div v-if="images.length" class="media-grid">
-        <ImageResult
-          v-for="item in images"
-          :key="item.id || item.code"
-          :item="wrapped(item)"
-          :deletable="canDelete(item)"
-          :show-scope="isGlobalAdmin"
-          :groupable="canGroup(item)"
-          @add-to-group="groupTarget = item"
-          @delete="onDelete(item)"
-          @toggle-visibility="onToggleVisibility(item)"
-        />
-      </div>
-      <div v-else class="empty-state">
-        <div class="empty-icon">◇</div>
-        <h3>{{ query ? '没有找到匹配图片' : '这里还没有图片' }}</h3>
-        <p>{{ query ? '换个关键词试试看。' : '从上方上传第一张图片吧。' }}</p>
-      </div>
-      <div v-if="hasMore" class="load-more-wrap">
-        <button class="secondary" :disabled="loadingMore" @click="loadGallery({ append: true })">
-          {{ loadingMore ? '加载中…' : `加载更多（还有 ${total - images.length} 张）` }}
+      <div class="library-toolbar">
+        <div class="search-row">
+          <AppIcon name="search" size="17" />
+          <input v-model="query" class="search" type="search" placeholder="搜索名称、文件名或短码" aria-label="搜索图片" @input="onQueryInput" />
+          <button v-if="query" class="clear" type="button" aria-label="清除搜索" @click="clearSearch">
+            <AppIcon name="close" size="15" />
+          </button>
+        </div>
+        <button v-if="uploads.length" class="upload-activity" type="button" @click="uploadOpen = true">
+          {{ uploads.length }} 个上传任务
+        </button>
+        <button class="primary library-upload-button" type="button" @click="uploadOpen = true">
+          <AppIcon name="upload" size="16" />
+          上传
         </button>
       </div>
-    </template>
 
-    <CollectionPickerModal
-      v-if="groupTarget"
-      :media="groupTarget"
-      :team-id="groupTargetTeamId"
-      :user-id="user.id"
-      :can-manage="canManage || user.role === 'admin'"
-      @close="groupTarget = null"
+      <p v-if="loading" class="status loading-state" aria-live="polite">正在加载图片…</p>
+      <div v-else-if="loadError" class="status error" role="alert">
+        <span>加载失败：{{ loadError }}</span>
+        <button class="secondary" @click="loadGallery()">重试</button>
+      </div>
+      <template v-else>
+        <div v-if="images.length" class="media-grid asset-grid" role="list" aria-label="图片列表">
+          <ImageResult
+            v-for="item in images"
+            :key="item.id || item.code"
+            :item="wrapped(item)"
+            selectable
+            :selected="selectedImage?.code === item.code"
+            @select="selectImage(item)"
+          />
+        </div>
+        <div v-else class="empty-state">
+          <div class="empty-icon"><AppIcon name="image" size="22" /></div>
+          <h3>{{ query ? '没有找到匹配图片' : '这里还没有图片' }}</h3>
+          <p>{{ query ? '换个关键词试试看。' : '上传第一张图片，开始建立媒体库。' }}</p>
+          <button v-if="!query" class="primary" type="button" @click="uploadOpen = true">上传图片</button>
+        </div>
+        <div v-if="hasMore" class="load-more-wrap">
+          <button class="secondary" :disabled="loadingMore" @click="loadGallery({ append: true })">
+            {{ loadingMore ? '加载中…' : `加载更多（还有 ${total - images.length} 张）` }}
+          </button>
+        </div>
+      </template>
+    </div>
+
+    <ImageInspector
+      v-if="selectedImage"
+      ref="inspectorPanel"
+      tabindex="-1"
+      :role="drawerActive ? 'dialog' : undefined"
+      :aria-modal="drawerActive ? 'true' : undefined"
+      :item="selectedImage"
+      :user="user"
+      :can-manage="canDelete(selectedImage)"
+      :can-manage-groups="canManage || user.role === 'admin'"
+      :is-global-admin="isGlobalAdmin"
+      :team-id="selectedImage.team_id ?? teamId"
+      :groupable="canGroup(selectedImage)"
+      @delete="onDelete(selectedImage)"
+      @toggle-visibility="onToggleVisibility(selectedImage)"
+      @updated="Object.assign(selectedImage, $event)"
     />
+    <aside v-else class="image-inspector image-inspector-empty" aria-label="图片详情">
+      <AppIcon name="image" size="24" />
+      <strong>图片详情</strong>
+      <p>{{ loading ? '正在加载媒体库…' : '选择一张图片查看详情' }}</p>
+    </aside>
+    <button v-if="inspectorOpen" class="inspector-mobile-backdrop" type="button" tabindex="-1" aria-label="关闭图片详情" @click="closeInspector" />
+    <button v-if="inspectorOpen" class="inspector-mobile-close" type="button" aria-label="关闭图片详情" @click="closeInspector">
+      <AppIcon name="close" size="17" />
+    </button>
+
+    <BaseModal
+      v-if="uploadOpen"
+      title="上传图片"
+      description="上传原图并获得可分享的短链接。"
+      labelled-by="image-upload-title"
+      wide
+      @close="uploadOpen = false"
+    >
+      <div class="image-upload-dialog">
+        <div class="upload-settings">
+          <label>
+            <span>图片命名</span>
+            <input v-model="uploadName" class="name-input" type="text" placeholder="可选，多张图片会自动添加序号" maxlength="255" />
+          </label>
+          <label>
+            <span>可见性</span>
+            <select v-model="uploadVisibility" class="vis-select">
+              <option value="private">私密 · 仅自己/团队可见</option>
+              <option value="public">公开 · 任何人可访问</option>
+            </select>
+          </label>
+        </div>
+        <UploadDropzone
+          accept="image/*"
+          label="选择图片，或拖拽到这里"
+          :description="uploadDescription"
+          aria-label="选择或拖拽图片上传"
+          @files="handleFiles"
+        />
+        <section v-if="uploads.length" class="upload-task-section" aria-label="上传任务">
+          <header><strong>上传任务</strong><span>{{ uploads.length }} 个</span></header>
+          <div class="media-grid pending-grid">
+            <ImageResult
+              v-for="item in uploads"
+              :key="item.id"
+              :item="item"
+              @retry="retryUpload(item)"
+              @remove-pending="removeUpload(item)"
+            />
+          </div>
+        </section>
+      </div>
+      <template #footer>
+        <button class="ghost" type="button" @click="uploadOpen = false">关闭</button>
+      </template>
+    </BaseModal>
   </section>
 </template>
