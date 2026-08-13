@@ -99,7 +99,7 @@ async function loadGallery({ append = false } = {}) {
     images.value = append ? [...images.value, ...incoming] : incoming
     total.value = Number(response.total || 0)
     if (!append || !selectedImage.value) {
-      selectedImage.value = incoming[0] || null
+      selectedImage.value = props.embedded ? null : (incoming[0] || null)
       if (!selectedImage.value) inspectorOpen.value = false
     }
   } catch (error) {
@@ -203,7 +203,7 @@ async function runUpload(pending) {
     if (!query.value.trim()) {
       images.value.unshift(result)
       total.value++
-      selectedImage.value = result
+      selectedImage.value = props.embedded ? null : result
     } else {
       await loadGallery()
     }
@@ -389,7 +389,7 @@ onBeforeUnmount(() => {
 <template>
   <section class="asset-library" :class="{ 'asset-library-embedded': embedded, 'inspector-open': inspectorOpen }">
     <div class="asset-library-main" :inert="drawerActive ? '' : undefined">
-      <header class="library-heading">
+      <header v-if="!embedded" class="library-heading">
         <div class="library-title">
           <p>{{ isTeam ? '团队媒体库' : isGlobalAdmin ? '全站媒体库' : '个人媒体库' }}</p>
           <div>
@@ -436,7 +436,7 @@ onBeforeUnmount(() => {
           <div class="empty-icon"><AppIcon name="image" size="22" /></div>
           <h3>{{ query ? '没有找到匹配图片' : '这里还没有图片' }}</h3>
           <p>{{ query ? '换个关键词试试看。' : '上传第一张图片，开始建立媒体库。' }}</p>
-          <button v-if="!query" class="primary" type="button" @click="uploadOpen = true">{{ uploadButtonLabel }}</button>
+          <button v-if="!query && !embedded" class="primary" type="button" @click="uploadOpen = true">{{ uploadButtonLabel }}</button>
         </div>
         <div v-if="hasMore" class="load-more-wrap">
           <button class="secondary" :disabled="loadingMore" @click="loadGallery({ append: true })">

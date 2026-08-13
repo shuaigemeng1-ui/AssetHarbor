@@ -103,7 +103,9 @@ async function loadVideos({ append = false } = {}) {
     total.value = Number(response.total || 0)
     if (!append) {
       const selectedCode = selectedVideo.value?.code
-      selectedVideo.value = incoming.find(item => item.code === selectedCode) || incoming[0] || null
+      selectedVideo.value = props.embedded
+        ? null
+        : (incoming.find(item => item.code === selectedCode) || incoming[0] || null)
       if (!selectedVideo.value) inspectorOpen.value = false
     }
   } catch (error) {
@@ -317,7 +319,7 @@ onBeforeUnmount(() => {
 <template>
   <section class="asset-library video-library" :class="{ 'asset-library-embedded': embedded, 'inspector-open': inspectorOpen }">
     <div class="asset-library-main" :inert="drawerActive ? '' : undefined">
-      <header class="library-heading">
+      <header v-if="!embedded" class="library-heading">
         <div class="library-title">
           <p>{{ isTeam ? '团队媒体库' : isGlobalAdmin ? '全站媒体库' : '个人媒体库' }}</p>
           <div>
@@ -364,7 +366,7 @@ onBeforeUnmount(() => {
           <div class="empty-icon"><AppIcon name="video" size="22" /></div>
           <h3>{{ query ? '没有找到匹配视频' : '这里还没有视频' }}</h3>
           <p>{{ query ? '换个关键词试试看。' : '上传第一个视频，开始建立媒体库。' }}</p>
-          <button v-if="!query" class="primary" type="button" @click="uploadOpen = true">{{ uploadButtonLabel }}</button>
+          <button v-if="!query && !embedded" class="primary" type="button" @click="uploadOpen = true">{{ uploadButtonLabel }}</button>
         </div>
         <div v-if="hasMore" class="load-more-wrap">
           <button class="secondary" :disabled="loadingMore" @click="loadVideos({ append: true })">

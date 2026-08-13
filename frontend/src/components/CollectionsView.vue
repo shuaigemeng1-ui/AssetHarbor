@@ -19,6 +19,7 @@ const props = defineProps({
   user: { type: Object, required: true },
   teamId: { type: [Number, String], default: null },
   canManage: { type: Boolean, default: false },
+  embedded: { type: Boolean, default: false },
 })
 
 const groups = ref([])
@@ -295,9 +296,9 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="collections-view">
+  <section class="collections-view" :class="{ 'collections-view-embedded': embedded }">
     <div class="section-heading">
-      <div>
+      <div v-if="!embedded">
         <p class="eyebrow">{{ isTeam ? '团队内容编排' : '媒体整理' }}</p>
         <h2>{{ isTeam ? '团队分组' : '我的分组' }}</h2>
         <p>用分组整理图片和视频，媒体仍保留在原始空间中。</p>
@@ -482,6 +483,26 @@ onBeforeUnmount(() => {
   padding: 0 13px;
   box-shadow: none;
   font-size: 14px;
+}
+
+.collections-view-embedded > .section-heading {
+  min-height: 44px;
+  margin: 0 0 22px;
+  justify-content: flex-end;
+  border: 0;
+  padding: 0;
+}
+
+.collections-view-embedded .collections-layout {
+  min-height: 520px;
+  border: 0;
+  border-radius: 0;
+}
+
+.collections-view-embedded .collections-sidebar { background: #fff; }
+
+.collections-view-embedded .collection-media-grid {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
 }
 
 .collections-layout {
@@ -808,6 +829,12 @@ onBeforeUnmount(() => {
   .collection-media-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
+@media (max-width: 1260px) {
+  .collections-view-embedded .collections-layout { grid-template-columns: 1fr; }
+  .collections-view-embedded .collections-sidebar { border-right: 0; border-bottom: 1px solid var(--border); }
+  .collections-view-embedded .group-list { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+}
+
 @media (max-width: 840px) {
   .collections-layout { grid-template-columns: 1fr; }
   .collections-sidebar { border-right: 0; border-bottom: 1px solid var(--border); }
@@ -822,6 +849,7 @@ onBeforeUnmount(() => {
   .collection-actions,
   .item-search { width: 100%; }
   .collection-media-grid { grid-template-columns: 1fr; }
+  .collections-view-embedded .collection-media-grid { grid-template-columns: 1fr; }
   .group-search input,
   .item-search,
   .group-editor input,

@@ -51,6 +51,7 @@ describe('TeamsView permissions', () => {
 
     expect(wrapper.text()).not.toContain('解散团队')
     expect(wrapper.text()).not.toContain('设为管理员')
+    expect(wrapper.text()).not.toContain('团队设置')
     const bobRow = wrapper.findAll('.member-list li').find(row => row.text().includes('bob'))
     expect(bobRow.text()).toContain('移除')
     expect(wrapper.text()).toContain('退出团队')

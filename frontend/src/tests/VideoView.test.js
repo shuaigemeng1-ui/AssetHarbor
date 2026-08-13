@@ -110,6 +110,20 @@ describe('VideoView media group scope', () => {
     expect(document.body.querySelector('.vis-select').value).toBe('public')
   })
 
+  it('uses compact team chrome when embedded and waits for an explicit card selection', async () => {
+    api.listTeamVideos.mockResolvedValue({
+      items: [{ code: 'team-video', owner_id: 1, team_id: 42, visibility: 'public' }],
+      total: 1,
+    })
+    const wrapper = mountVideos({ teamId: 42, embedded: true, canManage: true })
+    await flushPromises()
+
+    expect(wrapper.classes()).toContain('asset-library-embedded')
+    expect(wrapper.find('.library-heading').exists()).toBe(false)
+    expect(wrapper.get('.video-card-stub').attributes('data-selected')).toBe('false')
+    expect(wrapper.find('.inspector-stub').exists()).toBe(false)
+  })
+
   it('keeps an administrator personal scope separate from the global list', async () => {
     const wrapper = mountVideos({ user: { id: 99, role: 'admin' }, scope: 'mine' })
     await flushPromises()

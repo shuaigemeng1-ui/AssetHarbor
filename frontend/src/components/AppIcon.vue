@@ -2,6 +2,7 @@
 import {
   Check,
   CircleAlert,
+  ChevronDown,
   ChevronRight,
   Copy,
   Circle,
@@ -21,6 +22,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Settings,
   ShieldCheck,
   Trash2,
   Upload,
@@ -51,6 +53,7 @@ const icons = {
   logout: LogOut,
   menu: Menu,
   chevron: ChevronRight,
+  down: ChevronDown,
   search: Search,
   close: X,
   copy: Copy,
@@ -66,6 +69,7 @@ const icons = {
   key: KeyRound,
   play: Play,
   plus: Plus,
+  settings: Settings,
 }
 </script>
 

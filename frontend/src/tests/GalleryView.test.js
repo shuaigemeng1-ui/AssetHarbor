@@ -102,6 +102,34 @@ describe('GalleryView image uploads', () => {
     expect(api.listImages).toHaveBeenCalledWith({ limit: 12, offset: 0, q: '', scope: 'mine' })
   })
 
+  it('uses compact team chrome when embedded and waits for an explicit card selection', async () => {
+    api.listTeamImages.mockResolvedValue({
+      items: [{ code: 'team-image', owner_id: 1, team_id: 42, visibility: 'public' }],
+      total: 1,
+    })
+    const wrapper = mountGallery({ teamId: 42, embedded: true, canManage: true })
+    await flushPromises()
+
+    expect(wrapper.classes()).toContain('asset-library-embedded')
+    expect(wrapper.find('.library-heading').exists()).toBe(false)
+    expect(wrapper.get('.image-result-stub').attributes('data-selected')).toBe('false')
+    expect(wrapper.find('.inspector-stub').exists()).toBe(false)
+  })
+
+  it('keeps a completed embedded upload unselected until the user opens it', async () => {
+    api.uploadFile.mockResolvedValue({
+      code: 'team-upload', name: 'team.png', original_filename: 'team.png',
+      visibility: 'public', content_type: 'image/png', size: 128, url: '/i/team-upload', owner_id: 1, team_id: 42,
+    })
+    const wrapper = mountGallery({ teamId: 42, embedded: true, canManage: true })
+    await flushPromises()
+    await selectFile(wrapper, 'team.png')
+    await flushPromises()
+
+    expect(wrapper.get('.image-result-stub').attributes('data-selected')).toBe('false')
+    expect(wrapper.find('.inspector-stub').exists()).toBe(false)
+  })
+
   it('reactively removes the temporary card when the upload completes', async () => {
     let finishUpload
     api.uploadFile.mockImplementation(() => new Promise(resolve => { finishUpload = resolve }))

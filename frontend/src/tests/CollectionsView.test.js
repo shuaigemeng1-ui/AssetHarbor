@@ -31,9 +31,9 @@ const group = {
   updated_at: '2026-08-12T00:00:00Z',
 }
 
-function mountView() {
+function mountView(props = {}) {
   return mount(CollectionsView, {
-    props: { user: { id: 7, role: 'user' } },
+    props: { user: { id: 7, role: 'user' }, ...props },
     global: {
       stubs: {
         ImageResult: {
@@ -119,5 +119,14 @@ describe('CollectionsView', () => {
       teamId: null,
     }))
     expect(wrapper.text()).toContain('客户案例')
+  })
+
+  it('keeps only the group action bar when embedded in a team', async () => {
+    const wrapper = mountView({ teamId: 3, canManage: true, embedded: true })
+    await flushPromises()
+
+    expect(wrapper.classes()).toContain('collections-view-embedded')
+    expect(wrapper.find('.section-heading h2').exists()).toBe(false)
+    expect(wrapper.get('.section-heading .primary').text()).toBe('新建分组')
   })
 })
