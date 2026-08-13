@@ -59,7 +59,10 @@ describe('global upload center navigation', () => {
     wrapper.unmount()
   })
 
-  it.each(['images', 'videos'])('renders #/%s with the full-width library shell', async route => {
+  it.each(['images', 'my-images', 'videos', 'my-videos'])('renders #/%s with the full-width library shell', async route => {
+    if (route.startsWith('my-')) {
+      api.fetchMe.mockResolvedValue({ id: 99, username: 'admin', role: 'admin' })
+    }
     window.location.hash = `#/${route}`
     const wrapper = mount(App, {
       global: {
@@ -84,7 +87,7 @@ describe('global upload center navigation', () => {
     wrapper.unmount()
   })
 
-  it('shows administrator global media navigation and a separate personal image route', async () => {
+  it('shows administrator global media navigation and separate personal media routes', async () => {
     api.fetchMe.mockResolvedValue({ id: 99, username: 'admin', role: 'admin' })
     window.location.hash = '#/images'
     const wrapper = mount(App, {
@@ -96,7 +99,10 @@ describe('global upload center navigation', () => {
             props: ['scope'],
             template: '<div class="gallery-scope-stub" :data-scope="scope" />',
           },
-          VideoView: true,
+          VideoView: {
+            props: ['scope'],
+            template: '<div class="video-scope-stub" :data-scope="scope" />',
+          },
           CollectionsView: true,
           TeamsView: true,
           AdminView: true,
@@ -122,6 +128,20 @@ describe('global upload center navigation', () => {
     expect(window.location.hash).toBe('#/my-images')
     expect(wrapper.get('.context-title').text()).toBe('个人空间')
     expect(wrapper.get('.gallery-scope-stub').attributes('data-scope')).toBe('mine')
+
+    const myVideos = wrapper.findAll('.side-nav button').find(button => button.text().includes('我的视频'))
+    await myVideos.trigger('click')
+
+    expect(window.location.hash).toBe('#/my-videos')
+    expect(wrapper.get('.context-title').text()).toBe('个人空间')
+    expect(wrapper.get('.video-scope-stub').attributes('data-scope')).toBe('mine')
+
+    const globalVideos = wrapper.findAll('.side-nav button').find(button => button.text().includes('全站视频'))
+    await globalVideos.trigger('click')
+
+    expect(window.location.hash).toBe('#/videos')
+    expect(wrapper.get('.context-title').text()).toBe('全站媒体库')
+    expect(wrapper.get('.video-scope-stub').attributes('data-scope')).toBe('all')
     wrapper.unmount()
   })
 
@@ -136,7 +156,10 @@ describe('global upload center navigation', () => {
             props: ['scope'],
             template: '<div class="gallery-scope-stub" :data-scope="scope" />',
           },
-          VideoView: true,
+          VideoView: {
+            props: ['scope'],
+            template: '<div class="video-scope-stub" :data-scope="scope" />',
+          },
           CollectionsView: true,
           TeamsView: true,
           AdminView: true,
@@ -153,12 +176,22 @@ describe('global upload center navigation', () => {
     expect(window.location.hash).toBe('#/images')
     expect(wrapper.get('.gallery-scope-stub').attributes('data-scope')).toBe('mine')
     expect(wrapper.text()).not.toContain('全站媒体库')
+
+    window.location.hash = '#/my-videos'
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+    await flushPromises()
+
+    expect(window.location.hash).toBe('#/videos')
+    expect(wrapper.get('.video-scope-stub').attributes('data-scope')).toBe('mine')
     wrapper.unmount()
   })
 
-  it('preserves the administrator personal-image bookmark until login resolves the role', async () => {
+  it.each([
+    ['my-images', 'gallery-scope-stub'],
+    ['my-videos', 'video-scope-stub'],
+  ])('preserves the administrator #%s bookmark until login resolves the role', async (route, scopeStub) => {
     api.getToken.mockReturnValue(null)
-    window.location.hash = '#/my-images'
+    window.location.hash = `#/${route}`
     const wrapper = mount(App, {
       global: {
         stubs: {
@@ -168,7 +201,10 @@ describe('global upload center navigation', () => {
             props: ['scope'],
             template: '<div class="gallery-scope-stub" :data-scope="scope" />',
           },
-          VideoView: true,
+          VideoView: {
+            props: ['scope'],
+            template: '<div class="video-scope-stub" :data-scope="scope" />',
+          },
           CollectionsView: true,
           TeamsView: true,
           AdminView: true,
@@ -184,12 +220,12 @@ describe('global upload center navigation', () => {
     })
     await flushPromises()
 
-    expect(window.location.hash).toBe('#/my-images')
+    expect(window.location.hash).toBe(`#/${route}`)
     await wrapper.get('.auth-stub').trigger('click')
     await flushPromises()
 
-    expect(window.location.hash).toBe('#/my-images')
-    expect(wrapper.get('.gallery-scope-stub').attributes('data-scope')).toBe('mine')
+    expect(window.location.hash).toBe(`#/${route}`)
+    expect(wrapper.get(`.${scopeStub}`).attributes('data-scope')).toBe('mine')
     wrapper.unmount()
   })
 })

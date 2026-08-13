@@ -27,6 +27,7 @@ const viewMeta = {
   images: { section: '个人空间', title: '我的图片' },
   'my-images': { section: '个人空间', title: '我的图片' },
   videos: { section: '个人空间', title: '我的视频' },
+  'my-videos': { section: '个人空间', title: '我的视频' },
   groups: { section: '资料库', title: '分组' },
   teams: { section: '团队空间', title: '团队' },
   admin: { section: '设置', title: '管理中心' },
@@ -39,7 +40,7 @@ const currentMeta = computed(() => {
   return viewMeta[view.value] || viewMeta.overview
 })
 const isSettingsView = computed(() => view.value === 'admin' || view.value === 'account')
-const adminOnlyViews = new Set(['admin', 'my-images'])
+const adminOnlyViews = new Set(['admin', 'my-images', 'my-videos'])
 
 function viewFromHash() {
   const candidate = window.location.hash.replace(/^#\/?/, '').split(/[?&]/, 1)[0]
@@ -54,7 +55,9 @@ function startUserSession(value) {
 function authorizedView(next) {
   if (!user.value) return next
   if (!adminOnlyViews.has(next) || isAdmin.value) return next
-  return next === 'my-images' ? 'images' : 'overview'
+  if (next === 'my-images') return 'images'
+  if (next === 'my-videos') return 'videos'
+  return 'overview'
 }
 
 function onUnauthorized() {
@@ -142,7 +145,7 @@ function logout() {
 
         <nav class="rail-nav" aria-label="主要功能">
           <button
-            :class="{ active: ['images', 'my-images', 'videos', 'groups'].includes(view) }"
+            :class="{ active: ['images', 'my-images', 'videos', 'my-videos', 'groups'].includes(view) }"
             aria-label="媒体库"
             title="媒体库"
             @click="navigate('images')"
@@ -230,8 +233,12 @@ function logout() {
                 >
                   <AppIcon name="image" /><span>我的图片</span>
                 </button>
-                <div v-if="!isAdmin" class="nav-video-row">
-                  <button :class="{ active: view === 'videos' }" :aria-current="view === 'videos' ? 'page' : undefined" @click="navigate('videos')">
+                <div class="nav-video-row">
+                  <button
+                    :class="{ active: view === (isAdmin ? 'my-videos' : 'videos') }"
+                    :aria-current="view === (isAdmin ? 'my-videos' : 'videos') ? 'page' : undefined"
+                    @click="navigate(isAdmin ? 'my-videos' : 'videos')"
+                  >
                     <AppIcon name="video" /><span>我的视频</span>
                   </button>
                   <button
@@ -289,7 +296,7 @@ function logout() {
         </div>
       </aside>
 
-      <div class="workspace-main" :class="{ 'workspace-main-library': ['images', 'my-images', 'videos'].includes(view) }">
+      <div class="workspace-main" :class="{ 'workspace-main-library': ['images', 'my-images', 'videos', 'my-videos'].includes(view) }">
         <header class="workspace-topbar">
           <div class="workspace-context">
             <small>{{ currentMeta.section }}</small>
@@ -312,7 +319,12 @@ function logout() {
             :open-upload="openImageUpload"
             @upload-request-consumed="openImageUpload = false"
           />
-          <VideoView v-if="view === 'videos'" :user="user" :scope="isAdmin ? 'all' : 'mine'" />
+          <VideoView
+            v-if="view === 'videos' || view === 'my-videos'"
+            :key="view"
+            :user="user"
+            :scope="isAdmin && view === 'videos' ? 'all' : 'mine'"
+          />
           <CollectionsView v-if="view === 'groups'" :user="user" />
           <TeamsView v-if="view === 'teams'" :user="user" />
           <AdminView v-if="view === 'admin' && isAdmin" :user="user" />
