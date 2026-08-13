@@ -172,21 +172,68 @@ describe('responsive workspace layout contract', () => {
     expectDeclaration(actionButton, 'white-space', 'nowrap')
   })
 
-  it('keeps the 1080p content width and progressively expands on wider displays', () => {
+  it('uses the available workspace width and caps ultra-wide content', () => {
     expectDeclaration(
       topLevelBlock(workspaceCss, ':root'),
       '--workspace-content-max',
-      'clamp(1180px, calc(100% - 528px), 1800px)',
+      '1800px',
     )
     expectDeclaration(
       topLevelBlock(workspaceCss, '.workspace-main > .page-content'),
       'width',
       'min(var(--workspace-content-max), calc(100% - 56px))',
     )
+    expectDeclaration(topLevelBlock(workspaceCss, '.workspace-main > .page-content'), 'max-width', 'none')
     expectDeclaration(
       topLevelBlock(workspaceCss, '.workspace-main > .site-footer'),
       'width',
       'min(var(--workspace-content-max), calc(100% - 56px))',
+    )
+    expectDeclaration(topLevelBlock(workspaceCss, '.workspace-main > .site-footer'), 'max-width', 'none')
+  })
+
+  it('keeps the app viewport-wide and leaves vertical scrolling to the document', () => {
+    const widthRoots = [
+      ['html', topLevelBlock(baseCss, 'html')],
+      ['body', topLevelBlock(baseCss, 'body')],
+      ['#app', topLevelBlock(baseCss, '#app')],
+      ['.app-shell', topLevelBlock(baseCss, '.app-shell')],
+      ['.workspace-shell', topLevelBlock(workspaceCss, '.workspace-shell')],
+      ['.workspace-main', topLevelBlock(workspaceCss, '.workspace-main')],
+    ]
+    const nestedScrollOwner = /(?:^|;)\s*overflow(?:-[xy])?\s*:/
+    const fixedViewportHeight = /(?:^|;)\s*height\s*:\s*100(?:d|s|l)?vh\b/
+
+    for (const [selector, block] of widthRoots) {
+      expectDeclaration(block, 'width', '100%')
+      expectDeclaration(block, 'max-width', 'none')
+      expect(block, `${selector} must leave scrolling to the document`).not.toMatch(nestedScrollOwner)
+      expect(block, `${selector} must grow with content instead of clipping at the initial viewport`).not.toMatch(fixedViewportHeight)
+    }
+
+    expectDeclaration(
+      topLevelBlock(workspaceCss, '.workspace-shell'),
+      'grid-template-columns',
+      '232px minmax(0, 1fr)',
+    )
+
+    const desktopWorkspace = topLevelBlock(workspaceCss, '@media (min-width: 861px)')
+    const ordinaryMain = topLevelBlock(
+      desktopWorkspace,
+      '.workspace-main:not(.workspace-main-library):not(.workspace-main-full)',
+    )
+    expectDeclaration(ordinaryMain, 'display', 'grid')
+    expectDeclaration(ordinaryMain, 'grid-template-rows', 'auto minmax(0, 1fr) auto')
+    expectDeclaration(ordinaryMain, 'min-height', '100vh')
+    expect(ordinaryMain, 'desktop workspace must not become a nested scroller').not.toMatch(nestedScrollOwner)
+    expect(ordinaryMain, 'desktop workspace must grow beyond the initial viewport').not.toMatch(fixedViewportHeight)
+    expectDeclaration(
+      topLevelBlock(
+        desktopWorkspace,
+        '.workspace-main:not(.workspace-main-library):not(.workspace-main-full) > .page-content',
+      ),
+      'min-height',
+      '0',
     )
   })
 

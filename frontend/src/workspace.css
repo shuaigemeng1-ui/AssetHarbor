@@ -18,8 +18,8 @@
   --danger-soft: #fff3f3;
   --shadow-sm: none;
   --shadow-md: 0 18px 48px rgb(0 0 0 / 16%);
-  /* Keep the current 1080p density, then preserve similar side gutters on wider displays. */
-  --workspace-content-max: clamp(1180px, calc(100% - 528px), 1800px);
+  /* Use the available workspace width while keeping ultra-wide pages readable. */
+  --workspace-content-max: 1800px;
 }
 
 html,
@@ -32,6 +32,8 @@ body {
 }
 
 .workspace-shell {
+  width: 100%;
+  max-width: none;
   min-height: 100vh;
   display: grid;
   grid-template-columns: 232px minmax(0, 1fr);
@@ -268,6 +270,8 @@ body {
 }
 
 .workspace-main {
+  width: 100%;
+  max-width: none;
   min-width: 0;
   background: #fff;
 }
@@ -308,6 +312,7 @@ body {
 
 .workspace-main > .page-content {
   width: min(var(--workspace-content-max), calc(100% - 56px));
+  max-width: none;
   min-height: calc(100vh - 126px);
   margin: 0 auto;
   padding: 32px 0 48px;
@@ -337,6 +342,7 @@ body {
 
 .workspace-main > .site-footer {
   width: min(var(--workspace-content-max), calc(100% - 56px));
+  max-width: none;
   padding: 18px 0 24px;
   font-size: var(--font-caption);
 }
@@ -870,6 +876,18 @@ button.ghost:hover,
 
 .toast {
   border-radius: 5px;
+}
+
+@media (min-width: 861px) {
+  .workspace-main:not(.workspace-main-library):not(.workspace-main-full) {
+    min-height: 100vh;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .workspace-main:not(.workspace-main-library):not(.workspace-main-full) > .page-content {
+    min-height: 0;
+  }
 }
 
 @media (min-width: 1921px) {

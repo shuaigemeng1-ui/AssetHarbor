@@ -34,11 +34,15 @@
 }
 
 html {
+  width: 100%;
+  max-width: none;
   min-width: 320px;
   background: var(--bg);
 }
 
 body {
+  width: 100%;
+  max-width: none;
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
@@ -93,6 +97,14 @@ p {
 }
 
 .app-shell {
+  width: 100%;
+  max-width: none;
+  min-height: 100vh;
+}
+
+#app {
+  width: 100%;
+  max-width: none;
   min-height: 100vh;
 }
 
