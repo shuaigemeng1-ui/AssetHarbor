@@ -55,9 +55,10 @@ A self-hosted media service for images and original video files. Videos use resu
 # 1. Clone
 git clone http://www.genkinet.net:10004/it_group/oss.git && cd oss
 
-# 2. Configure (ADMIN_PASSWORD is required for a fresh default install)
+# 2. Configure security (use .env.zh-CN.example for Chinese comments)
 cp .env.example .env
 #   Edit .env:  ADMIN_PASSWORD=your-strong-admin-password
+#               JWT_SECRET=<output of: openssl rand -hex 32>
 #               PORT / MAX_UPLOAD_SIZE_MB / PUBLIC_URL ... as needed
 
 # 3. Start
@@ -75,6 +76,11 @@ The same protection applies to `invite` mode when `INVITE_CODE` is empty. An
 existing installation that already has users may leave the bootstrap password
 empty; otherwise set a strong password, use `open`, or configure invite mode
 and its code together.
+
+Production deployments should also set a stable `JWT_SECRET` of at least 32
+UTF-8 bytes (`openssl rand -hex 32`). Leaving it empty is only appropriate for
+temporary development: every restart invalidates existing logins and private-
+media signed links. Changing a configured secret has the same effect.
 
 **Network mode**: the default `bridge` mode maps the host port (`PORT`) to the container. If you need the container to bind directly to the host network (e.g. bind a specific host IP), set `NETWORK_MODE=host` in `.env` — `PORT` then becomes the host port the app listens on directly.
 
@@ -97,8 +103,15 @@ curl -X POST http://<server-ip>:8080/api/upload \
 
 ## ⚙️ Configuration
 
+Docker Compose users can copy `.env.example`; a Chinese-commented equivalent is
+available as `.env.zh-CN.example`. Both templates contain the same variables,
+defaults, and ordering. Direct Uvicorn runs use the corresponding `OSS_*`
+variables instead, such as `OSS_ADMIN_PASSWORD` and `OSS_JWT_SECRET`.
+
 | Env var | Default | Description |
 |---|---|---|
+| `ADMIN_PASSWORD` | *(empty)* | Required for a fresh closed-registration install; creates/refreshes `admin` |
+| `JWT_SECRET` | *(empty)* | Required for stable production logins and signed links; non-empty values must contain at least 32 UTF-8 bytes. Use `openssl rand -hex 32` |
 | `PORT` | `8080` | Service port. In `bridge` mode: the host-mapped port; in `host` mode: the port the container listens on directly |
 | `NETWORK_MODE` | `bridge` | Network mode: `bridge` (default, port mapping) or `host` (bind directly to the host network) |
 | `FORWARDED_ALLOW_IPS` | `127.0.0.1` | Comma-separated trusted reverse-proxy IPs/CIDRs allowed to set `X-Forwarded-*`; never use `*` unless direct access is blocked and the proxy overwrites forwarded headers |
@@ -115,7 +128,6 @@ curl -X POST http://<server-ip>:8080/api/upload \
 | `SQLITE_BUSY_TIMEOUT_MS` | `5000` | SQLite busy-writer wait in milliseconds (`1..300000`) |
 | `SHORT_CODE_LENGTH` | `10` | Base62 short-code length (`6..32`) |
 | `PUBLIC_URL` | *(empty)* | Base prefix for returned links, e.g. `https://img.example.com`; leave empty to auto-derive from the request |
-| `ADMIN_PASSWORD` | *(empty)* | Required for a fresh closed-registration install; creates/refreshes `admin` |
 | `ALLOW_REGISTRATION` | `closed` | Registration policy: `open` / `invite` / `closed`; upgrades that need public sign-up must explicitly set `open` |
 | `INVITE_CODE` | *(empty)* | Invite code required when `ALLOW_REGISTRATION=invite` |
 | `TOKEN_EXPIRE_MINUTES` | `10080` | Access-token lifetime (`1..525600`) |
@@ -127,7 +139,6 @@ curl -X POST http://<server-ip>:8080/api/upload \
 | `API_KEY_MUTATION_RATE_LIMIT_PER_DAY` | `100` | API-key create/rotate/revoke operations per account per in-process fixed 24-hour window (`1..100000`); restarting the process resets this abuse guard |
 | `MAX_API_KEYS_PER_USER` | `20` | Maximum active API keys owned by one user (`1..1000`) |
 | `TRAFFIC_RETENTION_DAYS` | `365` | Retain UTC daily API traffic aggregates for `1..3650` days |
-| `JWT_SECRET` | *(empty)* | JWT signing secret; empty = ephemeral (all sessions reset on restart). A configured value must contain at least 32 UTF-8 bytes; use `openssl rand -hex 32` |
 | `SIGNED_URL_TTL_SECONDS` | `86400` | Private-media signed-link TTL in seconds (`60..604800`) |
 
 Numeric settings are validated during configuration import. Invalid values
@@ -357,7 +368,8 @@ oss/
 ├── tests/                      # pytest, split by domain
 ├── Dockerfile                  # multi-stage: node build → python runtime
 ├── docker-compose.yml
-└── .env.example
+├── .env.example                # English Docker Compose template
+└── .env.zh-CN.example          # Chinese Docker Compose template
 ```
 
 ## 🔐 Security Design

@@ -59,6 +59,8 @@ release-static-checks:
         git diff-tree --check --no-commit-id --root -r HEAD
       fi
     - docker compose config --quiet
+    - docker compose --env-file .env.example config --quiet
+    - docker compose --env-file .env.zh-CN.example config --quiet
 
 # A real multi-stage image build needs a Docker daemon. Keep ordinary branch
 # and merge-request checks daemonless; release tags enable this gate

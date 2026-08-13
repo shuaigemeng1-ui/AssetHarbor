@@ -55,9 +55,10 @@
 # 1. 克隆
 git clone http://www.genkinet.net:10004/it_group/oss.git && cd oss
 
-# 2. 调整配置（全新默认安装必须设置管理员密码）
-cp .env.example .env
+# 2. 调整安全配置（英文注释模板为 .env.example）
+cp .env.zh-CN.example .env
 #   编辑 .env：ADMIN_PASSWORD=你的强管理员密码
+#             JWT_SECRET=<执行 openssl rand -hex 32 得到的值>
 #             PORT / MAX_UPLOAD_SIZE_MB / PUBLIC_URL 等按需调整
 
 # 3. 启动
@@ -73,6 +74,10 @@ docker compose up -d
 `ADMIN_PASSWORD` 时，应用会快速失败，避免部署出一个无人能够登录的实例；
 `invite` 模式未同时设置 `INVITE_CODE` 时也会拒绝启动。已有用户的升级实例
 可不设引导密码；否则必须配置强密码、选择 `open`，或同时配置邀请模式和邀请码。
+
+生产部署还应设置至少 32 个 UTF-8 字节的稳定 `JWT_SECRET`，可使用
+`openssl rand -hex 32` 生成。留空仅适合临时开发：服务每次重启都会使已有
+登录态和私密媒体签名链接失效；后续更换已配置的密钥也会产生相同影响。
 
 **网络模式**：默认 `bridge` 模式将宿主机端口（`PORT`）映射进容器。若需要容器直接绑定宿主机网络（如绑定指定宿主机 IP），在 `.env` 设置 `NETWORK_MODE=host`——此时 `PORT` 即容器直接监听的宿主机端口。
 
@@ -95,8 +100,14 @@ curl -X POST http://服务器IP:8080/api/upload \
 
 ## ⚙️ 配置项
 
+Docker Compose 可直接复制中文注释版 `.env.zh-CN.example`，英文注释版为
+`.env.example`；两份模板的变量、默认值和顺序完全一致。直接运行 Uvicorn 时，
+请使用对应的 `OSS_*` 变量，例如 `OSS_ADMIN_PASSWORD`、`OSS_JWT_SECRET`。
+
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
+| `ADMIN_PASSWORD` | *(空)* | 全新且关闭注册的安装必填；启动时创建/刷新 `admin` |
+| `JWT_SECRET` | *(空)* | 生产环境保持登录态和签名链接稳定所必需；非空值必须至少 32 个 UTF-8 字节，建议使用 `openssl rand -hex 32` 生成 |
 | `PORT` | `8080` | 服务端口。`bridge` 模式下为宿主机映射端口；`host` 模式下为容器直接监听的宿主机端口 |
 | `NETWORK_MODE` | `bridge` | 网络模式：`bridge`（默认，端口映射）或 `host`（直接使用宿主机网络） |
 | `FORWARDED_ALLOW_IPS` | `127.0.0.1` | 可写入 `X-Forwarded-*` 的可信反代 IP/CIDR（逗号分隔）；只有直连已被阻断且代理会覆盖转发头时才可使用 `*` |
@@ -113,7 +124,6 @@ curl -X POST http://服务器IP:8080/api/upload \
 | `SQLITE_BUSY_TIMEOUT_MS` | `5000` | SQLite 写锁等待毫秒数（`1..300000`） |
 | `SHORT_CODE_LENGTH` | `10` | base62 短码长度（`6..32`） |
 | `PUBLIC_URL` | *(空)* | 返回链接的前缀，如 `https://img.example.com`；留空则按请求自动推断 |
-| `ADMIN_PASSWORD` | *(空)* | 全新且关闭注册的安装必填；启动时创建/刷新 `admin` |
 | `ALLOW_REGISTRATION` | `closed` | 注册策略：`open` 开放 / `invite` 邀请码 / `closed` 关闭；升级后仍需公开注册必须显式设为 `open` |
 | `INVITE_CODE` | *(空)* | `ALLOW_REGISTRATION=invite` 时的注册邀请码 |
 | `TOKEN_EXPIRE_MINUTES` | `10080` | 登录令牌有效分钟数（`1..525600`） |
@@ -125,7 +135,6 @@ curl -X POST http://服务器IP:8080/api/upload \
 | `API_KEY_MUTATION_RATE_LIMIT_PER_DAY` | `100` | 每账号在当前进程固定 24 小时窗口内创建、轮换、撤销 API Key 的次数（`1..100000`）；进程重启会重置该防滥用窗口 |
 | `MAX_API_KEYS_PER_USER` | `20` | 每位用户可持有的有效 API Key 上限（`1..1000`） |
 | `TRAFFIC_RETENTION_DAYS` | `365` | UTC 每日 API 流量聚合数据保留天数（`1..3650`） |
-| `JWT_SECRET` | *(空)* | JWT 签名密钥；留空则每次重启登录态失效；非空值必须至少 32 个 UTF-8 字节（建议 `openssl rand -hex 32` 生成） |
 | `SIGNED_URL_TTL_SECONDS` | `86400` | 私密媒体签名链接有效秒数（`60..604800`） |
 
 所有数值配置都会在导入配置时校验；非法值会在接收流量前明确抛出
@@ -363,7 +372,8 @@ oss/
 ├── tests/                      # pytest，按域拆分
 ├── Dockerfile                  # 多阶段：node 构建前端 → python 运行时
 ├── docker-compose.yml
-└── .env.example
+├── .env.example                # Docker Compose 英文配置模板
+└── .env.zh-CN.example          # Docker Compose 中文配置模板
 ```
 
 ## 🔐 安全设计
