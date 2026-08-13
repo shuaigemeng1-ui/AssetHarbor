@@ -208,6 +208,23 @@ async function openSettingsPanel(event) {
   memberPanel.value?.focus({ preventScroll: true })
 }
 
+function closeSettingsPanel() {
+  // Cancel the settings context and leave the member panel. On wide layouts
+  // the panel is a permanent column, so closing settings only removes the
+  // management actions; in drawer mode the panel closes entirely.
+  settingsOpen.value = false
+  inviteOpen.value = false
+  if (isMemberDrawer.value) membersOpen.value = false
+  nextTick(() => panelReturnFocus?.focus?.())
+}
+
+function onSettingsTriggerClick(event) {
+  // The settings button is a toggle: on wide screens there is no drawer
+  // close affordance, so clicking it again is the primary cancel path.
+  if (settingsOpen.value) closeSettingsPanel()
+  else openSettingsPanel(event)
+}
+
 async function doRemove(member) {
   const removingSelf = member.id === selected.value.members.find(item => item.username === props.user.username)?.id
   const ok = await confirmAction({
@@ -375,7 +392,7 @@ onBeforeUnmount(() => {
           <AppIcon name="plus" size="16" />
           邀请成员
         </button>
-        <button v-if="canDissolve" class="secondary settings-trigger" type="button" aria-label="团队设置" @click="openSettingsPanel">
+        <button v-if="canDissolve" class="secondary settings-trigger" type="button" aria-label="团队设置" :aria-pressed="settingsOpen" @click="onSettingsTriggerClick">
           <AppIcon name="settings" size="17" />
           <span>团队设置</span>
         </button>
@@ -443,7 +460,10 @@ onBeforeUnmount(() => {
               </div>
             </li>
           </ul>
-          <button v-if="canDissolve && settingsOpen" class="ghost danger dissolve-team" type="button" @click="doDeleteTeam">解散团队</button>
+          <div v-if="settingsOpen" class="settings-actions">
+            <button class="ghost" type="button" @click="closeSettingsPanel">取消</button>
+            <button v-if="canDissolve" class="ghost danger" type="button" @click="doDeleteTeam">解散团队</button>
+          </div>
         </section>
         <button v-if="membersOpen" class="members-backdrop" type="button" aria-label="关闭成员面板" @click="closeMemberPanel" />
       </div>
@@ -837,7 +857,18 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.dissolve-team { width: 100%; min-height: 38px; margin-top: 20px; white-space: nowrap; }
+.settings-actions {
+  margin-top: 20px;
+  display: flex;
+  gap: 8px;
+}
+
+.settings-actions button {
+  min-height: 38px;
+  flex: 1;
+  border-radius: 5px;
+  white-space: nowrap;
+}
 
 .space-tabs {
   width: 100%;

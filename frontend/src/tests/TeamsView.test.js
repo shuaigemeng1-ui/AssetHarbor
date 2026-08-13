@@ -28,9 +28,9 @@ const detail = {
   ],
 }
 
-function mountView() {
+function mountView({ user = { id: 7, username: 'alice', role: 'user' } } = {}) {
   const wrapper = mount(TeamsView, {
-    props: { user: { id: 7, username: 'alice', role: 'user' } },
+    props: { user },
     global: { stubs: { GalleryView: true, VideoView: true, CollectionsView: true } },
   })
   mountedWrappers.push(wrapper)
@@ -144,5 +144,34 @@ describe('TeamsView permissions', () => {
     } finally {
       window.matchMedia = originalMatchMedia
     }
+  })
+
+  it('toggles team settings with the trigger and cancels from the panel', async () => {
+    const wrapper = mountView({ user: { id: 7, username: 'alice', role: 'admin' } })
+    await flushPromises()
+    await wrapper.get('.team-cards button').trigger('click')
+    await flushPromises()
+
+    const trigger = wrapper.get('.settings-trigger')
+    expect(trigger.attributes('aria-pressed')).toBe('false')
+
+    await trigger.trigger('click')
+    expect(trigger.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.text()).toContain('解散团队')
+
+    // Clicking the trigger again is the primary cancel path on wide layouts.
+    await trigger.trigger('click')
+    expect(trigger.attributes('aria-pressed')).toBe('false')
+    expect(wrapper.text()).not.toContain('解散团队')
+    expect(wrapper.text()).not.toContain('取消')
+
+    // Re-open and cancel via the explicit panel cancel button.
+    await trigger.trigger('click')
+    expect(wrapper.text()).toContain('解散团队')
+    const cancel = wrapper.findAll('button').find(button => button.text() === '取消')
+    expect(cancel).toBeTruthy()
+    await cancel.trigger('click')
+    expect(wrapper.text()).not.toContain('解散团队')
+    expect(trigger.attributes('aria-pressed')).toBe('false')
   })
 })

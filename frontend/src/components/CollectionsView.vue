@@ -303,6 +303,14 @@ onBeforeUnmount(() => {
         <h2>{{ isTeam ? '团队分组' : '我的分组' }}</h2>
         <p>用分组整理图片和视频，媒体仍保留在原始空间中。</p>
       </div>
+      <template v-else>
+        <div class="kind-tabs" role="tablist" aria-label="媒体类型">
+          <button v-for="kind in ['all', 'image', 'video']" :key="kind" role="tab" :aria-selected="itemKind === kind" :class="{ active: itemKind === kind }" :disabled="!selected" @click="changeKind(kind)">
+            {{ { all: '全部', image: '图片', video: '视频' }[kind] }}
+          </button>
+        </div>
+        <input v-model="itemQuery" class="item-search" type="search" placeholder="搜索组内媒体" aria-label="搜索组内媒体" @input="onItemSearch" />
+      </template>
       <button class="primary" type="button" @click="openCreate">新建分组</button>
     </div>
 
@@ -353,7 +361,7 @@ onBeforeUnmount(() => {
           </div>
         </header>
 
-        <div class="collection-toolbar">
+        <div v-if="!embedded" class="collection-toolbar">
           <div class="kind-tabs" role="tablist" aria-label="媒体类型">
             <button v-for="kind in ['all', 'image', 'video']" :key="kind" role="tab" :aria-selected="itemKind === kind" :class="{ active: itemKind === kind }" @click="changeKind(kind)">
               {{ { all: '全部', image: '图片', video: '视频' }[kind] }}
@@ -486,11 +494,43 @@ onBeforeUnmount(() => {
 }
 
 .collections-view-embedded > .section-heading {
-  min-height: 44px;
-  margin: 0 0 22px;
+  margin: 0 0 30px;
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 12px;
   border: 0;
   padding: 0;
+}
+
+/* Embedded toolbar mirrors the image/video tabs: a single flat row with the
+   media-kind filter on the left and the primary action on the right. */
+.collections-view-embedded > .section-heading .kind-tabs {
+  margin-right: auto;
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #fff;
+}
+
+.collections-view-embedded > .section-heading .kind-tabs button {
+  margin: 0;
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  padding: 7px 12px;
+}
+
+.collections-view-embedded > .section-heading .kind-tabs button:last-child { border-right: 0; }
+
+.collections-view-embedded > .section-heading .kind-tabs button.active {
+  background: var(--panel-soft);
+  color: var(--text);
+}
+
+.collections-view-embedded > .section-heading .kind-tabs button:disabled {
+  cursor: default;
+  opacity: .5;
 }
 
 .collections-view-embedded .collections-layout {
@@ -501,8 +541,18 @@ onBeforeUnmount(() => {
 
 .collections-view-embedded .collections-sidebar { background: #fff; }
 
+.collections-view-embedded .collection-detail { padding: 0 0 0 26px; }
+
+.collections-view-embedded .collection-head { padding-bottom: 14px; }
+
 .collections-view-embedded .collection-media-grid {
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.collections-view-embedded :is(.collection-empty, .detail-placeholder) {
+  min-height: 300px;
+  border: 0;
+  background: transparent;
 }
 
 .collections-layout {
@@ -818,6 +868,9 @@ onBeforeUnmount(() => {
   .collection-media-grid {
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   }
+  .collections-view-embedded .collection-media-grid {
+    grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  }
 }
 
 .group-editor .error-text {
@@ -833,6 +886,11 @@ onBeforeUnmount(() => {
   .collections-view-embedded .collections-layout { grid-template-columns: 1fr; }
   .collections-view-embedded .collections-sidebar { border-right: 0; border-bottom: 1px solid var(--border); }
   .collections-view-embedded .group-list { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+  .collections-view-embedded .collection-detail { padding: 20px 0 0; }
+}
+
+@media (max-width: 960px) {
+  .collections-view-embedded .collection-media-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 840px) {
@@ -850,6 +908,8 @@ onBeforeUnmount(() => {
   .item-search { width: 100%; }
   .collection-media-grid { grid-template-columns: 1fr; }
   .collections-view-embedded .collection-media-grid { grid-template-columns: 1fr; }
+  .collections-view-embedded > .section-heading { flex-direction: row; flex-wrap: wrap; }
+  .collections-view-embedded > .section-heading .item-search { order: 3; width: 100%; }
   .group-search input,
   .item-search,
   .group-editor input,

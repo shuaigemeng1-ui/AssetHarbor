@@ -129,4 +129,22 @@ describe('CollectionsView', () => {
     expect(wrapper.find('.section-heading h2').exists()).toBe(false)
     expect(wrapper.get('.section-heading .primary').text()).toBe('新建分组')
   })
+
+  it('renders one embedded toolbar with the kind filter and no nested detail toolbar', async () => {
+    const wrapper = mountView({ teamId: 3, canManage: true, embedded: true })
+    await flushPromises()
+
+    // The kind tabs and item search live in the single top toolbar, matching
+    // the image/video tabs, instead of a second toolbar inside the detail.
+    const heading = wrapper.get('.section-heading')
+    expect(heading.find('.kind-tabs').exists()).toBe(true)
+    expect(heading.find('.item-search').exists()).toBe(true)
+    expect(wrapper.findAll('.kind-tabs')).toHaveLength(1)
+    expect(wrapper.find('.collection-toolbar').exists()).toBe(false)
+
+    // Kind filtering still works from the embedded toolbar.
+    await heading.get('.kind-tabs button:nth-child(3)').trigger('click')
+    await flushPromises()
+    expect(api.listMediaGroupItems).toHaveBeenLastCalledWith(4, expect.objectContaining({ kind: 'video' }))
+  })
 })
