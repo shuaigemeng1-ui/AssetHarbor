@@ -41,6 +41,9 @@ _CONTENT_RANGE_RE = re.compile(r"^bytes (\d+)-(\d+)/(\d+)$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _SAMPLE_SIZE = 1024 * 1024
 _ACTIVE_STATUSES = ("active", "verifying", "finalizing")
+# Part bodies are buffered in memory up to this size before each synchronous
+# flush is offloaded to a worker thread.
+_PART_WRITE_BUFFER_BYTES = 1024 * 1024
 
 _lock_guard = threading.Lock()
 _upload_locks: dict[str, threading.RLock] = {}
@@ -79,6 +82,12 @@ def _is_storage_full_error(exc: BaseException) -> bool:
             return True
         current = getattr(current, "orig", None) or getattr(current, "__cause__", None)
     return False
+
+
+def _flush_and_fsync(file_obj) -> None:
+    """Durably flush one buffered part file (runs in a worker thread)."""
+    file_obj.flush()
+    os.fsync(file_obj.fileno())
 
 
 def _serialized(lock: threading.Lock):
@@ -642,6 +651,11 @@ async def store_upload_part(
         tmp_path = directory / f"part-{part_number}-{uuid.uuid4().hex}.tmp"
         digest = hashlib.sha256()
         received = 0
+        # Stream the body into a bounded buffer and offload every flush and
+        # fsync to a worker thread: synchronous writes on the event loop would
+        # stall every concurrent request (health checks included) while large
+        # parts are being received.
+        write_buffer = bytearray()
         with tmp_path.open("xb") as tmp:
             async for chunk in request.stream():
                 if not chunk:
@@ -650,9 +664,13 @@ async def store_upload_part(
                 if received > expected_size:
                     raise HTTPException(status_code=413, detail="chunk exceeds its declared range")
                 digest.update(chunk)
-                tmp.write(chunk)
-            tmp.flush()
-            os.fsync(tmp.fileno())
+                write_buffer.extend(chunk)
+                if len(write_buffer) >= _PART_WRITE_BUFFER_BYTES:
+                    await asyncio.to_thread(tmp.write, bytes(write_buffer))
+                    write_buffer.clear()
+            if write_buffer:
+                await asyncio.to_thread(tmp.write, bytes(write_buffer))
+            await asyncio.to_thread(_flush_and_fsync, tmp)
         if received != expected_size:
             raise HTTPException(status_code=400, detail="chunk length does not match Content-Range")
         actual_sha = digest.hexdigest()

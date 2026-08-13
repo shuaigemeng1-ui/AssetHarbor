@@ -383,33 +383,38 @@ def set_user_role(
 
 
 @router.patch("/users/{user_id}/password", status_code=204, summary="Reset a user's password (admin)")
-@serialized_library_lifecycle
 def reset_password(
     user_id: int,
     payload: ResetPasswordRequest,
     current_user: User = Depends(require_jwt_admin),
     db: Session = Depends(get_db),
 ) -> None:
-    # Dependency authorization may be stale after waiting for the lifecycle
-    # lease. Reopen the transaction and re-check the administrator before the
-    # credential write, matching destructive admin operations.
-    db.rollback()
-    current_user = fresh_library_user(db, current_user)
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="admin privileges required")
-    target = db.get(User, user_id)
-    if target is None:
-        raise HTTPException(status_code=404, detail="user not found")
-    db.execute(
-        update(User)
-        .where(User.id == target.id)
-        .values(
-            password_hash=hash_password(payload.new_password),
-            auth_version=User.auth_version + 1,
+    # Bcrypt is intentionally outside the global lifecycle lease, matching
+    # create_user: a ~100ms+ hash must not serialize every media upload or
+    # deletion behind one password reset. Only the short revalidation and the
+    # credential UPDATE run under the lease.
+    password_hash = hash_password(payload.new_password)
+    with library_lifecycle_lease():
+        # Dependency authorization may be stale after waiting for the lifecycle
+        # lease. Reopen the transaction and re-check the administrator before
+        # the credential write, matching destructive admin operations.
+        db.rollback()
+        current_user = fresh_library_user(db, current_user)
+        if current_user.role != "admin":
+            raise HTTPException(status_code=403, detail="admin privileges required")
+        target = db.get(User, user_id)
+        if target is None:
+            raise HTTPException(status_code=404, detail="user not found")
+        db.execute(
+            update(User)
+            .where(User.id == target.id)
+            .values(
+                password_hash=password_hash,
+                auth_version=User.auth_version + 1,
+            )
+            .execution_options(synchronize_session=False)
         )
-        .execution_options(synchronize_session=False)
-    )
-    db.commit()
+        db.commit()
 
 
 @router.delete("/users/{user_id}", status_code=204, summary="Delete a user and all their data (admin)")

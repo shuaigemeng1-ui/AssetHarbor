@@ -1,9 +1,11 @@
 """Core image handling: type sniffing, size limits and upload orchestration."""
 
+import asyncio
 import hashlib
 import errno
 import os
 import re
+import tempfile
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
@@ -119,23 +121,9 @@ def detect_content_type(data: bytes) -> tuple[str, str] | None:
 # Upload pipeline
 # ---------------------------------------------------------------------------
 
-
-async def _read_with_limit(file: UploadFile, max_bytes: int) -> bytes:
-    """Read the whole upload, aborting with 413 once the limit is exceeded."""
-    chunks: list[bytes] = []
-    total = 0
-    while True:
-        chunk = await file.read(256 * 1024)
-        if not chunk:
-            break
-        total += len(chunk)
-        if total > max_bytes:
-            raise HTTPException(
-                status.HTTP_413_CONTENT_TOO_LARGE,
-                f"file exceeds the {settings.max_upload_size_mb} MB limit",
-            )
-        chunks.append(chunk)
-    return b"".join(chunks)
+# Bytes kept from the head of the stream for magic-byte sniffing. Large enough
+# for every supported signature plus realistic SVG XML prologs.
+_SNIFF_BYTES = 4096
 
 
 def _unique_code(db: Session) -> str:
@@ -168,83 +156,130 @@ async def store_upload(
     visibility: str = "public",
     team_id: int | None = None,
 ) -> Image:
-    """Validate, persist and index one uploaded image."""
-    data = await _read_with_limit(file, settings.max_upload_size_mb * 1024 * 1024)
-    if not data:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "empty file")
+    """Validate, persist and index one uploaded image.
 
-    detected = detect_content_type(data)
-    if detected is None:
-        raise HTTPException(
-            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            f"unsupported file type; supported: {_SUPPORTED}",
-        )
+    The request body is streamed to a temporary file outside the global
+    lifecycle lease: type sniffing, the size limit and the incremental SHA-256
+    digest all run without holding the lock, and file writes go through a
+    worker thread so a large upload cannot block the event loop. Only the
+    final authorization, quota enforcement, atomic publication and the
+    owner/team-scoped DB commit are serialized with user/member/team deletion.
+    """
+    max_bytes = settings.max_upload_size_mb * 1024 * 1024
+    digest = hashlib.sha256()
+    size = 0
+    head = bytearray()
+    tmp_path: Path | None = None
+    out = None
+    fd: int | None = None
+    try:
+        settings.data_dir.mkdir(parents=True, exist_ok=True)
+        fd, raw_path = tempfile.mkstemp(prefix=".img-", dir=settings.data_dir)
+        tmp_path = Path(raw_path)
+        out = os.fdopen(fd, "wb")
+        fd = None  # ownership moved to the buffered writer
+        try:
+            while True:
+                chunk = await file.read(256 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > max_bytes:
+                    raise HTTPException(
+                        status.HTTP_413_CONTENT_TOO_LARGE,
+                        f"file exceeds the {settings.max_upload_size_mb} MB limit",
+                    )
+                if len(head) < _SNIFF_BYTES:
+                    head.extend(chunk[: _SNIFF_BYTES - len(head)])
+                digest.update(chunk)
+                await asyncio.to_thread(out.write, chunk)
+        finally:
+            out.close()
+            out = None
 
-    mime, ext = detected
-    digest = hashlib.sha256(data).hexdigest()
-    original_filename = _safe_filename(file.filename)
+        if size == 0:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "empty file")
 
-    # Reading and validating the potentially large request body deliberately
-    # happens above, outside the global lifecycle lease. Only the final
-    # authorization, durable file publication and owner/team-scoped DB commit
-    # are serialized with user/member/team deletion.
-    with library_lifecycle_lease():
-        db.rollback()
-        if owner is not None:
-            owner = fresh_library_user(db, owner)
-        if team_id is not None:
-            if owner is None:
-                raise HTTPException(status_code=401, detail="an owner is required for team media")
-            validate_team_scope(db, team_id, owner)
-        if owner is not None:
-            enforce_storage_quota(
-                db,
-                owner_id=owner.id,
-                team_id=team_id,
-                additional_bytes=len(data),
+        detected = detect_content_type(bytes(head))
+        if detected is None:
+            raise HTTPException(
+                status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                f"unsupported file type; supported: {_SUPPORTED}",
             )
 
-        code = _unique_code(db)
-        rel_path = _stored_path(code, ext)
-        abs_path = settings.data_dir / rel_path
-        tmp_path = abs_path.with_suffix(".tmp")
-        with reserve_write_space(len(data)):
-            # Write to a temp file then rename, so a crash mid-write never
-            # leaves a half-written image behind.
-            try:
-                abs_path.parent.mkdir(parents=True, exist_ok=True)
-                tmp_path.write_bytes(data)
-                os.replace(tmp_path, abs_path)
-            except OSError as exc:
-                _unlink_quietly(tmp_path)
-                _raise_storage_error(exc)
+        mime, ext = detected
+        original_filename = _safe_filename(file.filename)
 
-            image = Image(
-                code=code,
-                original_filename=original_filename,
-                name=(name or original_filename)[:255],
-                stored_path=str(rel_path),
-                content_type=mime,
-                size=len(data),
-                sha256=digest,
-                media_kind="image",
-                owner_id=owner.id if owner else None,
-                visibility=visibility,
-                team_id=team_id,
-            )
-            try:
-                db.add(image)
-                db.commit()
-            except Exception as exc:
+        with library_lifecycle_lease():
+            db.rollback()
+            if owner is not None:
+                owner = fresh_library_user(db, owner)
+            if team_id is not None:
+                if owner is None:
+                    raise HTTPException(status_code=401, detail="an owner is required for team media")
+                validate_team_scope(db, team_id, owner)
+            if owner is not None:
+                enforce_storage_quota(
+                    db,
+                    owner_id=owner.id,
+                    team_id=team_id,
+                    additional_bytes=size,
+                )
+
+            code = _unique_code(db)
+            rel_path = _stored_path(code, ext)
+            abs_path = settings.data_dir / rel_path
+            with reserve_write_space(size):
+                # Publish with an atomic rename, so a crash mid-write never
+                # leaves a half-written image behind.
                 try:
-                    db.rollback()
-                finally:
-                    # The formal file has already been atomically published.
-                    # Compensate even if rollback itself encounters a disk error.
-                    _unlink_quietly(abs_path)
-                _raise_storage_error(exc)
-        db.refresh(image)
-        return image
+                    abs_path.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(tmp_path, abs_path)
+                    tmp_path = None
+                except OSError as exc:
+                    _raise_storage_error(exc)
+
+                image = Image(
+                    code=code,
+                    original_filename=original_filename,
+                    name=(name or original_filename)[:255],
+                    stored_path=str(rel_path),
+                    content_type=mime,
+                    size=size,
+                    sha256=digest.hexdigest(),
+                    media_kind="image",
+                    owner_id=owner.id if owner else None,
+                    visibility=visibility,
+                    team_id=team_id,
+                )
+                try:
+                    db.add(image)
+                    db.commit()
+                except Exception as exc:
+                    try:
+                        db.rollback()
+                    finally:
+                        # The formal file has already been atomically published.
+                        # Compensate even if rollback itself encounters a disk error.
+                        _unlink_quietly(abs_path)
+                    _raise_storage_error(exc)
+            db.refresh(image)
+            return image
+    except OSError as exc:
+        _raise_storage_error(exc)
+    finally:
+        if out is not None:
+            try:
+                out.close()
+            except OSError:
+                pass
+        elif fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        if tmp_path is not None:
+            _unlink_quietly(tmp_path)
 
 
 @serialized_library_lifecycle

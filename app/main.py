@@ -68,6 +68,17 @@ async def lifespan(_: FastAPI):
     init_db()
     ensure_admin()
     validate_bootstrap_state()
+    if settings.forwarded_allow_ips.strip() in ("", "127.0.0.1"):
+        # The default only trusts localhost. A reverse proxy on another host
+        # or container (e.g. a Docker bridge gateway) is then untrusted:
+        # Uvicorn keeps the proxy's address, so every proxied client shares
+        # one rate-limit bucket and per-IP protections lose their meaning.
+        logger.warning(
+            "FORWARDED_ALLOW_IPS is %r. If this service runs behind a reverse "
+            "proxy on another host or container, set it to that proxy's IP or "
+            "CIDR so per-client rate limits work as intended.",
+            settings.forwarded_allow_ips.strip(),
+        )
     cleanup_orphan_media_library()
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
     recover_finalizing_uploads()

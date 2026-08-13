@@ -12,6 +12,8 @@ services:
     environment:
       OSS_DATA_DIR: /data
       OSS_APP_PORT: "${PORT:-8080}"
+      # 反代位于其他主机/容器时，必须改为其来源 IP 或网段（如 172.17.0.0/16），
+      # 否则 X-Forwarded-For 不被信任，所有访客将共用同一个限流身份。
       OSS_FORWARDED_ALLOW_IPS: "${FORWARDED_ALLOW_IPS:-127.0.0.1}"
       OSS_MAX_UPLOAD_SIZE_MB: "${MAX_UPLOAD_SIZE_MB:-10}"
       OSS_MAX_VIDEO_SIZE_MB: "${MAX_VIDEO_SIZE_MB:-2048}"

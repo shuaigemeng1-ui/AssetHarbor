@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     # "https://img.example.com". Leave empty to derive it from each request.
     public_url: str = ""
 
+    # --- reverse proxy ------------------------------------------------------
+    # Trusted proxy IPs/CIDRs mirrored to Uvicorn via --forwarded-allow-ips.
+    # When this keeps its 127.0.0.1 default while a reverse proxy connects
+    # from another host/container (e.g. a Docker bridge gateway), Uvicorn
+    # ignores X-Forwarded-For and every proxied client shares one rate-limit
+    # identity. The app warns at startup in that configuration.
+    forwarded_allow_ips: str = "127.0.0.1"
+
     # --- auth --------------------------------------------------------------
     # Bootstrap password for the built-in "admin" account (empty = skip).
     admin_password: str = ""

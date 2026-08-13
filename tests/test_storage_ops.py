@@ -1,6 +1,7 @@
 """Image storage compensation and operational readiness checks."""
 
 import errno
+import os
 import sqlite3
 import threading
 import uuid
@@ -72,10 +73,21 @@ def test_image_enospc_is_507_and_removes_temp_file(client, monkeypatch):
     before_count = _image_count()
     before_files = _stored_media_files()
 
-    def fail_write(_path, _data):
-        raise OSError(errno.ENOSPC, "no space left on device")
+    class _FailingWriter:
+        def write(self, _data):
+            raise OSError(errno.ENOSPC, "no space left on device")
 
-    monkeypatch.setattr(Path, "write_bytes", fail_write)
+        def close(self):
+            pass
+
+    def fail_write(fd, _mode):
+        # The streaming pipeline opens the temp file via os.fdopen; emulate a
+        # full disk on the first buffered write while still releasing the fd so
+        # Windows can unlink the leftover temp file.
+        os.close(fd)
+        return _FailingWriter()
+
+    monkeypatch.setattr(images.os, "fdopen", fail_write)
 
     response = upload(client, token)
 
@@ -83,6 +95,7 @@ def test_image_enospc_is_507_and_removes_temp_file(client, monkeypatch):
     assert _image_count() == before_count
     assert _stored_media_files() == before_files
     assert not list(settings.files_dir.rglob("*.tmp"))
+    assert not list(settings.data_dir.glob(".img-*"))
 
 
 def test_image_database_commit_failure_removes_published_file(client, monkeypatch):
