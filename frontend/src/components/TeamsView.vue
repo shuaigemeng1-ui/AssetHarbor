@@ -64,6 +64,12 @@ function roleLabel(role) {
   return { owner: '拥有者', admin: '管理员', member: '成员' }[role] || role
 }
 
+function formatDate(value) {
+  if (!value) return '—'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('zh-CN')
+}
+
 async function loadTeams() {
   try {
     teams.value = await listTeams()
@@ -208,20 +214,19 @@ async function openSettingsPanel(event) {
   memberPanel.value?.focus({ preventScroll: true })
 }
 
-function closeSettingsPanel() {
-  // Cancel the settings context and leave the member panel. On wide layouts
-  // the panel is a permanent column, so closing settings only removes the
-  // management actions; in drawer mode the panel closes entirely.
+function backToMembers() {
+  // Leave the settings context and return the rail to the member list. On
+  // wide layouts the rail is a permanent column; in drawer mode the drawer
+  // stays open on the member view and can be closed with X / backdrop / Esc.
   settingsOpen.value = false
   inviteOpen.value = false
-  if (isMemberDrawer.value) membersOpen.value = false
   nextTick(() => panelReturnFocus?.focus?.())
 }
 
 function onSettingsTriggerClick(event) {
   // The settings button is a toggle: on wide screens there is no drawer
   // close affordance, so clicking it again is the primary cancel path.
-  if (settingsOpen.value) closeSettingsPanel()
+  if (settingsOpen.value) backToMembers()
   else openSettingsPanel(event)
 }
 
@@ -311,7 +316,10 @@ function onPageKeydown(event) {
   if (event.key !== 'Escape') return
   if (membersOpen.value) {
     event.preventDefault()
-    closeMemberPanel()
+    // Escape closes the innermost context first: leave the settings view,
+    // then close the panel on a second press.
+    if (settingsOpen.value) backToMembers()
+    else closeMemberPanel()
     return
   }
   if (teamMenuOpen.value) {
@@ -342,10 +350,12 @@ onBeforeUnmount(() => {
 <template>
   <section class="teams-view">
     <header class="teams-header" :inert="memberDrawerActive ? '' : undefined">
+      <p class="eyebrow">协作与整理</p>
       <h2>团队</h2>
     </header>
 
-    <div class="team-topbar" :inert="memberDrawerActive ? '' : undefined">
+    <!-- Stable team masthead: identity + description + management actions. -->
+    <header class="team-topbar" :inert="memberDrawerActive ? '' : undefined">
       <div class="team-switcher-wrap">
         <div v-if="teams.length" ref="teamSwitcher" class="team-switcher">
           <button
@@ -358,10 +368,15 @@ onBeforeUnmount(() => {
             @keydown.down.prevent="focusTeamOption(0)"
             @keydown.up.prevent="focusTeamOption(-1)"
           >
-            <span v-if="selected" class="team-avatar">{{ selected.name.slice(0, 1).toUpperCase() }}</span>
-            <span v-else class="team-avatar"><AppIcon name="teams" size="16" /></span>
-            <strong>{{ selected?.name || (loadingTeam ? '正在加载团队…' : '选择团队') }}</strong>
-            <AppIcon name="down" size="16" />
+            <span v-if="selected" class="team-avatar large">{{ selected.name.slice(0, 1).toUpperCase() }}</span>
+            <span v-else class="team-avatar large"><AppIcon name="teams" size="20" /></span>
+            <span class="switcher-copy">
+              <strong>{{ selected?.name || (loadingTeam ? '正在加载团队…' : '选择团队') }}</strong>
+              <small v-if="selected">{{ roleLabel(myRole) }} · {{ selected.members.length }} 名成员</small>
+              <small v-else-if="loadingTeam">正在获取团队信息…</small>
+              <small v-else>进入一个团队空间</small>
+            </span>
+            <AppIcon name="down" size="17" />
           </button>
           <ul id="team-switcher-menu" class="team-cards" :class="{ open: teamMenuOpen }" aria-label="我的团队" :aria-hidden="!teamMenuOpen" @keydown="onTeamMenuKeydown">
             <li v-for="team in teams" :key="team.id">
@@ -373,20 +388,30 @@ onBeforeUnmount(() => {
                 </span>
               </button>
             </li>
+            <li class="team-cards-create">
+              <button ref="teamOptionButtons" :tabindex="teamMenuOpen ? 0 : -1" type="button" @click="openCreatePanel">
+                <span class="team-avatar"><AppIcon name="plus" size="16" /></span>
+                <span>
+                  <strong>新建团队</strong>
+                  <small>创建并进入新团队</small>
+                </span>
+              </button>
+            </li>
           </ul>
         </div>
         <p v-else class="team-empty-copy">还没有加入任何团队</p>
-
-        <button class="secondary create-team-trigger" type="button" :aria-expanded="createOpen" aria-controls="team-create-panel" @click="openCreatePanel">
+        <button v-if="!teams.length" class="primary create-team-trigger" type="button" :aria-expanded="createOpen" aria-controls="team-create-panel" @click="openCreatePanel">
           <AppIcon name="plus" size="16" />
           新建团队
         </button>
       </div>
 
+      <p v-if="selected" class="masthead-description">{{ selected.description || '还没有团队简介。' }}</p>
+
       <div v-if="selected" class="team-actions">
         <button class="team-summary" type="button" aria-label="查看团队成员" @click="openMemberList">
           <AppIcon name="teams" size="19" />
-          <span><small>{{ roleLabel(myRole) }}</small><strong>{{ selected.members.length }} 名成员</strong></span>
+          <span><small>成员</small><strong>{{ selected.members.length }} 名</strong></span>
         </button>
         <button v-if="canManageMembers" class="primary invite-trigger" type="button" @click="openMemberPanel">
           <AppIcon name="plus" size="16" />
@@ -397,7 +422,7 @@ onBeforeUnmount(() => {
           <span>团队设置</span>
         </button>
       </div>
-    </div>
+    </header>
 
     <form v-if="createOpen" id="team-create-panel" class="team-create-form" :inert="memberDrawerActive ? '' : undefined" @submit.prevent="doCreate">
       <div>
@@ -439,31 +464,58 @@ onBeforeUnmount(() => {
           :inert="memberPanelHidden ? '' : undefined"
           tabindex="-1"
         >
-          <div class="panel-title-row">
-            <h3>成员 <span>{{ selected.members.length }}</span></h3>
-            <button class="member-panel-close" type="button" aria-label="关闭成员面板" @click="closeMemberPanel"><AppIcon name="close" size="17" /></button>
-          </div>
-          <form v-if="canManageMembers && inviteOpen" class="add-member" @submit.prevent="doAddMember">
-            <input ref="addMemberInput" v-model="addUsername" placeholder="输入用户名邀请" aria-label="要邀请的用户名" minlength="3" />
-            <button class="secondary" :disabled="!addUsername.trim()">邀请</button>
-          </form>
-          <ul class="member-list">
-            <li v-for="member in orderedMembers" :key="member.id">
-              <span class="member-avatar">{{ member.username.slice(0, 1).toUpperCase() }}</span>
-              <span class="member-copy"><strong class="username">{{ member.username }}</strong></span>
-              <div class="member-role-row">
-                <span class="role-badge" :class="{ owner: member.role === 'owner', admin: member.role === 'admin' }">{{ roleLabel(member.role) }}</span>
-                <span v-if="member.role !== 'owner' && (canManageMembers || member.username === user.username)" class="member-actions">
-                  <button v-if="canChangeRoles" class="ghost" type="button" @click="doToggleRole(member)">{{ member.role === 'admin' ? '降为成员' : '设为管理员' }}</button>
-                  <button v-if="canManageMembers || member.username === user.username" class="ghost danger" type="button" @click="doRemove(member)">{{ member.username === user.username ? '退出团队' : '移除' }}</button>
-                </span>
+          <template v-if="!settingsOpen">
+            <div class="panel-title-row">
+              <h3>成员 <span>{{ selected.members.length }}</span></h3>
+              <button class="member-panel-close" type="button" aria-label="关闭成员面板" @click="closeMemberPanel"><AppIcon name="close" size="17" /></button>
+            </div>
+            <form v-if="canManageMembers && inviteOpen" class="add-member" @submit.prevent="doAddMember">
+              <input ref="addMemberInput" v-model="addUsername" placeholder="输入用户名邀请" aria-label="要邀请的用户名" minlength="3" />
+              <button class="secondary" :disabled="!addUsername.trim()">邀请</button>
+            </form>
+            <ul class="member-list">
+              <li v-for="member in orderedMembers" :key="member.id">
+                <span class="member-avatar">{{ member.username.slice(0, 1).toUpperCase() }}</span>
+                <span class="member-copy"><strong class="username">{{ member.username }}</strong></span>
+                <div class="member-role-row">
+                  <span class="role-badge" :class="{ owner: member.role === 'owner', admin: member.role === 'admin' }">{{ roleLabel(member.role) }}</span>
+                  <span v-if="member.role !== 'owner' && (canManageMembers || member.username === user.username)" class="member-actions">
+                    <button v-if="canChangeRoles" class="ghost" type="button" @click="doToggleRole(member)">{{ member.role === 'admin' ? '降为成员' : '设为管理员' }}</button>
+                    <button v-if="canManageMembers || member.username === user.username" class="ghost danger" type="button" @click="doRemove(member)">{{ member.username === user.username ? '退出团队' : '移除' }}</button>
+                  </span>
+                </div>
+              </li>
+            </ul>
+          </template>
+
+          <template v-else>
+            <div class="panel-title-row">
+              <h3>团队设置</h3>
+              <button class="member-panel-close" type="button" aria-label="关闭成员面板" @click="closeMemberPanel"><AppIcon name="close" size="17" /></button>
+            </div>
+            <dl class="team-settings-list">
+              <div>
+                <dt>团队名称</dt>
+                <dd>{{ selected.name }}</dd>
               </div>
-            </li>
-          </ul>
-          <div v-if="settingsOpen" class="settings-actions">
-            <button class="ghost" type="button" @click="closeSettingsPanel">取消</button>
-            <button v-if="canDissolve" class="ghost danger" type="button" @click="doDeleteTeam">解散团队</button>
-          </div>
+              <div>
+                <dt>团队简介</dt>
+                <dd>{{ selected.description || '暂无简介' }}</dd>
+              </div>
+              <div>
+                <dt>创建者</dt>
+                <dd>{{ selected.owner_username || '—' }}</dd>
+              </div>
+              <div>
+                <dt>创建时间</dt>
+                <dd>{{ formatDate(selected.created_at) }}</dd>
+              </div>
+            </dl>
+            <div class="settings-actions">
+              <button class="ghost" type="button" @click="backToMembers">返回成员列表</button>
+              <button v-if="canDissolve" class="ghost danger" type="button" @click="doDeleteTeam">解散团队</button>
+            </div>
+          </template>
         </section>
         <button v-if="membersOpen" class="members-backdrop" type="button" aria-label="关闭成员面板" @click="closeMemberPanel" />
       </div>
@@ -474,6 +526,7 @@ onBeforeUnmount(() => {
       <div>
         <h3>{{ loadingTeam ? '正在加载团队…' : '选择一个团队' }}</h3>
         <p>从上方进入团队空间，或创建一个新团队。</p>
+        <button v-if="!teams.length" class="primary" type="button" @click="openCreatePanel">新建团队</button>
       </div>
     </div>
   </section>
@@ -481,27 +534,41 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .teams-view {
-  min-width: 0;
+  width: min(100%, 1920px);
+  margin: 0 auto;
   min-height: 100vh;
-  padding: 30px clamp(24px, 2.2vw, 36px) 48px;
+  padding: 28px clamp(20px, 2.6vw, 48px) 56px;
   background: #fff;
 }
 
-.teams-header { margin-bottom: 24px; }
+/* Page header — the shell topbar is hidden for this full-bleed page. */
+.teams-header { margin-bottom: 16px; }
 
-.teams-header h2 {
-  margin: 0 0 5px;
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -.025em;
+.teams-header .eyebrow {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: .12em;
 }
 
+.teams-header h2 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 720;
+  letter-spacing: -.02em;
+}
+
+/* --- Team masthead ------------------------------------------------------- */
 .team-topbar {
-  min-height: 74px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  margin-bottom: 24px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
 }
 
 .team-switcher-wrap,
@@ -516,22 +583,18 @@ onBeforeUnmount(() => {
 }
 
 .team-switcher-wrap { min-width: 0; gap: 10px; }
-
-.team-switcher {
-  position: relative;
-  min-width: 194px;
-}
+.team-switcher { position: relative; width: min(320px, 100%); }
 
 .team-switcher-button {
   width: 100%;
-  min-height: 48px;
+  min-height: 60px;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  padding: 5px 10px 5px 7px;
+  border-radius: 7px;
+  padding: 7px 12px 7px 8px;
   background: #fff;
   color: var(--text);
   cursor: pointer;
@@ -540,18 +603,35 @@ onBeforeUnmount(() => {
 
 .team-switcher-button:hover,
 .team-switcher-button:focus-visible { border-color: var(--accent); }
-.team-switcher-button strong { overflow: hidden; font-size: 15px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+
+.switcher-copy { min-width: 0; display: grid; gap: 2px; }
+
+.switcher-copy strong {
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 680;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.switcher-copy small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .team-switcher > .team-cards {
   position: absolute;
   z-index: 20;
   top: calc(100% + 6px);
   left: 0;
-  width: min(280px, calc(100vw - 32px));
-  max-height: 280px;
+  width: min(300px, calc(100vw - 32px));
+  max-height: 300px;
   overflow-y: auto;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 7px;
   padding: 5px;
   background: #fff;
   box-shadow: var(--shadow-md);
@@ -565,34 +645,51 @@ onBeforeUnmount(() => {
 
 .team-empty-copy { margin: 0; color: var(--muted); font-size: 14px; }
 
-.create-team-trigger,
-.invite-trigger,
-.settings-trigger { min-height: 44px; gap: 7px; padding: 0 14px; font-size: 14px; }
+.masthead-description {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.65;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 
-.team-actions { flex: 0 0 auto; gap: 10px; }
+.team-actions { flex-wrap: wrap; gap: 10px; }
 
 .team-summary {
   gap: 10px;
-  border: 0;
-  padding: 5px 8px;
-  background: transparent;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 8px 12px;
+  background: #fff;
   color: var(--text);
   cursor: pointer;
   text-align: left;
 }
 
-.team-summary > span { min-width: 84px; display: grid; gap: 1px; }
-.team-summary small { color: var(--muted); font-size: 12px; }
-.team-summary strong { font-size: 14px; font-weight: 620; }
+.team-summary:hover,
+.team-summary:focus-visible { border-color: var(--accent); }
 
+.team-summary > span { min-width: 52px; display: grid; gap: 1px; }
+.team-summary small { color: var(--muted); font-size: 12px; }
+.team-summary strong { font-size: 14px; font-weight: 650; }
+
+.create-team-trigger,
+.invite-trigger,
+.settings-trigger { min-height: 44px; gap: 7px; padding: 0 14px; font-size: 14px; }
+
+/* --- Create team form ---------------------------------------------------- */
 .team-create-form {
-  margin-bottom: 18px;
+  margin-bottom: 24px;
   display: grid;
   grid-template-columns: minmax(220px, 1fr) minmax(180px, .8fr) minmax(220px, 1fr) auto;
   align-items: end;
   gap: 10px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 14px;
   background: var(--panel-soft);
 }
@@ -625,14 +722,10 @@ onBeforeUnmount(() => {
   text-align: left;
 }
 
-.team-cards button:hover {
-  background: #f2f0ec;
-}
+.team-cards button:hover { background: #f2f0ec; }
+.team-cards button.active { border-color: var(--border); background: #fff; }
 
-.team-cards button.active {
-  border-color: var(--border);
-  background: #fff;
-}
+.team-cards-create { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); }
 
 .team-avatar,
 .member-avatar {
@@ -653,10 +746,10 @@ onBeforeUnmount(() => {
 }
 
 .team-avatar.large {
-  width: 46px;
-  height: 46px;
+  width: 44px;
+  height: 44px;
   border-radius: 6px;
-  font-size: 17px;
+  font-size: 16px;
 }
 
 .team-cards strong,
@@ -668,16 +761,8 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.team-cards strong {
-  font-size: 14px;
-  font-weight: 620;
-}
-
-.team-cards small {
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: 12px;
-}
+.team-cards strong { font-size: 14px; font-weight: 620; }
+.team-cards small { margin-top: 2px; color: var(--muted); font-size: 12px; }
 
 .team-create-form input,
 .add-member input {
@@ -706,14 +791,48 @@ onBeforeUnmount(() => {
   font-size: 14px;
 }
 
+/* --- Tabs ---------------------------------------------------------------- */
+.space-tabs {
+  width: 100%;
+  margin: 4px 0 0;
+  display: flex;
+  gap: 2px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.space-tabs button {
+  margin-bottom: -1px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 8px 14px;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.space-tabs button.active {
+  border-bottom-color: var(--accent);
+  background: transparent;
+  color: var(--accent);
+  font-weight: 650;
+}
+
+/* --- Content + rail ------------------------------------------------------ */
 .teams-layout {
   position: relative;
   min-height: 600px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(310px, 27vw, 380px);
+  grid-template-columns: minmax(0, 1fr) clamp(300px, 26vw, 360px);
 }
 
-.team-detail { min-width: 0; padding: 28px 28px 42px 0; background: #fff; }
+.team-detail { min-width: 0; padding: 24px 28px 42px 0; background: #fff; }
 
 .visually-hidden {
   position: absolute;
@@ -725,28 +844,10 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.member-actions,
-.add-member {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.role-badge {
-  border: 0;
-  padding: 3px 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.role-badge.owner { color: var(--accent); font-weight: 650; }
-
 .members-panel {
   min-width: 0;
   border-left: 1px solid var(--border);
-  padding: 30px 0 36px 24px;
+  padding: 26px 0 36px 26px;
   background: #fff;
   outline: 0;
 }
@@ -766,10 +867,6 @@ onBeforeUnmount(() => {
   font-weight: 660;
 }
 
-.member-panel-close { display: none; }
-
-.add-member { margin-top: 18px; }
-
 .panel-title-row h3 span {
   margin-left: 3px;
   border-radius: 3px;
@@ -777,6 +874,15 @@ onBeforeUnmount(() => {
   background: var(--panel-soft);
   color: var(--muted);
   font-size: 11px;
+}
+
+.member-panel-close { display: none; }
+
+.add-member {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .add-member input {
@@ -829,6 +935,17 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
 }
 
+.role-badge {
+  border: 0;
+  padding: 3px 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.role-badge.owner { color: var(--accent); font-weight: 650; }
+
 .member-actions {
   position: absolute;
   right: 0;
@@ -857,8 +974,28 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+/* --- Rail settings view -------------------------------------------------- */
+.team-settings-list {
+  margin: 18px 0 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.team-settings-list > div {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+}
+
+.team-settings-list > div:first-child { border-top: 0; }
+.team-settings-list dt { color: var(--muted); font-size: 13px; }
+.team-settings-list dd { margin: 0; font-size: 14px; font-weight: 620; overflow-wrap: anywhere; }
+
 .settings-actions {
-  margin-top: 20px;
+  margin-top: 18px;
   display: flex;
   gap: 8px;
 }
@@ -870,38 +1007,7 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.space-tabs {
-  width: 100%;
-  margin: 4px 0 0;
-  display: flex;
-  gap: 2px;
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  border-radius: 0;
-  padding: 0;
-  background: transparent;
-}
-
-.space-tabs button {
-  margin-bottom: -1px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  padding: 8px 14px;
-  background: transparent;
-  color: var(--muted);
-  box-shadow: none;
-  cursor: pointer;
-  font-size: 14px;
-}
-
-.space-tabs button.active {
-  border-bottom-color: var(--accent);
-  background: transparent;
-  color: var(--accent);
-  font-weight: 650;
-}
-
+/* --- Empty state --------------------------------------------------------- */
 .placeholder-panel {
   min-height: 420px;
   display: flex;
@@ -927,11 +1033,27 @@ onBeforeUnmount(() => {
   font-size: 14px;
 }
 
+.placeholder-panel .primary { margin-top: 14px; }
+
 .members-backdrop { display: none; }
 
+/* --- Responsive ---------------------------------------------------------- */
+@media (min-width: 761px) {
+  .team-topbar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 14px 28px;
+    padding: 20px 24px;
+  }
+
+  .masthead-description { grid-column: 2; }
+  .team-actions { grid-column: 3; justify-content: flex-end; flex-wrap: nowrap; }
+}
+
 @media (max-width: 1260px) {
-  .team-topbar { align-items: flex-start; }
-  .team-actions { flex-wrap: wrap; justify-content: flex-end; }
+  .team-topbar { grid-template-columns: minmax(0, 1fr) auto; }
+  .masthead-description { grid-column: 1 / -1; }
   .team-create-form { grid-template-columns: 1fr 1fr; }
   .create-form-actions { justify-content: flex-end; }
 }
@@ -961,15 +1083,9 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 760px) {
-  .teams-header { margin-bottom: 18px; }
-  .team-topbar { flex-direction: column; }
-  .team-switcher-wrap,
-  .team-actions { width: 100%; }
-  .team-actions { justify-content: flex-start; }
+  .teams-header { margin-bottom: 14px; }
+  .team-switcher { width: 100%; }
   .team-summary { margin-right: auto; }
-  .settings-trigger { width: 44px; justify-content: center; padding: 0; }
-  .settings-trigger span { display: none; }
-  .team-create-form { grid-template-columns: 1fr; }
   .space-tabs button { flex: 1; }
 }
 
@@ -980,8 +1096,11 @@ onBeforeUnmount(() => {
   .team-actions { display: grid; grid-template-columns: 1fr auto; }
   .team-summary { grid-column: 1 / -1; }
   .invite-trigger { justify-content: center; }
+  .settings-trigger { width: 44px; justify-content: center; padding: 0; }
+  .settings-trigger span { display: none; }
+  .team-create-form { grid-template-columns: 1fr; }
   .add-member { width: 100%; }
-  .team-detail { padding-top: 24px; }
+  .team-detail { padding-top: 20px; }
   .team-create-form input,
   .add-member input { font-size: 16px; }
 }

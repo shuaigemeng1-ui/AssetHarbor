@@ -146,7 +146,7 @@ describe('TeamsView permissions', () => {
     }
   })
 
-  it('toggles team settings with the trigger and cancels from the panel', async () => {
+  it('toggles team settings with the trigger and returns to members from the panel', async () => {
     const wrapper = mountView({ user: { id: 7, username: 'alice', role: 'admin' } })
     await flushPromises()
     await wrapper.get('.team-cards button').trigger('click')
@@ -158,19 +158,21 @@ describe('TeamsView permissions', () => {
     await trigger.trigger('click')
     expect(trigger.attributes('aria-pressed')).toBe('true')
     expect(wrapper.text()).toContain('解散团队')
+    expect(wrapper.text()).toContain('返回成员列表')
 
-    // Clicking the trigger again is the primary cancel path on wide layouts.
+    // Clicking the trigger again leaves the settings view (the wide-layout
+    // cancel path, where no drawer close affordance exists).
     await trigger.trigger('click')
     expect(trigger.attributes('aria-pressed')).toBe('false')
     expect(wrapper.text()).not.toContain('解散团队')
-    expect(wrapper.text()).not.toContain('取消')
+    expect(wrapper.text()).not.toContain('返回成员列表')
 
-    // Re-open and cancel via the explicit panel cancel button.
+    // Re-open and leave via the explicit panel action.
     await trigger.trigger('click')
     expect(wrapper.text()).toContain('解散团队')
-    const cancel = wrapper.findAll('button').find(button => button.text() === '取消')
-    expect(cancel).toBeTruthy()
-    await cancel.trigger('click')
+    const back = wrapper.findAll('button').find(button => button.text() === '返回成员列表')
+    expect(back).toBeTruthy()
+    await back.trigger('click')
     expect(wrapper.text()).not.toContain('解散团队')
     expect(trigger.attributes('aria-pressed')).toBe('false')
   })
