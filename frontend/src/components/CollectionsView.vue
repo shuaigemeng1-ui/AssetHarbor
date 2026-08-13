@@ -792,6 +792,12 @@ onBeforeUnmount(() => {
   gap: 15px;
 }
 
+@media (min-width: 1921px) {
+  .collection-media-grid {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+}
+
 .group-editor .error-text {
   margin: 0;
   font-size: 12px;

@@ -231,7 +231,7 @@ function logout() {
               <button :class="{ active: view === 'account' }" :aria-current="view === 'account' ? 'page' : undefined" @click="navigate('account')">
                 <AppIcon name="account" /><span>账户与密钥</span>
               </button>
-              <button class="nav-logout" type="button" @click="logout">
+              <button class="nav-logout nav-logout-mobile" type="button" @click="logout">
                 <AppIcon name="logout" /><span>退出登录</span>
               </button>
             </nav>
@@ -242,6 +242,9 @@ function logout() {
         <div class="sidebar-user">
           <span class="user-avatar">{{ user.username.slice(0, 1).toUpperCase() }}</span>
           <span class="user-details"><strong>{{ user.username }}</strong><small>{{ isAdmin ? '系统管理员' : '媒体库用户' }}</small></span>
+          <button class="sidebar-user-logout" type="button" aria-label="退出登录" title="退出登录" @click="logout">
+            <AppIcon name="logout" size="16" />
+          </button>
         </div>
       </aside>
 

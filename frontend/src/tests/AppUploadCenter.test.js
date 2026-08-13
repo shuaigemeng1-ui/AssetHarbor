@@ -7,16 +7,17 @@ const api = vi.hoisted(() => ({
   getToken: vi.fn(() => 'token'),
   setToken: vi.fn(),
 }))
+const videoUploads = vi.hoisted(() => ({
+  activeVideoUploadCount: 0,
+  initializeVideoUploads: vi.fn(),
+  resetVideoUploads: vi.fn(),
+}))
 
 vi.mock('../api', async importOriginal => ({
   ...await importOriginal(),
   ...api,
 }))
-vi.mock('../stores/videoUploads', () => ({
-  activeVideoUploadCount: 0,
-  initializeVideoUploads: vi.fn(),
-  resetVideoUploads: vi.fn(),
-}))
+vi.mock('../stores/videoUploads', () => videoUploads)
 
 import App from '../App.vue'
 
@@ -55,6 +56,9 @@ describe('global upload center navigation', () => {
 
     expect(wrapper.find('.global-rail').exists()).toBe(false)
     expect(wrapper.findAll('.context-sidebar')).toHaveLength(1)
+    expect(wrapper.get('.sidebar-user > .sidebar-user-logout').attributes('aria-label')).toBe('退出登录')
+    expect(wrapper.find('.side-nav > .nav-logout:not(.nav-logout-mobile)').exists()).toBe(false)
+    expect(wrapper.find('.nav-logout-mobile').exists()).toBe(true)
     expect(wrapper.findAll('.nav-upload-center')).toHaveLength(1)
     const button = wrapper.get('.context-sidebar .nav-upload-center')
     expect(button.attributes('aria-label')).toBe('打开视频上传中心')
@@ -62,6 +66,40 @@ describe('global upload center navigation', () => {
     expect(wrapper.find('.modal-stub').exists()).toBe(true)
     expect(wrapper.find('.queue-stub').exists()).toBe(true)
     expect(wrapper.get('.queue-stub').attributes('data-all-scopes')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it.each([
+    ['desktop account card', '.sidebar-user-logout'],
+    ['mobile navigation', '.nav-logout-mobile'],
+  ])('logs out from the %s entry', async (_label, selector) => {
+    const wrapper = mount(App, {
+      global: {
+        stubs: {
+          AppIcon: { template: '<i />' },
+          HomeView: true,
+          GalleryView: true,
+          VideoView: true,
+          CollectionsView: true,
+          TeamsView: true,
+          AdminView: true,
+          AccountView: true,
+          AuthView: { template: '<div class="auth-stub" />' },
+          UiFeedback: true,
+          VideoUploadQueue: true,
+          BaseModal: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get(selector).trigger('click')
+    await flushPromises()
+
+    expect(api.setToken).toHaveBeenCalledWith(null)
+    expect(videoUploads.resetVideoUploads).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('.workspace-shell').exists()).toBe(false)
+    expect(wrapper.find('.auth-stub').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -339,7 +377,7 @@ describe('global upload center navigation', () => {
 
     const overview = wrapper.findAll('.side-nav button')
       .find(button => button.text().includes('媒体概览'))
-    const logout = wrapper.get('.nav-logout')
+    const logout = wrapper.get('.sidebar-user-logout')
     await overview.trigger('click')
     await logout.trigger('click')
 

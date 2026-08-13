@@ -18,6 +18,8 @@
   --danger-soft: #fff3f3;
   --shadow-sm: none;
   --shadow-md: 0 18px 48px rgb(0 0 0 / 16%);
+  /* Keep the current 1080p density, then preserve similar side gutters on wider displays. */
+  --workspace-content-max: clamp(1180px, calc(100% - 528px), 1800px);
 }
 
 html,
@@ -189,6 +191,10 @@ body {
   color: var(--danger);
 }
 
+.side-nav .nav-logout-mobile {
+  display: none;
+}
+
 .sidebar-spacer {
   min-height: 18px;
   flex: 1;
@@ -196,7 +202,7 @@ body {
 
 .sidebar-user {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 9px;
   border-top: 1px solid var(--border);
@@ -234,6 +240,25 @@ body {
 .sidebar-user .user-details small {
   color: var(--muted);
   font-size: 9px;
+}
+
+.sidebar-user-logout {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.sidebar-user-logout:hover {
+  border-color: #f1d1d1;
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .workspace-main {
@@ -276,7 +301,7 @@ body {
 }
 
 .workspace-main > .page-content {
-  width: min(1180px, calc(100% - 56px));
+  width: min(var(--workspace-content-max), calc(100% - 56px));
   min-height: calc(100vh - 126px);
   margin: 0 auto;
   padding: 32px 0 48px;
@@ -294,7 +319,7 @@ body {
 }
 
 .workspace-main > .site-footer {
-  width: min(1180px, calc(100% - 56px));
+  width: min(var(--workspace-content-max), calc(100% - 56px));
   padding: 18px 0 24px;
   font-size: 10px;
 }
@@ -814,6 +839,16 @@ button.ghost:hover,
   border-radius: 5px;
 }
 
+@media (min-width: 1921px) {
+  .workspace-main-library .asset-library:not(.asset-library-embedded) .asset-grid {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  }
+
+  .asset-library-embedded .asset-grid {
+    grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  }
+}
+
 @media (max-width: 1320px) {
   .asset-library {
     grid-template-columns: minmax(0, 1fr) 320px;
@@ -971,6 +1006,10 @@ button.ghost:hover,
     flex: 0 0 auto;
     padding: 7px 10px;
     white-space: nowrap;
+  }
+
+  .side-nav .nav-logout-mobile {
+    display: flex;
   }
 
   .workspace-topbar {
