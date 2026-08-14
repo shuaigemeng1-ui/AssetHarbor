@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="oss 开放 API 文档、Python 3 与 cURL 调用示例">
+<meta name="description" content="oss API Key 可调用的媒体接口文档：请求参数、响应参数与 Python 3 / cURL 示例">
 <title>oss · API 文档</title>
 <style>
   :root {
@@ -201,7 +201,15 @@
   }
   .auth-badge.public { background: #e8f6ed; color: var(--green); }
 
-  .parameter-wrap { overflow-x: auto; padding: 0 20px 16px; }
+  .parameter-wrap,
+  .response-wrap { overflow-x: auto; padding: 0 20px 16px; }
+  .table-label {
+    margin: 0 0 6px;
+    color: var(--faint);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .04em;
+  }
   table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   th {
     border-bottom: 1px solid var(--border);
@@ -255,12 +263,26 @@
     white-space: pre;
   }
 
-  /* --- Reference tables & notes ----------------------------------------- */
-  .reference-shell { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
-  .reference-shell table { min-width: 660px; margin: 0; }
-  .reference-shell th, .reference-shell td { padding: 11px 16px; }
-  .reference-shell td:first-child { white-space: nowrap; }
-  .reference-shell td:nth-child(2) code { background: transparent; padding: 0; }
+  /* --- Compact endpoint cards (params + response only) ------------------ */
+  .endpoint-mini {
+    margin-top: 12px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 15px 20px 17px;
+    background: #fff;
+  }
+  .endpoint-mini .endpoint-route { margin-bottom: 2px; }
+  .endpoint-mini h3 { font-size: 15px; }
+  .endpoint-mini .endpoint-head { padding: 0 0 12px; }
+  .mini-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 24px;
+  }
+  .mini-grid .parameter-wrap,
+  .mini-grid .response-wrap { padding: 0; }
+  .mini-grid table { font-size: 13px; }
+  .mini-grid th, .mini-grid td { padding: 7px 10px; }
 
   .security-note {
     margin: 14px 0 0;
@@ -281,12 +303,9 @@
     .layout { grid-template-columns: 1fr; gap: 0; }
     .side-nav { position: static; display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; }
     .side-nav strong { display: none; }
-    .side-nav a {
-      flex: 0 0 auto;
-      border: 1px solid var(--border);
-      background: #fff;
-    }
+    .side-nav a { flex: 0 0 auto; border: 1px solid var(--border); background: #fff; }
     .side-nav a.active { border-color: #cfe0ff; background: var(--accent-soft); color: var(--accent); }
+    .mini-grid { grid-template-columns: 1fr; }
   }
   @media (max-width: 620px) {
     .topbar-inner { width: min(100% - 28px, 1180px); flex-wrap: wrap; padding: 10px 0; }
@@ -306,7 +325,7 @@
       <span class="brand-mark" aria-hidden="true">O</span>
       <div class="brand-copy">
         <strong>OSS API</strong>
-        <span data-zh="开放接口文档" data-en="Open API reference"></span>
+        <span data-zh="API Key 媒体接口" data-en="API-key media endpoints"></span>
       </div>
     </div>
     <div class="header-actions">
@@ -323,23 +342,24 @@
 <div class="shell">
   <div class="layout">
     <nav class="side-nav" aria-label="API 文档章节">
-      <strong data-zh="开始" data-en="Getting started"></strong>
+      <strong data-zh="开始" data-en="Start"></strong>
       <a href="#quickstart" data-zh="快速开始" data-en="Quick start"></a>
-      <a href="#examples" data-zh="常用调用" data-en="Common calls"></a>
-      <a href="#video-flow" data-zh="视频分片" data-en="Video chunks"></a>
-      <strong data-zh="参考" data-en="Reference"></strong>
-      <a href="#reference" data-zh="接口索引" data-en="Endpoints"></a>
-      <a href="#security" data-zh="鉴权隔离" data-en="Auth isolation"></a>
-      <a href="#operations" data-zh="运维接口" data-en="Operations"></a>
+      <strong data-zh="媒体接口" data-en="Media APIs"></strong>
+      <a href="#images" data-zh="图片" data-en="Images"></a>
+      <a href="#videos" data-zh="视频" data-en="Videos"></a>
+      <a href="#media" data-zh="统一媒体" data-en="Unified media"></a>
+      <strong data-zh="更多" data-en="More"></strong>
+      <a href="#teams" data-zh="团队空间" data-en="Team spaces"></a>
+      <a href="#misc" data-zh="其他与安全" data-en="More & security"></a>
     </nav>
 
     <main>
       <h2 id="quickstart" data-zh="快速开始" data-en="Quick start"></h2>
-      <p class="lead" data-zh="示例默认展示 Python 3。先安装 requests，再把服务地址与令牌放进环境变量；示例不会把凭据写进源码。" data-en="Examples default to Python 3. Install requests and keep the service URL and token in environment variables rather than source code."></p>
+      <p class="lead" data-zh="本文档只收录可用自建 API Key 调用的媒体接口。先在「账户与密钥」页创建 API Key（明文只显示一次），把服务地址与 Key 放进环境变量。" data-en="This guide only documents the media endpoints your own API key can call. Create a key on the account page (the plaintext is shown once) and put the service URL and key into environment variables."></p>
       <div class="notice-grid">
         <div class="notice">
-          <strong data-zh="鉴权方式" data-en="Authentication"></strong>
-          <span data-zh="媒体数据接口可使用 Authorization: Bearer &lt;JWT 或 API Key&gt;，API Key 也可放在 X-API-Key；账户、Key 管理、团队治理、分组和管理员接口仅接受 JWT。" data-en="Media data APIs accept Authorization: Bearer &lt;JWT or API key&gt;, and X-API-Key is also supported. Account, key, team-governance, group and admin APIs require a JWT."></span>
+          <strong data-zh="携带方式" data-en="Sending the key"></strong>
+          <span data-zh="两种方式任选：Authorization: Bearer &lt;API Key&gt;，或 X-API-Key: &lt;API Key&gt; 请求头。同一请求不要同时携带两个不同身份。" data-en="Either Authorization: Bearer &lt;API key&gt; or the X-API-Key header. Never supply two different credentials in one request."></span>
         </div>
         <div class="notice">
           <strong data-zh="缺省公开" data-en="Public by default"></strong>
@@ -352,7 +372,7 @@
           <div class="endpoint-title">
             <div class="endpoint-route"><span class="method m-get">SETUP</span><code>Python 3 / cURL 环境变量</code></div>
             <h3 data-zh="准备调用环境" data-en="Prepare the client environment"></h3>
-            <p data-zh="先登录获得 JWT，长期自动化建议在账户页创建 API Key。" data-en="Log in for a JWT; use an API key from the account page for long-running automations."></p>
+            <p data-zh="OSS_TOKEN 填入 API Key 明文；示例不会把凭据写进源码。" data-en="Put the API key plaintext into OSS_TOKEN; examples never hard-code credentials."></p>
           </div>
           <span class="auth-badge public" data-zh="本地准备" data-en="Local setup"></span>
         </div>
@@ -368,72 +388,46 @@
 
 # Linux / macOS
 export OSS_BASE_URL="{{BASE}}"
-export OSS_TOKEN="替换为 JWT 或 API Key"</code></pre></div>
+export OSS_TOKEN="账户页创建的 API Key"</code></pre></div>
           <div class="code-panel" id="environment-curl" role="tabpanel" aria-labelledby="environment-curl-tab" data-code-panel="curl" hidden><pre><code>export OSS_BASE_URL="{{BASE}}"
-export OSS_TOKEN="替换为 JWT 或 API Key"
-curl "$OSS_BASE_URL/healthz"</code></pre></div>
+export OSS_TOKEN="账户页创建的 API Key"
+curl -H "X-API-Key: $OSS_TOKEN" "$OSS_BASE_URL/api/auth/me"</code></pre></div>
         </div>
       </article>
 
-      <h2 id="examples" data-zh="常用开放接口" data-en="Common open APIs"></h2>
-      <p class="lead" data-zh="每张调用卡都可切换语言并复制当前示例。示例使用环境变量中的服务地址和令牌。" data-en="Switch languages and copy the active example from each card. Examples read the service URL and token from environment variables."></p>
+      <h2 id="images" data-zh="图片接口" data-en="Image endpoints"></h2>
+      <p class="lead" data-zh="上传、查询、更新与删除图片。带示例的卡片可切换语言并复制；其余接口以紧凑卡片列出请求与响应参数。" data-en="Upload, list, update and delete images. Cards with examples switch languages and copy; other endpoints use compact parameter cards."></p>
 
-      <article class="endpoint-card" data-example="login">
-        <div class="endpoint-head">
-          <div class="endpoint-title">
-            <div class="endpoint-route"><span class="method m-post">POST</span><code>/api/auth/login</code></div>
-            <h3 data-zh="登录并获取 JWT" data-en="Log in and obtain a JWT"></h3>
-            <p data-zh="表单登录，返回 access_token。" data-en="Form login returning access_token."></p>
-          </div>
-          <span class="auth-badge public" data-zh="无需鉴权" data-en="No auth"></span>
-        </div>
-        <div class="parameter-wrap"><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
-          <tr><td><code>username</code></td><td>form</td><td>是</td><td>用户名</td></tr>
-          <tr><td><code>password</code></td><td>form</td><td>是</td><td>密码</td></tr>
-        </tbody></table></div>
-        <div class="example" data-default-lang="python">
-          <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="登录示例代码语言">
-            <button class="code-tab" type="button" role="tab" id="login-python-tab" aria-controls="login-python" aria-selected="true" data-code-lang="python">Python 3</button>
-            <button class="code-tab" type="button" role="tab" id="login-curl-tab" aria-controls="login-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
-          </div><button class="copy-btn" type="button" aria-label="复制登录 Python 3 示例" data-copy>复制</button></div>
-          <div class="code-panel" id="login-python" role="tabpanel" aria-labelledby="login-python-tab" data-code-panel="python"><pre><code>import os
-import requests
-
-base = os.getenv("OSS_BASE_URL", "{{BASE}}")
-response = requests.post(
-    f"{base}/api/auth/login",
-    data={"username": "alice", "password": "your-password"},
-    timeout=30,
-)
-response.raise_for_status()
-print(response.json()["access_token"])</code></pre></div>
-          <div class="code-panel" id="login-curl" role="tabpanel" aria-labelledby="login-curl-tab" data-code-panel="curl" hidden><pre><code>curl --fail-with-body -X POST "$OSS_BASE_URL/api/auth/login" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  --data-urlencode "username=alice" \
-  --data-urlencode "password=your-password"</code></pre></div>
-        </div>
-      </article>
-
-      <article class="endpoint-card" data-example="image-upload">
+      <article class="endpoint-card" data-example="upload">
         <div class="endpoint-head">
           <div class="endpoint-title">
             <div class="endpoint-route"><span class="method m-post">POST</span><code>/api/upload</code></div>
             <h3 data-zh="上传图片" data-en="Upload an image"></h3>
             <p data-zh="multipart 上传。示例故意省略 visibility，因此服务端按 public 处理。" data-en="Multipart upload. The example omits visibility, so the server stores it as public."></p>
-          </div><span class="auth-badge" data-zh="JWT / API Key" data-en="JWT / API key"></span>
+          </div><span class="auth-badge" data-zh="API Key" data-en="API key"></span>
         </div>
-        <div class="parameter-wrap"><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+        <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
           <tr><td><code>file</code></td><td>form</td><td>是</td><td>支持的图片文件</td></tr>
           <tr><td><code>name</code></td><td>form</td><td>否</td><td>展示名称，缺省取文件名</td></tr>
           <tr><td><code>visibility</code></td><td>form</td><td>否</td><td><code>public</code>（默认）或 <code>private</code></td></tr>
           <tr><td><code>team_id</code></td><td>form</td><td>否</td><td>团队空间 ID，调用者必须是成员</td></tr>
         </tbody></table></div>
+        <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>code</code></td><td>string</td><td>短码，用于 /i/{code} 与统一媒体接口</td></tr>
+          <tr><td><code>url</code></td><td>string</td><td>规范访问地址</td></tr>
+          <tr><td><code>size</code></td><td>integer</td><td>字节数</td></tr>
+          <tr><td><code>content_type</code></td><td>string</td><td>嗅探得到的 MIME 类型</td></tr>
+          <tr><td><code>sha256</code></td><td>string</td><td>文件 SHA-256</td></tr>
+          <tr><td><code>created_at</code></td><td>datetime</td><td>创建时间（UTC）</td></tr>
+          <tr><td><code>name / visibility</code></td><td>string</td><td>展示名 / public 或 private</td></tr>
+          <tr><td><code>owner_id / team_id</code></td><td>integer|null</td><td>属主编号 / 团队编号</td></tr>
+        </tbody></table></div>
         <div class="example" data-default-lang="python">
           <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="图片上传示例代码语言">
-            <button class="code-tab" type="button" role="tab" id="image-upload-python-tab" aria-controls="image-upload-python" aria-selected="true" data-code-lang="python">Python 3</button>
-            <button class="code-tab" type="button" role="tab" id="image-upload-curl-tab" aria-controls="image-upload-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
-          </div><button class="copy-btn" type="button" aria-label="复制图片上传 Python 3 示例" data-copy>复制</button></div>
-          <div class="code-panel" id="image-upload-python" role="tabpanel" aria-labelledby="image-upload-python-tab" data-code-panel="python"><pre><code>import os
+            <button class="code-tab" type="button" role="tab" id="upload-python-tab" aria-controls="upload-python" aria-selected="true" data-code-lang="python">Python 3</button>
+            <button class="code-tab" type="button" role="tab" id="upload-curl-tab" aria-controls="upload-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
+          </div><button class="copy-btn" type="button" aria-label="复制上传图片 Python 3 示例" data-copy>复制</button></div>
+          <div class="code-panel" id="upload-python" role="tabpanel" aria-labelledby="upload-python-tab" data-code-panel="python"><pre><code>import os
 from pathlib import Path
 import requests
 
@@ -450,174 +444,68 @@ with path.open("rb") as stream:
     )
 response.raise_for_status()
 print(response.json())</code></pre></div>
-          <div class="code-panel" id="image-upload-curl" role="tabpanel" aria-labelledby="image-upload-curl-tab" data-code-panel="curl" hidden><pre><code>curl --fail-with-body -X POST "$OSS_BASE_URL/api/upload" \
+          <div class="code-panel" id="upload-curl" role="tabpanel" aria-labelledby="upload-curl-tab" data-code-panel="curl" hidden><pre><code>curl --fail-with-body -X POST "$OSS_BASE_URL/api/upload" \
   -H "Authorization: Bearer $OSS_TOKEN" \
   -F "file=@cover.png" \
   -F "name=项目封面"</code></pre></div>
         </div>
       </article>
 
-      <article class="endpoint-card" data-example="media-list">
-        <div class="endpoint-head">
-          <div class="endpoint-title">
-            <div class="endpoint-route"><span class="method m-get">GET</span><code>/api/media</code></div>
-            <h3 data-zh="查询媒体库" data-en="List the media library"></h3>
-            <p data-zh="普通成员和 API Key 只返回个人/有权团队范围；仅管理员 JWT 在未指定团队时可查看全站，管理员 API Key 也不具备全局越权能力。" data-en="Members and API keys receive only personal or authorized team assets. Only an administrator JWT can access the global scope; an administrator's API key has no global override."></p>
-          </div><span class="auth-badge" data-zh="JWT / API Key" data-en="JWT / API key"></span>
-        </div>
-        <div class="parameter-wrap"><table><thead><tr><th>参数</th><th>必填</th><th>说明</th></tr></thead><tbody>
-          <tr><td><code>kind</code></td><td>否</td><td><code>all</code> / <code>image</code> / <code>video</code></td></tr>
-          <tr><td><code>q</code></td><td>否</td><td>名称、原文件名或短码</td></tr>
-          <tr><td><code>team_id</code></td><td>否</td><td>有权访问的团队空间</td></tr>
-          <tr><td><code>limit / offset</code></td><td>否</td><td>分页参数</td></tr>
-        </tbody></table></div>
-        <div class="example" data-default-lang="python">
-          <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="媒体查询示例代码语言">
-            <button class="code-tab" type="button" role="tab" id="media-list-python-tab" aria-controls="media-list-python" aria-selected="true" data-code-lang="python">Python 3</button>
-            <button class="code-tab" type="button" role="tab" id="media-list-curl-tab" aria-controls="media-list-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
-          </div><button class="copy-btn" type="button" aria-label="复制媒体查询 Python 3 示例" data-copy>复制</button></div>
-          <div class="code-panel" id="media-list-python" role="tabpanel" aria-labelledby="media-list-python-tab" data-code-panel="python"><pre><code>import os
-import requests
-
-base = os.getenv("OSS_BASE_URL", "{{BASE}}")
-response = requests.get(
-    f"{base}/api/media",
-    headers={"Authorization": f"Bearer {os.environ['OSS_TOKEN']}"},
-    params={"kind": "all", "q": "封面", "limit": 20, "offset": 0},
-    timeout=30,
-)
-response.raise_for_status()
-for item in response.json()["items"]:
-    print(item["media_kind"], item["code"], item["visibility"])</code></pre></div>
-          <div class="code-panel" id="media-list-curl" role="tabpanel" aria-labelledby="media-list-curl-tab" data-code-panel="curl" hidden><pre><code>curl --fail-with-body --get "$OSS_BASE_URL/api/media" \
-  -H "Authorization: Bearer $OSS_TOKEN" \
-  --data-urlencode "kind=all" \
-  --data-urlencode "q=封面" \
-  --data-urlencode "limit=20" \
-  --data-urlencode "offset=0"</code></pre></div>
+      <article class="endpoint-mini" data-endpoint="images-list">
+        <div class="endpoint-head"><div class="endpoint-title">
+          <div class="endpoint-route"><span class="method m-get">GET</span><code>/api/images</code></div>
+          <h3 data-zh="查询图片列表" data-en="List images"></h3>
+        </div><span class="auth-badge" data-zh="API Key" data-en="API key"></span></div>
+        <div class="mini-grid">
+          <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>必填</th><th>说明</th></tr></thead><tbody>
+            <tr><td><code>limit / offset</code></td><td>否</td><td>分页，limit 1–100</td></tr>
+            <tr><td><code>q</code></td><td>否</td><td>名称、原文件名或短码</td></tr>
+            <tr><td><code>scope</code></td><td>否</td><td>API Key 传 <code>mine</code>；<code>scope=all</code> 仅管理员 JWT 可全局越权</td></tr>
+          </tbody></table></div>
+          <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+            <tr><td><code>items</code></td><td>array</td><td>图片数组，元素为 <code>ImageInfo</code>（code、url、size、content_type、sha256、created_at、name、visibility、owner_id、team_id、original_filename、owner_username）</td></tr>
+            <tr><td><code>total</code></td><td>integer</td><td>匹配总数</td></tr>
+          </tbody></table></div>
         </div>
       </article>
 
-      <article class="endpoint-card" data-example="media-metadata">
-        <div class="endpoint-head">
-          <div class="endpoint-title">
-            <div class="endpoint-route"><span class="method m-get">GET</span><code>/api/media/{code}</code></div>
-            <h3 data-zh="读取统一媒体元数据" data-en="Read unified media metadata"></h3>
-            <p data-zh="公开媒体允许匿名查询，并将 owner_id、owner_username、team_id、original_filename 隐藏为 null；私密媒体需添加有权 JWT 或 API Key，越权统一返回 404。" data-en="Public media can be queried anonymously, with owner_id, owner_username, team_id and original_filename hidden as null. Private media requires an authorized JWT or API key; unauthorized access returns 404."></p>
-          </div><span class="auth-badge" data-zh="公开免鉴权 · 私密 JWT / Key" data-en="Public: no auth · private: JWT / key"></span>
-        </div>
-        <div class="parameter-wrap"><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
-          <tr><td><code>code</code></td><td>path</td><td>是</td><td>图片或视频短码</td></tr>
-        </tbody></table></div>
-        <div class="example" data-default-lang="python">
-          <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="媒体元数据示例代码语言">
-            <button class="code-tab" type="button" role="tab" id="media-metadata-python-tab" aria-controls="media-metadata-python" aria-selected="true" data-code-lang="python">Python 3</button>
-            <button class="code-tab" type="button" role="tab" id="media-metadata-curl-tab" aria-controls="media-metadata-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
-          </div><button class="copy-btn" type="button" aria-label="复制媒体元数据 Python 3 示例" data-copy>复制</button></div>
-          <div class="code-panel" id="media-metadata-python" role="tabpanel" aria-labelledby="media-metadata-python-tab" data-code-panel="python"><pre><code>import os
-import requests
-
-base = os.getenv("OSS_BASE_URL", "{{BASE}}")
-code = "Ab3xYz9Kq1"
-
-# 公开媒体可匿名查询；属主、团队和原文件名字段会返回 null
-response = requests.get(f"{base}/api/media/{code}", timeout=30)
-response.raise_for_status()
-metadata = response.json()
-print(metadata["media_kind"], metadata["visibility"], metadata["url"])
-
-# 查询私密媒体时添加有权 JWT 或 API Key；越权统一返回 404
-# headers = {"Authorization": f"Bearer {os.environ['OSS_TOKEN']}"}
-# metadata = requests.get(f"{base}/api/media/{code}", headers=headers, timeout=30).json()</code></pre></div>
-          <div class="code-panel" id="media-metadata-curl" role="tabpanel" aria-labelledby="media-metadata-curl-tab" data-code-panel="curl" hidden><pre><code># 公开媒体匿名元数据
-curl --fail-with-body "$OSS_BASE_URL/api/media/Ab3xYz9Kq1"
-
-# 私密媒体需有权 JWT 或 API Key；越权统一返回 404
-curl --fail-with-body "$OSS_BASE_URL/api/media/Ab3xYz9Kq1" \
-  -H "Authorization: Bearer $OSS_TOKEN"</code></pre></div>
+      <article class="endpoint-mini" data-endpoint="image-update">
+        <div class="endpoint-head"><div class="endpoint-title">
+          <div class="endpoint-route"><span class="method m-patch">PATCH</span><code>/api/images/{code}</code></div>
+          <h3 data-zh="更新图片名称或可见性" data-en="Update image name or visibility"></h3>
+        </div><span class="auth-badge" data-zh="API Key" data-en="API key"></span></div>
+        <div class="mini-grid">
+          <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+            <tr><td><code>code</code></td><td>path</td><td>是</td><td>图片短码</td></tr>
+            <tr><td><code>name</code></td><td>body</td><td>否</td><td>新展示名（≤255）</td></tr>
+            <tr><td><code>visibility</code></td><td>body</td><td>否</td><td><code>public</code> 或 <code>private</code>（转私密会吊销既有签名链接）</td></tr>
+          </tbody></table></div>
+          <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+            <tr><td><code>code / url / size</code></td><td>string / integer</td><td>短码、规范地址、字节数</td></tr>
+            <tr><td><code>name / visibility</code></td><td>string</td><td>更新后的展示名与可见性</td></tr>
+            <tr><td><code>sha256 / content_type</code></td><td>string</td><td>哈希与 MIME 类型</td></tr>
+            <tr><td><code>created_at</code></td><td>datetime</td><td>创建时间（UTC）</td></tr>
+            <tr><td><code>owner_id / team_id</code></td><td>integer|null</td><td>属主 / 团队编号</td></tr>
+          </tbody></table></div>
         </div>
       </article>
 
-      <article class="endpoint-card" data-example="signed-link">
-        <div class="endpoint-head">
-          <div class="endpoint-title">
-            <div class="endpoint-route"><span class="method m-get">GET</span><code>/api/media/{code}/link</code></div>
-            <h3 data-zh="获取统一媒体访问链接" data-en="Resolve a unified media link"></h3>
-            <p data-zh="公开媒体允许匿名返回规范直链；私密媒体仅向属主、有权团队成员或管理员 JWT 返回限时签名链接。管理员 API Key 仍按属主/团队权限校验。签名 URL 在到期前可重复使用，应像临时密码一样保护，且不要把 sig 写进日志。" data-en="Public media resolves anonymously to its canonical URL. Private media returns an expiring signed URL only to its owner, authorized team members, or an administrator JWT. An administrator's API key remains owner/team scoped. Signed URLs are replayable until expiry, so protect them like temporary passwords and never log sig."></p>
-          </div><span class="auth-badge" data-zh="公开免鉴权 · 私密 JWT / Key" data-en="Public: no auth · private: JWT / key"></span>
-        </div>
-        <div class="parameter-wrap"><table><thead><tr><th>参数</th><th>必填</th><th>说明</th></tr></thead><tbody>
-          <tr><td><code>code</code></td><td>是</td><td>媒体短码</td></tr>
-          <tr><td><code>ttl</code></td><td>否</td><td>有效秒数，受服务端最大值限制</td></tr>
-        </tbody></table></div>
-        <div class="example" data-default-lang="python">
-          <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="签名链接示例代码语言">
-            <button class="code-tab" type="button" role="tab" id="signed-link-python-tab" aria-controls="signed-link-python" aria-selected="true" data-code-lang="python">Python 3</button>
-            <button class="code-tab" type="button" role="tab" id="signed-link-curl-tab" aria-controls="signed-link-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
-          </div><button class="copy-btn" type="button" aria-label="复制签名链接 Python 3 示例" data-copy>复制</button></div>
-          <div class="code-panel" id="signed-link-python" role="tabpanel" aria-labelledby="signed-link-python-tab" data-code-panel="python"><pre><code>import os
-import requests
-
-base = os.getenv("OSS_BASE_URL", "{{BASE}}")
-code = "Ab3xYz9Kq1"
-token = os.getenv("OSS_TOKEN")
-response = requests.get(
-    f"{base}/api/media/{code}/link",
-    headers={"Authorization": f"Bearer {token}"} if token else {},
-    params={"ttl": 3600},
-    timeout=30,
-)
-response.raise_for_status()
-print(response.json()["url"])</code></pre></div>
-          <div class="code-panel" id="signed-link-curl" role="tabpanel" aria-labelledby="signed-link-curl-tab" data-code-panel="curl" hidden><pre><code># 公开媒体：匿名返回规范直链
-curl --fail-with-body "$OSS_BASE_URL/api/media/Ab3xYz9Kq1/link?ttl=3600"
-
-# 私密媒体：有权 JWT 或 API Key 返回签名链接
-curl --fail-with-body \
-  "$OSS_BASE_URL/api/media/Ab3xYz9Kq1/link?ttl=3600" \
-  -H "Authorization: Bearer $OSS_TOKEN"</code></pre></div>
+      <article class="endpoint-mini" data-endpoint="image-delete">
+        <div class="endpoint-head"><div class="endpoint-title">
+          <div class="endpoint-route"><span class="method m-delete">DELETE</span><code>/api/images/{code}</code></div>
+          <h3 data-zh="删除图片" data-en="Delete an image"></h3>
+        </div><span class="auth-badge" data-zh="API Key" data-en="API key"></span></div>
+        <div class="mini-grid">
+          <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+            <tr><td><code>code</code></td><td>path</td><td>是</td><td>图片短码（仅属主或有权团队管理员）</td></tr>
+          </tbody></table></div>
+          <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+            <tr><td>—</td><td>204</td><td>成功无响应体</td></tr>
+          </tbody></table></div>
         </div>
       </article>
 
-      <article class="endpoint-card" data-example="public-download">
-        <div class="endpoint-head">
-          <div class="endpoint-title">
-            <div class="endpoint-route"><span class="method m-get">GET</span><code>/i/{code} · /v/{code}?download=1</code></div>
-            <h3 data-zh="读取或下载公开媒体" data-en="Read or download public media"></h3>
-            <p data-zh="以下无鉴权示例仅适用于公开媒体，公开视频支持 Range；私密媒体必须给请求添加 Authorization，或使用统一链接接口返回的签名 URL。" data-en="The unauthenticated example below applies only to public media, and public videos support Range. For private media, add Authorization to the request or use a signed URL returned by the unified link endpoint."></p>
-          </div><span class="auth-badge public" data-zh="公开媒体免鉴权" data-en="Public media: no auth"></span>
-        </div>
-        <div class="example" data-default-lang="python">
-          <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="公开媒体下载示例代码语言">
-            <button class="code-tab" type="button" role="tab" id="public-download-python-tab" aria-controls="public-download-python" aria-selected="true" data-code-lang="python">Python 3</button>
-            <button class="code-tab" type="button" role="tab" id="public-download-curl-tab" aria-controls="public-download-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
-          </div><button class="copy-btn" type="button" aria-label="复制公开媒体下载 Python 3 示例" data-copy>复制</button></div>
-          <div class="code-panel" id="public-download-python" role="tabpanel" aria-labelledby="public-download-python-tab" data-code-panel="python"><pre><code>import os
-import requests
-
-base = os.getenv("OSS_BASE_URL", "{{BASE}}")
-# 以下无鉴权示例仅适用于公开媒体。
-with requests.get(f"{base}/v/Ab3xYz9Kq1", params={"download": 1}, stream=True, timeout=120) as response:
-    response.raise_for_status()
-    with open("video.mp4", "wb") as output:
-        for chunk in response.iter_content(1024 * 1024):
-            output.write(chunk)
-
-# 私密媒体二选一：给同一请求添加有权身份，或直接请求已取得的签名 URL。
-# headers = {"Authorization": f"Bearer {os.environ['OSS_TOKEN']}"}
-# requests.get(os.environ["OSS_SIGNED_URL"], stream=True, timeout=120)</code></pre></div>
-          <div class="code-panel" id="public-download-curl" role="tabpanel" aria-labelledby="public-download-curl-tab" data-code-panel="curl" hidden><pre><code># 以下无鉴权示例仅适用于公开媒体
-curl --fail-with-body -L \
-  "$OSS_BASE_URL/v/Ab3xYz9Kq1?download=1" \
-  -o video.mp4
-
-# 私密媒体二选一：添加有权身份，或直接请求已取得的签名 URL
-# curl -L -H "Authorization: Bearer $OSS_TOKEN" "$OSS_BASE_URL/v/Ab3xYz9Kq1?download=1" -o video.mp4
-# curl -L "$OSS_SIGNED_URL" -o video.mp4</code></pre></div>
-        </div>
-      </article>
-
-      <h2 id="video-flow" data-zh="视频分片与断点续传" data-en="Chunked and resumable video upload"></h2>
+      <h2 id="videos" data-zh="视频接口" data-en="Video endpoints"></h2>
       <p class="lead" data-zh="按“初始化 → 查询服务端状态 → 上传缺失分片 → 完成”执行。分片从 0 开始，可乱序；相同内容重传幂等。" data-en="Follow initialize, reconcile server state, upload missing parts, then complete. Parts are zero-based, can arrive out of order, and identical retries are idempotent."></p>
 
       <article class="endpoint-card" data-example="video-init">
@@ -625,12 +513,20 @@ curl --fail-with-body -L \
           <div class="endpoint-route"><span class="method m-post">POST</span><code>/api/video-uploads</code></div>
           <h3 data-zh="1. 初始化上传会话" data-en="1. Initialize the upload session"></h3>
           <p data-zh="指纹由大小和首/中/尾样本生成。示例省略 visibility，因此默认公开。" data-en="The fingerprint combines file size and start/middle/end samples. Visibility is omitted, so this upload is public."></p>
-        </div><span class="auth-badge" data-zh="JWT / API Key" data-en="JWT / API key"></span></div>
-        <div class="parameter-wrap"><table><thead><tr><th>字段</th><th>必填</th><th>说明</th></tr></thead><tbody>
+        </div><span class="auth-badge" data-zh="API Key" data-en="API key"></span></div>
+        <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>字段</th><th>必填</th><th>说明</th></tr></thead><tbody>
           <tr><td><code>filename / size / fingerprint</code></td><td>是</td><td>原文件名、字节数、64 位十六进制快速指纹</td></tr>
           <tr><td><code>name</code></td><td>否</td><td>展示名</td></tr>
           <tr><td><code>visibility</code></td><td>否</td><td><code>public</code>（默认）或 <code>private</code></td></tr>
           <tr><td><code>team_id</code></td><td>否</td><td>有权团队 ID</td></tr>
+        </tbody></table></div>
+        <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>upload_id</code></td><td>string</td><td>会话 ID，后续分片接口使用</td></tr>
+          <tr><td><code>chunk_size / total_parts</code></td><td>integer</td><td>分片字节数 / 分片总数</td></tr>
+          <tr><td><code>uploaded_parts</code></td><td>array</td><td>服务端已收到的分片序号</td></tr>
+          <tr><td><code>status</code></td><td>string</td><td>active / verifying / finalizing / completed…</td></tr>
+          <tr><td><code>expires_at</code></td><td>datetime</td><td>会话过期时间</td></tr>
+          <tr><td><code>video</code></td><td>object|null</td><td>完成后为视频信息</td></tr>
         </tbody></table></div>
         <div class="example" data-default-lang="python">
           <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="视频初始化示例代码语言">
@@ -675,7 +571,16 @@ print(session["upload_id"], session["chunk_size"], session["uploaded_parts"])</c
           <div class="endpoint-route"><span class="method m-get">GET</span><code>/api/video-uploads/{upload_id}</code></div>
           <h3 data-zh="2. 查询服务端真实状态" data-en="2. Reconcile authoritative server state"></h3>
           <p data-zh="刷新、断网恢复或重试前，以 uploaded_parts 为准计算缺失分片。" data-en="After refresh or reconnect, use uploaded_parts as the source of truth for missing chunks."></p>
-        </div><span class="auth-badge" data-zh="属主 · JWT / Key；全局管理仅 JWT" data-en="Owner · JWT/key; global admin via JWT only"></span></div>
+        </div><span class="auth-badge" data-zh="API Key" data-en="API key"></span></div>
+        <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>upload_id</code></td><td>path</td><td>是</td><td>上传会话 ID</td></tr>
+        </tbody></table></div>
+        <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>uploaded_parts</code></td><td>array</td><td>已收到分片序号，据此计算缺失分片</td></tr>
+          <tr><td><code>chunk_size / total_parts / size</code></td><td>integer</td><td>分片大小 / 总数 / 文件字节数</td></tr>
+          <tr><td><code>status / expires_at</code></td><td>string / datetime</td><td>会话状态与过期时间</td></tr>
+          <tr><td><code>video</code></td><td>object|null</td><td>完成后为视频信息</td></tr>
+        </tbody></table></div>
         <div class="example" data-default-lang="python">
           <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="视频状态示例代码语言">
             <button class="code-tab" type="button" role="tab" id="video-status-python-tab" aria-controls="video-status-python" aria-selected="true" data-code-lang="python">Python 3</button>
@@ -707,7 +612,18 @@ print("missing:", missing)</code></pre></div>
           <div class="endpoint-route"><span class="method m-put">PUT</span><code>/api/video-uploads/{upload_id}/parts/{part_number}</code></div>
           <h3 data-zh="3. 上传缺失分片" data-en="3. Upload a missing chunk"></h3>
           <p data-zh="Content-Range、实际长度和 X-Chunk-SHA256 必须一致。" data-en="Content-Range, actual length and X-Chunk-SHA256 must agree."></p>
-        </div><span class="auth-badge" data-zh="属主 · JWT / Key；全局管理仅 JWT" data-en="Owner · JWT/key; global admin via JWT only"></span></div>
+        </div><span class="auth-badge" data-zh="API Key" data-en="API key"></span></div>
+        <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>upload_id / part_number</code></td><td>path</td><td>是</td><td>会话 ID / 从 0 开始的分片序号</td></tr>
+          <tr><td><code>Content-Range</code></td><td>header</td><td>是</td><td><code>bytes start-end/total</code></td></tr>
+          <tr><td><code>X-Chunk-SHA256</code></td><td>header</td><td>是</td><td>当前分片 64 位 SHA-256</td></tr>
+          <tr><td>请求体</td><td>body</td><td>是</td><td>分片原始字节</td></tr>
+        </tbody></table></div>
+        <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>part_number</code></td><td>integer</td><td>已确认的分片序号</td></tr>
+          <tr><td><code>size</code></td><td>integer</td><td>分片字节数</td></tr>
+          <tr><td><code>sha256</code></td><td>string</td><td>分片 SHA-256</td></tr>
+        </tbody></table></div>
         <div class="example" data-default-lang="python">
           <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="视频分片示例代码语言">
             <button class="code-tab" type="button" role="tab" id="video-part-python-tab" aria-controls="video-part-python" aria-selected="true" data-code-lang="python">Python 3</button>
@@ -756,7 +672,16 @@ response.raise_for_status()</code></pre></div>
           <div class="endpoint-route"><span class="method m-post">POST</span><code>/api/video-uploads/{upload_id}/complete</code></div>
           <h3 data-zh="4. 完成并发布视频" data-en="4. Complete and publish the video"></h3>
           <p data-zh="服务端重新校验格式、大小、指纹和分片完整性；重复完成返回同一个视频。" data-en="The server revalidates format, size, fingerprint and all chunks. Repeated completion returns the same video."></p>
-        </div><span class="auth-badge" data-zh="属主 · JWT / Key；全局管理仅 JWT" data-en="Owner · JWT/key; global admin via JWT only"></span></div>
+        </div><span class="auth-badge" data-zh="API Key" data-en="API key"></span></div>
+        <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>upload_id</code></td><td>path</td><td>是</td><td>上传会话 ID</td></tr>
+        </tbody></table></div>
+        <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>code / url</code></td><td>string</td><td>视频短码 / 访问地址</td></tr>
+          <tr><td><code>size / content_type / sha256</code></td><td>integer / string</td><td>字节数、MIME、SHA-256</td></tr>
+          <tr><td><code>name / visibility</code></td><td>string</td><td>展示名与可见性</td></tr>
+          <tr><td><code>created_at</code></td><td>datetime</td><td>发布时间（UTC）</td></tr>
+        </tbody></table></div>
         <div class="example" data-default-lang="python">
           <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="视频完成示例代码语言">
             <button class="code-tab" type="button" role="tab" id="video-complete-python-tab" aria-controls="video-complete-python" aria-selected="true" data-code-lang="python">Python 3</button>
@@ -781,43 +706,431 @@ print(video["code"], video["url"], video["visibility"])</code></pre></div>
         </div>
       </article>
 
-      <h2 id="reference" data-zh="接口索引" data-en="Endpoint reference"></h2>
-      <div class="reference-shell"><table><thead><tr><th>方法</th><th>路径</th><th>权限与用途</th></tr></thead><tbody>
-        <tr><td><span class="method m-get">GET</span></td><td><code>/api/auth/config</code></td><td>公开客户端上传、会话、并发与容量限制</td></tr>
-        <tr><td><span class="method m-get">GET</span></td><td><code>/api/keys</code></td><td>JWT-only：列出自己的 API Key 前缀</td></tr>
-        <tr><td><span class="method m-post">POST</span></td><td><code>/api/keys</code></td><td>JWT-only：创建仅展示一次的 API Key</td></tr>
-        <tr><td><span class="method m-get">GET</span></td><td><code>/api/images?limit&amp;offset&amp;q&amp;scope</code></td><td><code>scope=mine</code> 为当前账号个人空间；<code>scope=all</code> 为仅管理员 JWT 可用的全站视图</td></tr>
-        <tr><td><span class="method m-get">GET</span></td><td><code>/api/media/{code}</code></td><td>公开媒体匿名元数据（隐藏属主、团队和原文件名）；私密媒体仅有权身份可读，越权返回 404</td></tr>
-        <tr><td><span class="method m-get">GET</span></td><td><code>/api/media/{code}/link?ttl=3600</code></td><td>公开媒体可匿名取得规范直链；私密媒体需有权 JWT/API Key 并返回限时签名链接</td></tr>
-        <tr><td><span class="method m-patch">PATCH</span></td><td><code>/api/images/{code}</code></td><td>更新名称或可见性</td></tr>
-        <tr><td><span class="method m-delete">DELETE</span></td><td><code>/api/images/{code}</code></td><td>属主、团队管理员或管理员 JWT 删除；管理员 API Key 无全局越权</td></tr>
-        <tr><td><span class="method m-get">GET</span></td><td><code>/api/video-uploads</code></td><td>找回当前用户可续传会话及动态并发上限</td></tr>
-        <tr><td><span class="method m-delete">DELETE</span></td><td><code>/api/video-uploads/{upload_id}</code></td><td>取消未完成会话，不删除已发布视频</td></tr>
-        <tr><td><span class="method m-get">GET</span></td><td><code>/api/videos?limit&amp;offset&amp;q&amp;scope</code></td><td><code>scope=mine</code> 为当前账号个人空间；<code>scope=all</code> 为仅管理员 JWT 可用的全站视图</td></tr>
-        <tr><td><span class="method m-patch">PATCH</span></td><td><code>/api/videos/{code}</code></td><td>更新名称或可见性</td></tr>
-        <tr><td><span class="method m-get">GET</span></td><td><code>/api/media-groups</code></td><td>JWT-only：个人或有权团队分组与 items 管理</td></tr>
-        <tr><td><span class="method m-get">GET</span></td><td><code>/api/teams/{id}/images</code></td><td>JWT / API Key：有权团队成员；仅管理员 JWT 可全局越权</td></tr>
-        <tr><td><span class="method m-get">GET</span></td><td><code>/api/teams/{id}/videos</code></td><td>JWT / API Key：有权团队成员；仅管理员 JWT 可全局越权</td></tr>
-      </tbody></table></div>
+      <article class="endpoint-card" data-example="video-list">
+        <div class="endpoint-head"><div class="endpoint-title">
+          <div class="endpoint-route"><span class="method m-get">GET</span><code>/api/videos</code></div>
+          <h3 data-zh="查询视频列表" data-en="List videos"></h3>
+          <p data-zh="API Key 仅返回个人空间；scope=all 仅管理员 JWT 可全局越权。" data-en="API keys return the personal space only; scope=all requires an administrator JWT."></p>
+        </div><span class="auth-badge" data-zh="API Key" data-en="API key"></span></div>
+        <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>必填</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>limit / offset</code></td><td>否</td><td>分页，limit 1–100</td></tr>
+          <tr><td><code>q</code></td><td>否</td><td>名称、原文件名或短码</td></tr>
+          <tr><td><code>scope</code></td><td>否</td><td>API Key 传 <code>mine</code>；<code>scope=all</code> 仅管理员 JWT 可全局越权</td></tr>
+        </tbody></table></div>
+        <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>items</code></td><td>array</td><td>视频数组，元素为 <code>VideoInfo</code>（code、url、size、content_type、sha256、created_at、name、visibility、owner_id、team_id、original_filename、owner_username、media_kind）</td></tr>
+          <tr><td><code>total</code></td><td>integer</td><td>匹配总数</td></tr>
+        </tbody></table></div>
+        <div class="example" data-default-lang="python">
+          <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="视频列表示例代码语言">
+            <button class="code-tab" type="button" role="tab" id="video-list-python-tab" aria-controls="video-list-python" aria-selected="true" data-code-lang="python">Python 3</button>
+            <button class="code-tab" type="button" role="tab" id="video-list-curl-tab" aria-controls="video-list-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
+          </div><button class="copy-btn" type="button" aria-label="复制视频列表 Python 3 示例" data-copy>复制</button></div>
+          <div class="code-panel" id="video-list-python" role="tabpanel" aria-labelledby="video-list-python-tab" data-code-panel="python"><pre><code>import os
+import requests
 
-      <h2 id="security" data-zh="鉴权与空间隔离" data-en="Authentication and scope isolation"></h2>
-      <div class="notice-grid">
-        <div class="notice"><strong>个人空间</strong><span>列表、修改、删除和上传会话均绑定当前身份；普通成员不能通过传 owner_id 查看他人资产。</span></div>
-        <div class="notice"><strong>团队空间</strong><span>team_id 不是授权凭据。每次调用仍校验团队成员关系；管理操作要求 owner/admin。</span></div>
-        <div class="notice"><strong>私密媒体</strong><span>只允许属主、有权团队成员、管理员 JWT 或有效签名 URL；管理员 API Key 仍按属主/团队范围，其他请求返回 404。</span></div>
-        <div class="notice"><strong>公开参数</strong><span>visibility 缺省为 public；只有显式传 private 才进入私密访问规则。切勿让不可信调用方随意传 team_id。</span></div>
-      </div>
-      <p class="security-note">API Key 绑定用户但仅用于媒体数据面，且管理员 API Key 不继承管理员 JWT 的全局越权能力。修改密码、管理 Key、创建/管理团队、管理分组、用户与管理员接口必须使用 JWT；不要把令牌、X-API-Key、签名链接的 sig 或完整查询串写入日志、工单和截图。</p>
+base = os.getenv("OSS_BASE_URL", "{{BASE}}")
+response = requests.get(
+    f"{base}/api/videos",
+    headers={"Authorization": f"Bearer {os.environ['OSS_TOKEN']}"},
+    params={"q": "发布会", "limit": 20, "offset": 0, "scope": "mine"},
+    timeout=30,
+)
+response.raise_for_status()
+for item in response.json()["items"]:
+    print(item["code"], item["name"], item["visibility"])</code></pre></div>
+          <div class="code-panel" id="video-list-curl" role="tabpanel" aria-labelledby="video-list-curl-tab" data-code-panel="curl" hidden><pre><code>curl --fail-with-body --get "$OSS_BASE_URL/api/videos" \
+  -H "Authorization: Bearer $OSS_TOKEN" \
+  --data-urlencode "q=发布会" \
+  --data-urlencode "limit=20" \
+  --data-urlencode "scope=mine"</code></pre></div>
+        </div>
+      </article>
 
-      <h2 id="operations" data-zh="管理员与运维接口" data-en="Admin and operations"></h2>
-      <p class="security-note" data-zh="MAX_API_KEYS_PER_USER 默认 20；API_KEY_MUTATION_RATE_LIMIT_PER_DAY 默认 100（当前进程固定 24 小时窗口，重启会重置）；VIDEO_PART_RATE_LIMIT_PER_MINUTE 默认 1000；TRAFFIC_RETENTION_DAYS 默认 365，按 UTC 日聚合清理历史流量。" data-en="MAX_API_KEYS_PER_USER defaults to 20; API_KEY_MUTATION_RATE_LIMIT_PER_DAY to 100 (a fixed 24-hour in-process window that resets on restart); VIDEO_PART_RATE_LIMIT_PER_MINUTE to 1000; and TRAFFIC_RETENTION_DAYS to 365 with UTC-day pruning."></p>
-      <div class="reference-shell"><table><thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead><tbody>
-        <tr><td><span class="method m-get">GET</span></td><td><code>/api/admin/stats</code></td><td>JWT-only：用户、媒体、团队与存储总览</td></tr>
-        <tr><td><span class="method m-get">GET</span></td><td><code>/api/admin/traffic-stats?days=7</code></td><td>JWT-only：1–365 天请求数量、请求/响应流量、路由、API Key 与成员空间统计</td></tr>
-        <tr><td><span class="method m-get">GET</span></td><td><code>/healthz</code></td><td>轻量存活检查</td></tr>
-        <tr><td><span class="method m-get">GET</span></td><td><code>/readyz</code></td><td>SQLite 写探针、数据目录落盘与磁盘空间检查</td></tr>
-        <tr><td><span class="method m-get">GET</span></td><td><code>/openapi.json</code></td><td>机器可读 OpenAPI 规范</td></tr>
-      </tbody></table></div>
+      <article class="endpoint-mini" data-endpoint="video-update">
+        <div class="endpoint-head"><div class="endpoint-title">
+          <div class="endpoint-route"><span class="method m-patch">PATCH</span><code>/api/videos/{code}</code></div>
+          <h3 data-zh="更新视频名称或可见性" data-en="Update video name or visibility"></h3>
+        </div><span class="auth-badge" data-zh="API Key" data-en="API key"></span></div>
+        <div class="mini-grid">
+          <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+            <tr><td><code>code</code></td><td>path</td><td>是</td><td>视频短码</td></tr>
+            <tr><td><code>name / visibility</code></td><td>body</td><td>否</td><td>新展示名 / public 或 private</td></tr>
+          </tbody></table></div>
+          <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+            <tr><td><code>code / url / name / visibility</code></td><td>string</td><td>短码、地址、展示名、可见性</td></tr>
+            <tr><td><code>size / sha256 / content_type</code></td><td>integer / string</td><td>字节数、SHA-256、MIME</td></tr>
+            <tr><td><code>created_at / media_kind</code></td><td>datetime / string</td><td>创建时间 / video</td></tr>
+          </tbody></table></div>
+        </div>
+      </article>
+
+      <article class="endpoint-mini" data-endpoint="video-delete">
+        <div class="endpoint-head"><div class="endpoint-title">
+          <div class="endpoint-route"><span class="method m-delete">DELETE</span><code>/api/videos/{code}</code></div>
+          <h3 data-zh="删除视频" data-en="Delete a video"></h3>
+        </div><span class="auth-badge" data-zh="API Key" data-en="API key"></span></div>
+        <div class="mini-grid">
+          <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+            <tr><td><code>code</code></td><td>path</td><td>是</td><td>视频短码（仅属主或有权团队管理员）</td></tr>
+          </tbody></table></div>
+          <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+            <tr><td>—</td><td>204</td><td>成功无响应体</td></tr>
+          </tbody></table></div>
+        </div>
+      </article>
+
+      <article class="endpoint-mini" data-endpoint="video-sessions">
+        <div class="endpoint-head"><div class="endpoint-title">
+          <div class="endpoint-route"><span class="method m-get">GET</span><code>/api/video-uploads</code></div>
+          <h3 data-zh="找回可续传的会话" data-en="List resumable upload sessions"></h3>
+        </div><span class="auth-badge" data-zh="API Key" data-en="API key"></span></div>
+        <div class="mini-grid">
+          <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+            <tr><td>—</td><td>—</td><td>否</td><td>无请求参数</td></tr>
+          </tbody></table></div>
+          <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+            <tr><td><code>items</code></td><td>array</td><td>未完成会话（upload_id、uploaded_parts、expires_at 等）</td></tr>
+            <tr><td><code>max_active</code></td><td>integer</td><td>同时允许的未完成会话上限</td></tr>
+            <tr><td><code>part_concurrency</code></td><td>integer</td><td>建议的分片并发数</td></tr>
+          </tbody></table></div>
+        </div>
+      </article>
+
+      <article class="endpoint-mini" data-endpoint="video-cancel">
+        <div class="endpoint-head"><div class="endpoint-title">
+          <div class="endpoint-route"><span class="method m-delete">DELETE</span><code>/api/video-uploads/{upload_id}</code></div>
+          <h3 data-zh="取消未完成会话" data-en="Cancel an unfinished session"></h3>
+        </div><span class="auth-badge" data-zh="API Key" data-en="API key"></span></div>
+        <div class="mini-grid">
+          <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+            <tr><td><code>upload_id</code></td><td>path</td><td>是</td><td>会话 ID；不删除已发布视频</td></tr>
+          </tbody></table></div>
+          <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+            <tr><td>—</td><td>204</td><td>成功无响应体</td></tr>
+          </tbody></table></div>
+        </div>
+      </article>
+
+      <h2 id="media" data-zh="统一媒体与访问" data-en="Unified media & access"></h2>
+      <p class="lead" data-zh="统一接口同时覆盖图片与视频；公开媒体可匿名访问，私密媒体携带 API Key 后按属主/团队范围校验。" data-en="The unified endpoints cover images and videos. Public media is anonymous; private media checks owner/team scope against your API key."></p>
+
+      <article class="endpoint-card" data-example="media-list">
+        <div class="endpoint-head">
+          <div class="endpoint-title">
+            <div class="endpoint-route"><span class="method m-get">GET</span><code>/api/media</code></div>
+            <h3 data-zh="查询媒体库" data-en="List the media library"></h3>
+            <p data-zh="API Key 只返回个人与有权团队范围；scope=all 仅管理员 JWT 可全局越权，管理员 API Key 也不具备全局越权能力。" data-en="API keys receive only personal and authorized team assets. scope=all requires an administrator JWT; an administrator's API key has no global override."></p>
+          </div><span class="auth-badge" data-zh="API Key" data-en="API key"></span>
+        </div>
+        <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>必填</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>kind</code></td><td>否</td><td><code>all</code> / <code>image</code> / <code>video</code></td></tr>
+          <tr><td><code>q</code></td><td>否</td><td>名称、原文件名或短码</td></tr>
+          <tr><td><code>team_id</code></td><td>否</td><td>有权访问的团队空间</td></tr>
+          <tr><td><code>group_id</code></td><td>否</td><td>自己创建的分组</td></tr>
+          <tr><td><code>limit / offset</code></td><td>否</td><td>分页参数</td></tr>
+        </tbody></table></div>
+        <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>items</code></td><td>array</td><td><code>UnifiedMediaInfo</code> 数组（code、url、size、content_type、sha256、created_at、name、visibility、owner_id、owner_username、team_id、original_filename、media_kind）</td></tr>
+          <tr><td><code>total</code></td><td>integer</td><td>匹配总数</td></tr>
+        </tbody></table></div>
+        <div class="example" data-default-lang="python">
+          <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="媒体查询示例代码语言">
+            <button class="code-tab" type="button" role="tab" id="media-list-python-tab" aria-controls="media-list-python" aria-selected="true" data-code-lang="python">Python 3</button>
+            <button class="code-tab" type="button" role="tab" id="media-list-curl-tab" aria-controls="media-list-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
+          </div><button class="copy-btn" type="button" aria-label="复制媒体查询 Python 3 示例" data-copy>复制</button></div>
+          <div class="code-panel" id="media-list-python" role="tabpanel" aria-labelledby="media-list-python-tab" data-code-panel="python"><pre><code>import os
+import requests
+
+base = os.getenv("OSS_BASE_URL", "{{BASE}}")
+response = requests.get(
+    f"{base}/api/media",
+    headers={"Authorization": f"Bearer {os.environ['OSS_TOKEN']}"},
+    params={"kind": "all", "q": "封面", "limit": 20, "offset": 0},
+    timeout=30,
+)
+response.raise_for_status()
+for item in response.json()["items"]:
+    print(item["media_kind"], item["code"], item["visibility"])</code></pre></div>
+          <div class="code-panel" id="media-list-curl" role="tabpanel" aria-labelledby="media-list-curl-tab" data-code-panel="curl" hidden><pre><code>curl --fail-with-body --get "$OSS_BASE_URL/api/media" \
+  -H "Authorization: Bearer $OSS_TOKEN" \
+  --data-urlencode "kind=all" \
+  --data-urlencode "q=封面" \
+  --data-urlencode "limit=20" \
+  --data-urlencode "offset=0"</code></pre></div>
+        </div>
+      </article>
+
+      <article class="endpoint-card" data-example="media-metadata">
+        <div class="endpoint-head">
+          <div class="endpoint-title">
+            <div class="endpoint-route"><span class="method m-get">GET</span><code>/api/media/{code}</code></div>
+            <h3 data-zh="读取统一媒体元数据" data-en="Read unified media metadata"></h3>
+            <p data-zh="公开媒体允许匿名查询，并将 owner_id、owner_username、team_id、original_filename 隐藏为 null；私密媒体需添加有权 API Key，越权统一返回 404。" data-en="Public media can be queried anonymously, with owner_id, owner_username, team_id and original_filename hidden as null. Private media requires an authorized API key; unauthorized access returns 404."></p>
+          </div><span class="auth-badge" data-zh="公开免鉴权 · 私密 API Key" data-en="Public: no auth · private: API key"></span>
+        </div>
+        <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>code</code></td><td>path</td><td>是</td><td>图片或视频短码</td></tr>
+        </tbody></table></div>
+        <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>code / url</code></td><td>string</td><td>短码 / 规范地址</td></tr>
+          <tr><td><code>media_kind</code></td><td>string</td><td><code>image</code> 或 <code>video</code></td></tr>
+          <tr><td><code>visibility / name</code></td><td>string</td><td>可见性与展示名</td></tr>
+          <tr><td><code>size / sha256 / content_type</code></td><td>integer / string</td><td>字节数、SHA-256、MIME</td></tr>
+          <tr><td><code>owner_id / owner_username / team_id / original_filename</code></td><td>mixed|null</td><td>匿名公开访问时为 null；有权身份返回真实值</td></tr>
+          <tr><td><code>created_at</code></td><td>datetime</td><td>创建时间（UTC）</td></tr>
+        </tbody></table></div>
+        <div class="example" data-default-lang="python">
+          <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="媒体元数据示例代码语言">
+            <button class="code-tab" type="button" role="tab" id="media-metadata-python-tab" aria-controls="media-metadata-python" aria-selected="true" data-code-lang="python">Python 3</button>
+            <button class="code-tab" type="button" role="tab" id="media-metadata-curl-tab" aria-controls="media-metadata-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
+          </div><button class="copy-btn" type="button" aria-label="复制媒体元数据 Python 3 示例" data-copy>复制</button></div>
+          <div class="code-panel" id="media-metadata-python" role="tabpanel" aria-labelledby="media-metadata-python-tab" data-code-panel="python"><pre><code>import os
+import requests
+
+base = os.getenv("OSS_BASE_URL", "{{BASE}}")
+code = "Ab3xYz9Kq1"
+
+# 公开媒体可匿名查询；属主、团队和原文件名字段会返回 null
+response = requests.get(f"{base}/api/media/{code}", timeout=30)
+response.raise_for_status()
+metadata = response.json()
+print(metadata["media_kind"], metadata["visibility"], metadata["url"])
+
+# 查询私密媒体时添加有权 API Key；越权统一返回 404
+# headers = {"Authorization": f"Bearer {os.environ['OSS_TOKEN']}"}
+# metadata = requests.get(f"{base}/api/media/{code}", headers=headers, timeout=30).json()</code></pre></div>
+          <div class="code-panel" id="media-metadata-curl" role="tabpanel" aria-labelledby="media-metadata-curl-tab" data-code-panel="curl" hidden><pre><code># 公开媒体匿名元数据
+curl --fail-with-body "$OSS_BASE_URL/api/media/Ab3xYz9Kq1"
+
+# 私密媒体需有权 API Key；越权统一返回 404
+curl --fail-with-body "$OSS_BASE_URL/api/media/Ab3xYz9Kq1" \
+  -H "Authorization: Bearer $OSS_TOKEN"</code></pre></div>
+        </div>
+      </article>
+
+      <article class="endpoint-card" data-example="media-link">
+        <div class="endpoint-head">
+          <div class="endpoint-title">
+            <div class="endpoint-route"><span class="method m-get">GET</span><code>/api/media/{code}/link</code></div>
+            <h3 data-zh="获取统一媒体访问链接" data-en="Resolve a unified media link"></h3>
+            <p data-zh="公开媒体允许匿名返回规范直链；私密媒体仅向属主、有权团队成员返回限时签名链接。签名 URL 在到期前可重复使用，应像临时密码一样保护，且不要把 sig 写进日志。" data-en="Public media resolves anonymously to its canonical URL. Private media returns an expiring signed URL only to its owner or authorized team members. Signed URLs are replayable until expiry, so protect them like temporary passwords and never log sig."></p>
+          </div><span class="auth-badge" data-zh="公开免鉴权 · 私密 API Key" data-en="Public: no auth · private: API key"></span>
+        </div>
+        <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>必填</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>code</code></td><td>是</td><td>媒体短码</td></tr>
+          <tr><td><code>ttl</code></td><td>否</td><td>签名链接有效秒数（60–604800），公开媒体忽略</td></tr>
+        </tbody></table></div>
+        <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>code / media_kind / visibility</code></td><td>string</td><td>短码、类型、可见性</td></tr>
+          <tr><td><code>url</code></td><td>string</td><td>直链或限时签名链接</td></tr>
+          <tr><td><code>expires_at</code></td><td>datetime|null</td><td>签名链接过期时间；公开直链为 null</td></tr>
+        </tbody></table></div>
+        <div class="example" data-default-lang="python">
+          <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="签名链接示例代码语言">
+            <button class="code-tab" type="button" role="tab" id="media-link-python-tab" aria-controls="media-link-python" aria-selected="true" data-code-lang="python">Python 3</button>
+            <button class="code-tab" type="button" role="tab" id="media-link-curl-tab" aria-controls="media-link-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
+          </div><button class="copy-btn" type="button" aria-label="复制签名链接 Python 3 示例" data-copy>复制</button></div>
+          <div class="code-panel" id="media-link-python" role="tabpanel" aria-labelledby="media-link-python-tab" data-code-panel="python"><pre><code>import os
+import requests
+
+base = os.getenv("OSS_BASE_URL", "{{BASE}}")
+code = "Ab3xYz9Kq1"
+token = os.getenv("OSS_TOKEN")
+response = requests.get(
+    f"{base}/api/media/{code}/link",
+    headers={"Authorization": f"Bearer {token}"} if token else {},
+    params={"ttl": 3600},
+    timeout=30,
+)
+response.raise_for_status()
+print(response.json()["url"])</code></pre></div>
+          <div class="code-panel" id="media-link-curl" role="tabpanel" aria-labelledby="media-link-curl-tab" data-code-panel="curl" hidden><pre><code># 公开媒体：匿名返回规范直链
+curl --fail-with-body "$OSS_BASE_URL/api/media/Ab3xYz9Kq1/link?ttl=3600"
+
+# 私密媒体：有权 API Key 返回签名链接
+curl --fail-with-body \
+  "$OSS_BASE_URL/api/media/Ab3xYz9Kq1/link?ttl=3600" \
+  -H "Authorization: Bearer $OSS_TOKEN"</code></pre></div>
+        </div>
+      </article>
+
+      <article class="endpoint-card" data-example="media-download">
+        <div class="endpoint-head">
+          <div class="endpoint-title">
+            <div class="endpoint-route"><span class="method m-get">GET</span><code>/i/{code} · /v/{code}?download=1</code></div>
+            <h3 data-zh="读取或下载媒体" data-en="Read or download media"></h3>
+            <p data-zh="以下无鉴权示例仅适用于公开媒体，公开视频支持 Range；私密媒体必须给请求添加有权 API Key，或使用统一链接接口返回的签名 URL。" data-en="The unauthenticated example below applies only to public media, and public videos support Range. For private media, add an authorized API key to the request or use a signed URL from the unified link endpoint."></p>
+          </div><span class="auth-badge public" data-zh="公开媒体免鉴权" data-en="Public media: no auth"></span>
+        </div>
+        <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+          <tr><td><code>code</code></td><td>path</td><td>是</td><td>媒体短码</td></tr>
+          <tr><td><code>download</code></td><td>query</td><td>否</td><td>视频 <code>download=1</code> 触发附件下载</td></tr>
+        </tbody></table></div>
+        <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+          <tr><td>响应体</td><td>binary</td><td>媒体字节流；视频支持 <code>Range</code> 分段读取</td></tr>
+        </tbody></table></div>
+        <div class="example" data-default-lang="python">
+          <div class="example-toolbar"><div class="code-tabs" role="tablist" aria-label="公开媒体下载示例代码语言">
+            <button class="code-tab" type="button" role="tab" id="media-download-python-tab" aria-controls="media-download-python" aria-selected="true" data-code-lang="python">Python 3</button>
+            <button class="code-tab" type="button" role="tab" id="media-download-curl-tab" aria-controls="media-download-curl" aria-selected="false" tabindex="-1" data-code-lang="curl">cURL</button>
+          </div><button class="copy-btn" type="button" aria-label="复制公开媒体下载 Python 3 示例" data-copy>复制</button></div>
+          <div class="code-panel" id="media-download-python" role="tabpanel" aria-labelledby="media-download-python-tab" data-code-panel="python"><pre><code>import os
+import requests
+
+base = os.getenv("OSS_BASE_URL", "{{BASE}}")
+# 以下无鉴权示例仅适用于公开媒体。
+with requests.get(f"{base}/v/Ab3xYz9Kq1", params={"download": 1}, stream=True, timeout=120) as response:
+    response.raise_for_status()
+    with open("video.mp4", "wb") as output:
+        for chunk in response.iter_content(1024 * 1024):
+            output.write(chunk)
+
+# 私密媒体二选一：给同一请求添加有权 API Key，或直接请求已取得的签名 URL。
+# headers = {"Authorization": f"Bearer {os.environ['OSS_TOKEN']}"}
+# requests.get(os.environ["OSS_SIGNED_URL"], stream=True, timeout=120)</code></pre></div>
+          <div class="code-panel" id="media-download-curl" role="tabpanel" aria-labelledby="media-download-curl-tab" data-code-panel="curl" hidden><pre><code># 以下无鉴权示例仅适用于公开媒体
+curl --fail-with-body -L \
+  "$OSS_BASE_URL/v/Ab3xYz9Kq1?download=1" \
+  -o video.mp4
+
+# 私密媒体二选一：添加有权 API Key，或直接请求已取得的签名 URL
+# curl -L -H "Authorization: Bearer $OSS_TOKEN" "$OSS_BASE_URL/v/Ab3xYz9Kq1?download=1" -o video.mp4
+# curl -L "$OSS_SIGNED_URL" -o video.mp4</code></pre></div>
+        </div>
+      </article>
+
+      <article class="endpoint-mini" data-endpoint="image-link">
+        <div class="endpoint-head"><div class="endpoint-title">
+          <div class="endpoint-route"><span class="method m-get">GET</span><code>/api/images/{code}/link</code></div>
+          <h3 data-zh="图片签名链接" data-en="Image signed link"></h3>
+        </div><span class="auth-badge" data-zh="API Key" data-en="API key"></span></div>
+        <div class="mini-grid">
+          <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+            <tr><td><code>code</code></td><td>path</td><td>是</td><td>图片短码（属主或有权团队成员）</td></tr>
+            <tr><td><code>ttl</code></td><td>query</td><td>否</td><td>有效秒数（60–604800）</td></tr>
+          </tbody></table></div>
+          <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+            <tr><td><code>url</code></td><td>string</td><td>限时签名链接</td></tr>
+            <tr><td><code>expires_at</code></td><td>datetime</td><td>过期时间</td></tr>
+          </tbody></table></div>
+        </div>
+      </article>
+
+      <article class="endpoint-mini" data-endpoint="video-link">
+        <div class="endpoint-head"><div class="endpoint-title">
+          <div class="endpoint-route"><span class="method m-get">GET</span><code>/api/videos/{code}/link</code></div>
+          <h3 data-zh="视频签名链接" data-en="Video signed link"></h3>
+        </div><span class="auth-badge" data-zh="API Key" data-en="API key"></span></div>
+        <div class="mini-grid">
+          <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+            <tr><td><code>code</code></td><td>path</td><td>是</td><td>视频短码（属主或有权团队成员）</td></tr>
+            <tr><td><code>ttl</code></td><td>query</td><td>否</td><td>有效秒数（60–604800）</td></tr>
+          </tbody></table></div>
+          <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+            <tr><td><code>url</code></td><td>string</td><td>限时签名链接</td></tr>
+            <tr><td><code>expires_at</code></td><td>datetime</td><td>过期时间</td></tr>
+          </tbody></table></div>
+        </div>
+      </article>
+
+      <h2 id="teams" data-zh="团队空间" data-en="Team spaces"></h2>
+      <p class="lead" data-zh="API Key 保持属主/团队范围：只返回你有权访问的团队内容，不具备管理员 JWT 的全局越权能力。" data-en="API keys stay owner/team scoped: they return only the team content you can access, with no administrator global override."></p>
+
+      <article class="endpoint-mini" data-endpoint="team-images">
+        <div class="endpoint-head"><div class="endpoint-title">
+          <div class="endpoint-route"><span class="method m-get">GET</span><code>/api/teams/{team_id}/images</code></div>
+          <h3 data-zh="团队图片列表" data-en="Team image list"></h3>
+        </div><span class="auth-badge" data-zh="API Key" data-en="API key"></span></div>
+        <div class="mini-grid">
+          <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+            <tr><td><code>team_id</code></td><td>path</td><td>是</td><td>有权访问的团队 ID</td></tr>
+            <tr><td><code>limit / offset / q</code></td><td>query</td><td>否</td><td>分页与搜索</td></tr>
+          </tbody></table></div>
+          <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+            <tr><td><code>items</code></td><td>array</td><td><code>ImageInfo</code> 数组</td></tr>
+            <tr><td><code>total</code></td><td>integer</td><td>匹配总数</td></tr>
+          </tbody></table></div>
+        </div>
+      </article>
+
+      <article class="endpoint-mini" data-endpoint="team-videos">
+        <div class="endpoint-head"><div class="endpoint-title">
+          <div class="endpoint-route"><span class="method m-get">GET</span><code>/api/teams/{team_id}/videos</code></div>
+          <h3 data-zh="团队视频列表" data-en="Team video list"></h3>
+        </div><span class="auth-badge" data-zh="API Key" data-en="API key"></span></div>
+        <div class="mini-grid">
+          <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+            <tr><td><code>team_id</code></td><td>path</td><td>是</td><td>有权访问的团队 ID</td></tr>
+            <tr><td><code>limit / offset / q</code></td><td>query</td><td>否</td><td>分页与搜索</td></tr>
+          </tbody></table></div>
+          <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+            <tr><td><code>items</code></td><td>array</td><td><code>VideoInfo</code> 数组</td></tr>
+            <tr><td><code>total</code></td><td>integer</td><td>匹配总数</td></tr>
+          </tbody></table></div>
+        </div>
+      </article>
+
+      <h2 id="misc" data-zh="其他接口与安全须知" data-en="Other endpoints & security"></h2>
+      <p class="lead" data-zh="除媒体数据面外，API Key 还可用于校验自身身份与读取公开配置。" data-en="Besides the media data plane, your API key can verify its own identity and read the public configuration."></p>
+
+      <article class="endpoint-mini" data-endpoint="me">
+        <div class="endpoint-head"><div class="endpoint-title">
+          <div class="endpoint-route"><span class="method m-get">GET</span><code>/api/auth/me</code></div>
+          <h3 data-zh="校验 Key 对应账号" data-en="Verify the key's account"></h3>
+        </div><span class="auth-badge" data-zh="API Key" data-en="API key"></span></div>
+        <div class="mini-grid">
+          <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+            <tr><td>—</td><td>—</td><td>否</td><td>无请求参数</td></tr>
+          </tbody></table></div>
+          <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+            <tr><td><code>id / username</code></td><td>integer / string</td><td>账号编号与用户名</td></tr>
+            <tr><td><code>role</code></td><td>string</td><td>全局角色 user / admin</td></tr>
+            <tr><td><code>created_at</code></td><td>datetime</td><td>账号创建时间</td></tr>
+          </tbody></table></div>
+        </div>
+      </article>
+
+      <article class="endpoint-mini" data-endpoint="config">
+        <div class="endpoint-head"><div class="endpoint-title">
+          <div class="endpoint-route"><span class="method m-get">GET</span><code>/api/auth/config</code></div>
+          <h3 data-zh="公开客户端配置" data-en="Public client configuration"></h3>
+        </div><span class="auth-badge public" data-zh="免鉴权" data-en="No auth"></span></div>
+        <div class="mini-grid">
+          <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+            <tr><td>—</td><td>—</td><td>否</td><td>无请求参数</td></tr>
+          </tbody></table></div>
+          <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+            <tr><td><code>max_upload_size_mb</code></td><td>integer</td><td>单张图片上限（MiB）</td></tr>
+            <tr><td><code>max_video_size_mb</code></td><td>integer</td><td>视频上限（MiB）</td></tr>
+            <tr><td><code>video_chunk_size_mb</code></td><td>integer</td><td>分片大小（MiB）</td></tr>
+            <tr><td><code>max_active_video_uploads</code></td><td>integer</td><td>未完成会话上限</td></tr>
+            <tr><td><code>video_chunk_concurrency</code></td><td>integer</td><td>建议分片并发数</td></tr>
+            <tr><td><code>user_storage_quota_bytes / team_storage_quota_bytes</code></td><td>integer</td><td>配额字节数，0 为不限</td></tr>
+          </tbody></table></div>
+        </div>
+      </article>
+
+      <article class="endpoint-mini" data-endpoint="library-stats">
+        <div class="endpoint-head"><div class="endpoint-title">
+          <div class="endpoint-route"><span class="method m-get">GET</span><code>/api/library/stats</code></div>
+          <h3 data-zh="媒体库概览" data-en="Media library overview"></h3>
+        </div><span class="auth-badge" data-zh="API Key" data-en="API key"></span></div>
+        <div class="mini-grid">
+          <div class="parameter-wrap"><p class="table-label">请求参数</p><table><thead><tr><th>参数</th><th>位置</th><th>必填</th><th>说明</th></tr></thead><tbody>
+            <tr><td>—</td><td>—</td><td>否</td><td>无请求参数</td></tr>
+          </tbody></table></div>
+          <div class="response-wrap"><p class="table-label">响应参数</p><table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>
+            <tr><td><code>scope / images / videos / media_total</code></td><td>string / integer</td><td>统计口径与数量</td></tr>
+            <tr><td><code>storage_bytes</code></td><td>integer</td><td>已用存储字节数</td></tr>
+            <tr><td><code>pending_upload_bytes</code></td><td>integer</td><td>未完成上传占用的字节数</td></tr>
+            <tr><td><code>groups / teams_count</code></td><td>integer</td><td>分组数与团队数</td></tr>
+          </tbody></table></div>
+        </div>
+      </article>
+
+      <p class="security-note">API Key 绑定用户但仅用于媒体数据面，且管理员 API Key 不继承管理员 JWT 的全局越权能力。账户、Key 管理、团队治理、分组与管理员接口为 JWT-only，不在本文档范围内，详见 <a href="/openapi.json">OpenAPI 规范</a>。不要把 API Key、X-API-Key、签名链接的 sig 或完整查询串写入日志、工单和截图。</p>
+
       <footer>所有响应包含 <code>X-Request-ID</code>，排查问题时可提供该值。部署反代必须保留 Range 相关请求/响应头。</footer>
     </main>
   </div>

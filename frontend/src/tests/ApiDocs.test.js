@@ -34,7 +34,7 @@ describe('static API documentation', () => {
 
   it('switches tabs with the keyboard and copies the active cURL example with feedback', async () => {
     const { dom, writeText } = loadDocs()
-    const example = dom.window.document.querySelector('[data-example="image-upload"] .example')
+    const example = dom.window.document.querySelector('[data-example="upload"] .example')
     const pythonTab = example.querySelector('[data-code-lang="python"]')
     pythonTab.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
     expect(example.querySelector('[data-code-lang="curl"]').getAttribute('aria-selected')).toBe('true')
@@ -48,13 +48,11 @@ describe('static API documentation', () => {
     dom.window.close()
   })
 
-  it('documents the required auth, upload, resumable video and media access contracts', () => {
-    expect(html).toContain('/api/auth/login')
+  it('documents only API-key-callable endpoints and the media access contracts', () => {
     expect(html).toContain('/api/upload')
     expect(html).toContain('/api/video-uploads/{upload_id}/parts/{part_number}')
     expect(html).toContain('/api/video-uploads/{upload_id}/complete')
     expect(html).toContain('/api/media/{code}/link')
-    expect(html).toContain('/api/admin/traffic-stats?days=7')
     expect(html).toContain('visibility 缺省即 public')
     expect(html).toContain('固定 API 契约')
     expect(html).toContain('JWT-only')
@@ -66,6 +64,11 @@ describe('static API documentation', () => {
     expect(html).not.toContain('默认私密')
     expect(html).not.toContain('default_visibility')
 
+    // JWT-only control-plane endpoints are out of scope for the API-key guide.
+    expect(html).not.toContain('/api/auth/login')
+    expect(html).not.toContain('/api/admin/')
+    expect(html).not.toContain('/api/keys')
+
     const { dom } = loadDocs()
     const metadata = dom.window.document.querySelector('[data-example="media-metadata"]')
     expect(metadata).not.toBeNull()
@@ -74,6 +77,24 @@ describe('static API documentation', () => {
     expect(metadata.textContent).toContain('owner_id')
     expect(metadata.textContent).toContain('original_filename')
     expect(metadata.textContent).toContain('404')
+    dom.window.close()
+  })
+
+  it('documents request and response parameters for every endpoint', () => {
+    const { dom } = loadDocs()
+    const document = dom.window.document
+    const exampleEndpoints = [...document.querySelectorAll('.endpoint-card[data-example]')]
+      .filter(card => card.dataset.example !== 'environment')
+    const miniEndpoints = [...document.querySelectorAll('.endpoint-mini')]
+    const endpoints = [...exampleEndpoints, ...miniEndpoints]
+
+    expect(endpoints.length).toBeGreaterThanOrEqual(15)
+    for (const card of endpoints) {
+      expect(card.querySelector('.parameter-wrap'), `${card.dataset.example || card.dataset.endpoint} lacks request params`).not.toBeNull()
+      expect(card.querySelector('.response-wrap'), `${card.dataset.example || card.dataset.endpoint} lacks response params`).not.toBeNull()
+    }
+    expect(html).toContain('请求参数')
+    expect(html).toContain('响应参数')
     dom.window.close()
   })
 
