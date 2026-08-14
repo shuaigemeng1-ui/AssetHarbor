@@ -88,12 +88,10 @@ docker compose up -d
 ### 一行命令上传
 
 ```bash
-TOKEN=$(curl -X POST http://服务器IP:8080/api/auth/login \
-  -d "username=admin&password=你的管理员密码" \
-  | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
-
+# 先在网页端「账户与密钥」页创建 API Key，然后：
+KEY="<你的 API Key>"
 curl -X POST http://服务器IP:8080/api/upload \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $KEY" \
   -F "file=@截图.png" -F "name=我的封面" -F "visibility=public"
 # → {"code":"Ab3xYz9Kq1","url":"http://服务器IP:8080/i/Ab3xYz9Kq1",...}
 ```
@@ -145,30 +143,35 @@ Pydantic `ValidationError`。
 
 ## 🔌 API 概览
 
-交互式文档：`GET /docs` —— 自建**双语（中文/English）可读文档页**，常用端点默认展示可复制的 Python 3 示例，并可切换 cURL。
+交互式文档：`GET /docs` —— 自建**双语（中文/English）可读文档页**，每个接口都附请求参数、响应字段与可复制的 Python 3（默认）/ cURL 示例。
 
-媒体数据面支持 `Authorization: Bearer <JWT 或 API Key>`，API Key 也可放在 `X-API-Key`。修改密码、API Key 治理、团队/分组管理、用户管理及全部 `/api/admin/**` 接口仅接受 JWT。公开媒体读取、公开元数据和公开链接解析无需鉴权；私密媒体越权统一返回 404。
+本文只列出你自己的 API Key 可调用的接口。在网页端「账户与密钥」页创建 Key（**明文只显示一次**，数据库只存 SHA-256 哈希），通过 `Authorization: Bearer <key>` 或 `X-API-Key: <key>` 携带。修改密码、API Key 治理、团队/分组管理、用户管理与全部 `/api/admin/**` 接口仅接受 JWT，不在本文列出。公开媒体读取、公开元数据和公开链接解析无需鉴权；私密媒体越权统一返回 404。
 
-### 认证
+```bash
+# 用 Key 上传 / 下载 / 删除
+curl -X POST http://服务器IP:8080/api/upload \
+  -H "Authorization: Bearer <key>" -F "file=@a.png" -F "name=测试"
+curl -o a.png "http://服务器IP:8080/i/<code>" -H "Authorization: Bearer <key>"
+curl -X DELETE "http://服务器IP:8080/api/images/<code>" -H "Authorization: Bearer <key>"
+```
+
+### 身份与公开配置
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/auth/register` | `{"username","password","invite_code"?}` → 用户信息 |
-| POST | `/api/auth/login` | 表单 `username` & `password` → `{access_token, user}` |
-| GET | `/api/auth/me` | 当前用户信息 |
-| POST | `/api/auth/change-password` | `{old_password, new_password}` 修改自己的密码 |
-| GET | `/api/auth/config` | 前端可安全读取的注册模式、上传/会话/并发限制及用户/团队额度上限（字节） |
+| GET | `/api/auth/me` | 校验 Key 对应的账号 → `{id, username, role, created_at}` |
+| GET | `/api/auth/config` | 免鉴权：前端可安全读取的注册模式、上传/会话/并发限制及用户/团队额度上限（字节） |
 
 ### 图片
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | POST | `/api/upload` | multipart `file`，可选 `name`、`visibility`、`team_id`（未传 `visibility` 默认 `public`） |
-| GET | `/i/{code}` | 获取图片（公开：任何人；私密：属主/团队成员/管理员/签名链接） |
-| GET | `/api/images?limit&offset&q&scope` | 图片列表；`scope=mine` 查询当前账号个人空间，`scope=all` 查询仅管理员 JWT 可用的全站视图（省略时保持管理员默认全站、其他身份默认个人空间的兼容行为） |
-| PATCH | `/api/images/{code}` | 修改 `name` / `visibility`（属主/管理员/团队管理员） |
-| DELETE | `/api/images/{code}` | 删除图片（属主/管理员/团队管理员） |
-| GET | `/api/images/{code}/link?ttl` | 生成限时签名链接（属主/团队成员/管理员） |
+| GET | `/i/{code}` | 获取图片（公开：任何人；私密：属主/团队/签名链接或有权 Key） |
+| GET | `/api/images?limit&offset&q&scope` | 图片列表；API Key 始终返回个人空间（`scope=mine`）；`scope=all` 仅管理员 JWT 可用 |
+| PATCH | `/api/images/{code}` | 修改 `name` / `visibility`（属主/团队管理员） |
+| DELETE | `/api/images/{code}` | 删除图片（属主/团队管理员） |
+| GET | `/api/images/{code}/link?ttl` | 生成限时签名链接（属主/团队成员） |
 
 ### 视频与断点续传
 
@@ -182,7 +185,7 @@ Pydantic `ValidationError`。
 | PUT | `/api/video-uploads/{upload_id}/parts/{part_number}` | 原始二进制，请求头必须含 `Content-Range` 与 `X-Chunk-SHA256`；相同内容重复提交幂等成功 |
 | POST | `/api/video-uploads/{upload_id}/complete` | 校验全部分片、快速指纹和真实容器格式后原子发布 |
 | DELETE | `/api/video-uploads/{upload_id}` | 取消未完成会话并清理临时文件 |
-| GET | `/api/videos?limit&offset&q&scope` | 视频列表；`scope=mine` 查询当前账号个人空间，`scope=all` 查询仅管理员 JWT 可用的全站视图（管理员 API Key 不能使用 `all`） |
+| GET | `/api/videos?limit&offset&q&scope` | 视频列表；API Key 始终返回个人空间（`scope=mine`）；`scope=all` 仅管理员 JWT 可用 |
 | PATCH | `/api/videos/{code}` | 修改 `name` / `visibility` |
 | DELETE | `/api/videos/{code}` | 删除正式视频 |
 | GET | `/api/videos/{code}/link?ttl` | 生成限时签名链接 |
@@ -191,73 +194,29 @@ Pydantic `ValidationError`。
 
 分片从 0 编号，可乱序上传。每次成功写片会刷新 7 天有效期。缺片、哈希不一致，或用同一分片号重传不同内容时返回 409；缺少或无法解析 `Content-Range` 返回 400，与对应分片不匹配的范围返回 416；其他用户无法探知该上传 ID。完整 API 示例见 `/docs`。
 
-### 统一媒体库与分组
+### 统一媒体库
 
-统一媒体读取属于 JWT/API Key 数据面；媒体分组 CRUD 与组内条目管理属于仅 JWT 控制面。
+媒体分组 CRUD 与组内条目管理属于仅 JWT 控制面，不在本文列出。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/library/stats` | 当前用户个人媒体库概览；仅管理员 JWT 返回全局概览 |
+| GET | `/api/library/stats` | 当前用户个人媒体库概览 |
 | GET | `/api/media?kind&team_id&group_id&q&limit&offset` | 图片/视频统一分页、搜索与范围筛选 |
-| GET | `/api/media/{code}` | 统一媒体元数据；匿名访问公开媒体时隐藏属主、团队和原文件名，私密媒体仅限有权 JWT/API Key，越权返回 404 |
-| GET | `/api/media/{code}/link?ttl` | 公开媒体可匿名取得规范直链；私密媒体需有权 JWT/API Key 并返回限时签名链接 |
-| GET | `/api/media-groups?team_id&q&limit&offset` | 仅 JWT：列出个人或团队分组 |
-| POST | `/api/media-groups` | 创建 `{name,description?,color?,sort_order?,team_id?,codes?}`；传 `codes` 时原子创建并加入媒体 |
-| GET / PATCH / DELETE | `/api/media-groups/{id}` | 查看、修改或删除分组；删除分组不会删除媒体 |
-| GET / POST | `/api/media-groups/{id}/items` | 分页读取组内媒体，或用 `{codes:[...]}` 批量加入 |
-| DELETE | `/api/media-groups/{id}/items/{code}` | 从分组移出媒体，不删除资产 |
+| GET | `/api/media/{code}` | 统一媒体元数据；匿名访问公开媒体时隐藏属主、团队和原文件名，私密媒体仅限有权 API Key，越权返回 404 |
+| GET | `/api/media/{code}/link?ttl` | 公开媒体可匿名取得规范直链；私密媒体需有权 API Key 并返回限时签名链接 |
 
-### API Key 鉴权（脚本/命令行）
+### 团队空间
 
-Key 的查看、创建、轮换和撤销属于仅 JWT 控制面。API Key 仅能调用媒体数据面，不能修改密码或管理 Key、团队、分组、用户和管理员；每位用户最多持有 `MAX_API_KEYS_PER_USER` 个有效 Key（默认 `20`）。
+团队创建、详情、解散及成员治理仅接受 JWT；下面的团队空间数据接口接受 API Key，且每次调用仍校验成员关系。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/keys` | 我的 Key 列表（仅前缀，绝不含完整 Key） |
-| POST | `/api/keys` | 生成 Key —— **完整 Key 仅返回这一次** |
-| POST | `/api/keys/{id}/rotate` | 轮换：旧 Key 立即失效，新 Key 仅显示一次 |
-| DELETE | `/api/keys/{id}` | 撤销 Key |
-
-```bash
-# 用 Key 上传 / 下载 / 删除
-curl -X POST http://服务器IP:8080/api/upload \
-  -H "Authorization: Bearer <key>" -F "file=@a.png" -F "name=测试"
-curl -o a.png "http://服务器IP:8080/i/<code>" -H "Authorization: Bearer <key>"
-curl -X DELETE "http://服务器IP:8080/api/images/<code>" -H "Authorization: Bearer <key>"
-```
-
-> **安全设计**：数据库只存 SHA-256 哈希，**明文生成后无法再次查看**，只能轮换/撤销重建；Key 为 256 位密码学随机，哈希唯一约束。
-
-### 团队
-
-团队创建、列表、详情、解散及成员治理仅接受 JWT；团队图片/视频数据接口支持 JWT 或 API Key，但每次仍校验成员关系。
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| POST | `/api/teams` | 创建团队（创建者为 owner） |
-| GET | `/api/teams` | 我加入的团队 |
-| GET | `/api/teams/{id}` | 团队详情 + 成员列表 |
-| POST | `/api/teams/{id}/members` | 按用户名邀请成员 |
-| PATCH | `/api/teams/{id}/members/{member_id}` | 改角色 `{role: admin\|member}`（仅 owner） |
-| DELETE | `/api/teams/{id}/members/{member_id}` | 移除成员 |
-| DELETE | `/api/teams/{id}` | 解散团队（媒体与未完成会话回到上传者个人空间） |
-| GET | `/api/teams/{id}/images?q` | 团队空间图片（成员/管理员） |
-| GET | `/api/teams/{id}/videos?q` | 团队空间视频（成员/管理员） |
+| GET | `/api/teams/{id}/images?q` | 团队空间图片（成员） |
+| GET | `/api/teams/{id}/videos?q` | 团队空间视频（成员） |
 
 > 团队内角色：`owner`（拥有者，管理一切）> `admin`（可管理成员）> `member`（可查看/上传）。团队私密图对**团队成员**可见，对团队外返回 404。
 
-### 管理员（需全局 admin 角色）
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/api/admin/stats` | 媒体/存储总量及累计调用数、请求流量、响应流量 |
-| GET | `/api/admin/traffic-stats?days=7` | 仅 JWT：1–365 天流量汇总、每日趋势、路由、前 200 个 API Key、匿名调用及每成员图片/视频/待完成空间；`telemetry_complete` 仅表示当前进程检测到的队列完整性 |
-| GET | `/api/admin/teams` | 全部团队（含拥有者、成员数） |
-| GET | `/api/users` | 全部用户 |
-| POST | `/api/admin/users` | 在关闭自助注册时创建 `{username,password,role?}` 用户 |
-| PATCH | `/api/admin/users/{id}/role` | 设置角色 `{role: admin\|user}`（不能改自己） |
-| PATCH | `/api/admin/users/{id}/password` | 重置密码 `{new_password}` |
-| DELETE | `/api/admin/users/{id}` | 删除账号、个人媒体/分组、未完成上传与 Key；其拥有的团队会解散，团队媒体回到仍存在的上传者，共享分组转交或删除 |
+仅 JWT 的控制面接口（注册/登录/密码、Key 管理、团队治理、媒体分组、用户管理与 `/api/admin/**`）仍可正常使用，详见机器可读的 OpenAPI 规范 `GET /openapi.json`。
 
 ### 获取图片与签名链接
 

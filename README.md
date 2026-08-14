@@ -91,12 +91,10 @@ Images, videos, unfinished parts, and SQLite persist under `./data`. Schema upgr
 ### One-liner upload
 
 ```bash
-TOKEN=$(curl -X POST http://<server-ip>:8080/api/auth/login \
-  -d "username=admin&password=your-admin-password" \
-  | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
-
+# Create an API key in the web UI (Account → keys), then:
+KEY="<your-api-key>"
 curl -X POST http://<server-ip>:8080/api/upload \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $KEY" \
   -F "file=@screenshot.png" -F "name=My Cover" -F "visibility=public"
 # → {"code":"Ab3xYz9Kq1","url":"http://<server-ip>:8080/i/Ab3xYz9Kq1",...}
 ```
@@ -149,30 +147,35 @@ There is no deployment setting that changes this behavior.
 
 ## 🔌 API Overview
 
-Interactive documentation: a readable bilingual (中文/English) page at `GET /docs` — endpoint cards with copy-ready Python 3 (default) and cURL examples.
+Interactive documentation: a readable bilingual (中文/English) page at `GET /docs` with request parameters, response fields and copy-ready Python 3 (default) / cURL examples for every endpoint below.
 
-Media data-plane endpoints accept `Authorization: Bearer <JWT or API key>`; API keys are also accepted via `X-API-Key`. Password changes, API-key governance, team/group management, user management and all `/api/admin/**` endpoints are JWT-only. Public media reads and public metadata/link resolution do not require authentication; private-media authorization failures return 404.
+This overview only lists the endpoints your own API key can call. Create a key in the web UI under **Account → keys** — the plaintext is shown exactly once and stored only as a SHA-256 hash. Send it as `Authorization: Bearer <key>` or `X-API-Key: <key>`. Password changes, API-key governance, team/group management, user management and all `/api/admin/**` endpoints are JWT-only and are therefore not listed here. Public media reads and public metadata/link resolution do not require authentication; private-media authorization failures return 404.
 
-### Auth
+```bash
+# Upload / download / delete with an API key
+curl -X POST http://<server-ip>:8080/api/upload \
+  -H "Authorization: Bearer <key>" -F "file=@a.png" -F "name=test"
+curl -o a.png "http://<server-ip>:8080/i/<code>" -H "Authorization: Bearer <key>"
+curl -X DELETE "http://<server-ip>:8080/api/images/<code>" -H "Authorization: Bearer <key>"
+```
+
+### Identity & configuration
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/api/auth/register` | `{"username","password","invite_code"?}` → user |
-| POST | `/api/auth/login` | form `username` & `password` → `{access_token, user}` |
-| GET | `/api/auth/me` | current user |
-| POST | `/api/auth/change-password` | `{old_password, new_password}` |
-| GET | `/api/auth/config` | non-sensitive UI config: registration mode, upload/session/concurrency limits and user/team quota ceilings in bytes |
+| GET | `/api/auth/me` | verify the account a key belongs to → `{id, username, role, created_at}` |
+| GET | `/api/auth/config` | no auth: non-sensitive UI config — registration mode, upload/session/concurrency limits and user/team quota ceilings in bytes |
 
 ### Images
 
 | Method | Path | Description |
 |---|---|---|
 | POST | `/api/upload` | multipart `file`, optional `name`, `visibility`, `team_id` (`visibility` defaults to `public`) |
-| GET | `/i/{code}` | fetch image (public: anyone; private: owner/team/admin/signed link) |
-| GET | `/api/images?limit&offset&q&scope` | list images; `scope=mine` selects the current account's personal space and `scope=all` selects the site-wide administrator JWT view (omitting it preserves the existing administrator-global/default-personal behavior) |
-| PATCH | `/api/images/{code}` | update `name` / `visibility` (owner/admin/team-manager) |
-| DELETE | `/api/images/{code}` | delete (owner/admin/team-manager) |
-| GET | `/api/images/{code}/link?ttl` | expiring signed link (owner/admin/team-member) |
+| GET | `/i/{code}` | fetch image (public: anyone; private: owner/team/signed link or an authorized key) |
+| GET | `/api/images?limit&offset&q&scope` | list images; an API key always returns the personal space (`scope=mine`); `scope=all` is an administrator JWT-only global view |
+| PATCH | `/api/images/{code}` | update `name` / `visibility` (owner/team-manager) |
+| DELETE | `/api/images/{code}` | delete (owner/team-manager) |
+| GET | `/api/images/{code}/link?ttl` | expiring signed link (owner/team-member) |
 
 ### Videos
 
@@ -186,7 +189,7 @@ Compute SHA-256 for up to 1 MiB at the start, middle, and end, then set `fingerp
 | PUT | `/api/video-uploads/{upload_id}/parts/{part_number}` | raw bytes with `Content-Range` and `X-Chunk-SHA256`; identical replay is idempotent |
 | POST | `/api/video-uploads/{upload_id}/complete` | verify all parts, fingerprint and real container type, then atomically publish |
 | DELETE | `/api/video-uploads/{upload_id}` | cancel an unfinished session and remove its temporary data |
-| GET | `/api/videos?limit&offset&q&scope` | list videos; `scope=mine` selects the current account's personal space and `scope=all` selects the site-wide administrator JWT view (administrator API keys cannot use `all`) |
+| GET | `/api/videos?limit&offset&q&scope` | list videos; an API key always returns the personal space (`scope=mine`); `scope=all` is an administrator JWT-only global view |
 | PATCH | `/api/videos/{code}` | update `name` / `visibility` |
 | DELETE | `/api/videos/{code}` | delete the stored video |
 | GET | `/api/videos/{code}/link?ttl` | create a signed link |
@@ -197,7 +200,7 @@ Example part upload (for an 8-byte file split into a 4-byte first part):
 
 ```bash
 curl -X PUT "$BASE/api/video-uploads/$UPLOAD_ID/parts/0" \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $KEY" \
   -H "Content-Range: bytes 0-3/8" \
   -H "X-Chunk-SHA256: $(sha256sum part-0 | cut -d' ' -f1)" \
   -H "Content-Type: application/octet-stream" --data-binary @part-0
@@ -205,69 +208,27 @@ curl -X PUT "$BASE/api/video-uploads/$UPLOAD_ID/parts/0" \
 
 Part numbers are zero-based and may arrive out of order. A successful part refreshes the seven-day expiry. Completion returns the final video record. Missing parts, a mismatched hash, or replaying one part number with different bytes returns 409. A missing/malformed `Content-Range` returns 400; a range that does not match the requested part returns 416. Another user's upload ID is not disclosed.
 
-### Unified library and groups
+### Unified media library
 
-Unified media reads are part of the JWT/API-key data plane. Media-group CRUD and item management are JWT-only control-plane operations.
+Media-group CRUD and item management are JWT-only control-plane operations and are not listed here.
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/library/stats` | current personal-library overview; global overview only with an administrator JWT |
+| GET | `/api/library/stats` | current personal-library overview |
 | GET | `/api/media?kind&team_id&group_id&q&limit&offset` | unified, searchable image/video listing |
-| GET | `/api/media/{code}` | unified metadata; anonymous public responses hide owner/team/original-filename fields, while private media require an authorized JWT/API key and otherwise return 404 |
+| GET | `/api/media/{code}` | unified metadata; anonymous public responses hide owner/team/original-filename fields, while private media require an authorized key and otherwise return 404 |
 | GET | `/api/media/{code}/link?ttl` | public media resolve anonymously to the canonical URL; authorized private media return an expiring signed URL |
-| GET | `/api/media-groups?team_id&q&limit&offset` | JWT-only: list personal or team groups |
-| POST | `/api/media-groups` | create `{name,description?,color?,sort_order?,team_id?,codes?}`; `codes` atomically creates and adds media |
-| GET / PATCH / DELETE | `/api/media-groups/{id}` | view, update, or delete a group without deleting its media |
-| GET / POST | `/api/media-groups/{id}/items` | paginate group media or add `{codes:[...]}` |
-| DELETE | `/api/media-groups/{id}/items/{code}` | remove media from a group without deleting the asset |
-
-### API keys
-
-Key listing, creation, rotation and revocation are JWT-only control-plane operations. An API key is limited to the media data plane and cannot manage passwords, keys, teams, groups, users or administrators. Each user may own at most `MAX_API_KEYS_PER_USER` active keys (default `20`).
-
-| Method | Path | Description |
-|---|---|---|
-| GET | `/api/keys` | my keys (prefix only — never the full key) |
-| POST | `/api/keys` | create key — **full key returned exactly once** |
-| POST | `/api/keys/{id}/rotate` | rotate: old key revoked instantly, new key shown once |
-| DELETE | `/api/keys/{id}` | revoke |
-
-```bash
-# Upload / download / delete with an API key
-curl -X POST http://<server-ip>:8080/api/upload \
-  -H "Authorization: Bearer <key>" -F "file=@a.png" -F "name=test"
-curl -o a.png "http://<server-ip>:8080/i/<code>" -H "Authorization: Bearer <key>"
-curl -X DELETE "http://<server-ip>:8080/api/images/<code>" -H "Authorization: Bearer <key>"
-```
 
 ### Teams
 
-Team creation, listing, details, deletion and membership changes are JWT-only. Team image/video data endpoints accept either JWT or API-key authentication and still enforce membership.
+Team creation, listing, details, deletion and membership changes are JWT-only. The team-space data endpoints below accept an API key and still enforce membership on every call.
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/api/teams` | create team (creator becomes owner) |
-| GET | `/api/teams` | my teams |
-| GET | `/api/teams/{id}` | team detail + members |
-| POST | `/api/teams/{id}/members` | invite member `{username}` |
-| PATCH | `/api/teams/{id}/members/{member_id}` | change role `{role: admin\|member}` (owner only) |
-| DELETE | `/api/teams/{id}/members/{member_id}` | remove member |
-| DELETE | `/api/teams/{id}` | disband team (media and pending sessions return to their uploaders) |
-| GET | `/api/teams/{id}/images?q` | team space images (members/admins) |
-| GET | `/api/teams/{id}/videos?q` | team space videos (members/admins) |
+| GET | `/api/teams/{id}/images?q` | team space images (members) |
+| GET | `/api/teams/{id}/videos?q` | team space videos (members) |
 
-### Admin (global `admin` role)
-
-| Method | Path | Description |
-|---|---|---|
-| GET | `/api/admin/stats` | media/storage totals plus aggregate request count and request/response traffic bytes |
-| GET | `/api/admin/traffic-stats?days=7` | JWT-only 1–365 day traffic summary, daily trend, routes, top 200 API keys, anonymous usage and per-member image/video/pending storage; `telemetry_complete` only reports detected queue loss in the current process |
-| GET | `/api/admin/teams` | all teams with member counts |
-| GET | `/api/users` | all users |
-| POST | `/api/admin/users` | create `{username,password,role?}` while self-registration is closed |
-| PATCH | `/api/admin/users/{id}/role` | set role `{role: admin\|user}` (cannot change self) |
-| PATCH | `/api/admin/users/{id}/password` | reset password `{new_password}` |
-| DELETE | `/api/admin/users/{id}` | delete the account, personal media/groups, pending uploads and keys; owned teams are dissolved, their media returns to surviving uploaders, and shared groups are transferred or removed |
+JWT-only control-plane endpoints (registration/login/password, API-key management, team governance, media groups, user management and `/api/admin/**`) remain available and are described machine-readably in the OpenAPI spec at `GET /openapi.json`.
 
 ## 🛠️ Local Development
 
