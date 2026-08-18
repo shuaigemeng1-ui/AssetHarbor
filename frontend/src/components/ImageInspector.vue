@@ -1,9 +1,9 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { getSignedLink, updateImage } from '../api'
+import { getSignedLink, revokeMediaLinks, updateImage } from '../api'
 import { toast } from '../stores/feedback'
 import { copyText } from '../utils/clipboard'
-import { formatBytes } from '../utils/format'
+import { formatBytes, formatDate } from '../utils/format'
 import AppIcon from './AppIcon.vue'
 import BaseModal from './BaseModal.vue'
 import CollectionPickerModal from './CollectionPickerModal.vue'
@@ -26,6 +26,9 @@ const previewFailed = ref(false)
 const signing = ref(false)
 const copying = ref(false)
 const copied = ref(false)
+const linkTtl = ref(3600)
+const linkExpiresAt = ref('')
+const revoking = ref(false)
 const editing = ref(false)
 const editName = ref('')
 const editSaving = ref(false)
@@ -84,9 +87,10 @@ async function refreshSignedLink() {
 
   signing.value = true
   try {
-    const response = await getSignedLink(props.item.code)
+    const response = await getSignedLink(props.item.code, linkTtl.value)
     if (generation !== signedLinkGeneration) return ''
     signedUrl.value = response.url || ''
+    linkExpiresAt.value = response.expires_at ? formatDate(response.expires_at) : ''
     if (!signedUrl.value) signedLinkError.value = '签名链接暂不可用'
     return signedUrl.value
   } catch (error) {
@@ -111,15 +115,34 @@ watch(() => [props.item.code, props.item.visibility], () => {
     signedLinkGeneration++
     signedUrl.value = ''
     signedLinkError.value = ''
+    linkExpiresAt.value = ''
     previewFailed.value = false
     signing.value = false
   }
 }, { immediate: true })
 
+watch(linkTtl, () => {
+  if (isPrivate.value && signedUrl.value) refreshSignedLink()
+})
+
 onBeforeUnmount(() => {
   signedLinkGeneration++
   if (copiedTimer) window.clearTimeout(copiedTimer)
 })
+
+async function revokeLinks() {
+  if (revoking.value || !canEdit.value) return
+  revoking.value = true
+  try {
+    await revokeMediaLinks(props.item.code)
+    toast('已撤销全部历史分享链接', 'success')
+    await refreshSignedLink()
+  } catch (error) {
+    toast(error.message || '撤销失败，请稍后重试', 'error')
+  } finally {
+    revoking.value = false
+  }
+}
 
 async function copyUrl() {
   if (copying.value) return
@@ -240,6 +263,28 @@ async function saveName() {
       <div class="link-field" :title="activeUrl">
         {{ activeUrl || (signing ? '正在生成限时签名链接…' : '链接暂不可用') }}
       </div>
+        <div v-if="isPrivate" class="link-settings">
+          <label>
+            <span>有效期</span>
+            <select v-model="linkTtl" class="ttl-select" :disabled="signing" aria-label="签名链接有效期">
+              <option :value="3600">1 小时</option>
+              <option :value="86400">1 天</option>
+              <option :value="604800">7 天</option>
+            </select>
+          </label>
+          <small v-if="linkExpiresAt">到期时间：{{ linkExpiresAt }}</small>
+        </div>
+        <button
+          v-if="isPrivate && canEdit"
+          class="inspector-button danger-action"
+          type="button"
+          :disabled="revoking || signing"
+          @click="revokeLinks"
+        >
+          <AppIcon name="delete" size="16" />
+          {{ revoking ? '撤销中…' : '撤销全部历史分享链接' }}
+        </button>
+
       <button
         class="inspector-button primary-action"
         type="button"
@@ -497,6 +542,35 @@ async function saveName() {
   color: var(--muted);
   font-size: 11px;
 }
+
+.link-settings {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+  font-size: 12px;
+}
+
+.link-settings label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.link-settings .ttl-select {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+  background: #fff;
+  color: var(--text);
+}
+
+.link-settings small {
+  color: var(--muted);
+}
+
 
 .link-field {
   min-height: 42px;

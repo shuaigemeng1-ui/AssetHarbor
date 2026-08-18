@@ -1,9 +1,9 @@
-"""User account model."""
+﻿"""用户账号模型。"""
 
 from datetime import datetime
 
 from sqlalchemy import DateTime, Integer, String, text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.database import Base
 from .base import utcnow
@@ -33,7 +33,3 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow, nullable=False, comment="账号创建时间"
     )
-
-    images: Mapped[list["Image"]] = relationship(back_populates="owner")
-    team_memberships: Mapped[list["TeamMember"]] = relationship(back_populates="user")
-    api_keys: Mapped[list["ApiKey"]] = relationship(back_populates="user", cascade="all, delete-orphan")

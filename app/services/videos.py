@@ -526,6 +526,8 @@ def get_upload_for_user(
         upload.owner_id != user.id and not has_global_admin_scope(user)
     ):
         raise HTTPException(status_code=404, detail="upload session not found")
+    if upload.team_id is not None:
+        _check_team_access(db, upload.team_id, user)
     if upload.expires_at <= _now() and upload.status == "finalizing":
         recover_finalizing_session(db, upload)
         db.expire_all()
@@ -1384,6 +1386,8 @@ def cancel_upload_session(
                 actor = fresh_library_user(db, actor)
                 if current.owner_id != actor.id and not has_global_admin_scope(actor):
                     raise HTTPException(status_code=404, detail="upload session not found")
+                if current.team_id is not None:
+                    _check_team_access(db, current.team_id, actor)
                 _delete_upload_session_locked(db, upload_id)
 
 
@@ -1398,7 +1402,18 @@ def cancel_upload_session_internal(db: Session, upload: UploadSession) -> None:
 
 
 def delete_upload_sessions_for_owner(db: Session, owner_id: int) -> None:
-    uploads = db.execute(select(UploadSession).where(UploadSession.owner_id == owner_id)).scalars().all()
+    """Delete only the user's personal (non-team) upload sessions.
+
+    Team upload sessions are preserved when an account is deleted: admin user
+    deletion transfers them to the team owner/successor instead of removing
+    them together with the account.
+    """
+    uploads = db.execute(
+        select(UploadSession).where(
+            UploadSession.owner_id == owner_id,
+            UploadSession.team_id.is_(None),
+        )
+    ).scalars().all()
     for upload in uploads:
         cancel_upload_session_internal(db, upload)
 

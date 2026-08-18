@@ -24,7 +24,7 @@ from ...schemas import (
 )
 from ...core.security import hash_password
 from ...services.images import delete_image
-from ...services.identifiers import next_user_id
+from ...services.identifiers import next_team_member_id, next_user_id
 from ...services.library import (
     fresh_library_user,
     library_lifecycle_lease,
@@ -33,7 +33,7 @@ from ...services.library import (
 )
 from ...services.storage_quota import RESERVED_UPLOAD_STATUSES
 from ...services.traffic import flush_traffic, telemetry_integrity_status
-from ...services.videos import delete_upload_sessions_for_owner, dissolve_team_media
+from ...services.videos import delete_upload_sessions_for_owner
 from ..deps import get_db, require_jwt_admin
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_jwt_admin)])
@@ -435,27 +435,87 @@ def delete_user(
     if target is None:
         raise HTTPException(status_code=404, detail="user not found")
 
+    # --- Team assets are preserved and transferred to the team. ---
+    # Account deletion never deletes team media/upload sessions.  Teams owned
+    # by the target are transferred to another member (preferring an admin),
+    # or to the deleting administrator as a last resort so no team is orphaned.
+    owned_teams = db.execute(select(Team).where(Team.owner_id == target.id)).scalars().all()
+    for team in owned_teams:
+        successors = db.execute(
+            select(TeamMember)
+            .where(TeamMember.team_id == team.id, TeamMember.user_id != target.id)
+            .order_by(TeamMember.role.desc(), TeamMember.id.asc())
+        ).scalars().all()
+        successor = (
+            next((m for m in successors if m.role == "admin"), None)
+            or (successors[0] if successors else None)
+        )
+        successor_membership = successor
+        successor_user = db.get(User, successor.user_id) if successor is not None else current_user
+        team.owner_id = successor_user.id
+        if successor_membership is None:
+            existing = db.execute(
+                select(TeamMember).where(
+                    TeamMember.team_id == team.id,
+                    TeamMember.user_id == successor_user.id,
+                )
+            ).scalar_one_or_none()
+            if existing is None:
+                db.add(
+                    TeamMember(
+                        id=next_team_member_id(db),
+                        team_id=team.id,
+                        user_id=successor_user.id,
+                        role="owner",
+                    )
+                )
+            else:
+                existing.role = "owner"
+        else:
+            successor_membership.role = "owner"
+
+    # Transfer every remaining team asset uploaded by the target to the final
+    # team owner (handles both teams the target owned and teams they merely
+    # belonged to).  Pending upload sessions are transferred, not cancelled.
+    for membership in db.execute(
+        select(TeamMember).where(TeamMember.user_id == target.id)
+    ).scalars().all():
+        team = db.get(Team, membership.team_id)
+        if team is None:
+            continue
+        db.execute(
+            update(Image)
+            .where(Image.team_id == team.id, Image.owner_id == target.id)
+            .values(owner_id=team.owner_id)
+        )
+        db.execute(
+            update(UploadSession)
+            .where(UploadSession.team_id == team.id, UploadSession.owner_id == target.id)
+            .values(owner_id=team.owner_id)
+        )
+
+    # Persist the ownership transfer before the personal-session cleanup:
+    # cancel_upload_session_internal() begins with a defensive rollback, which
+    # would otherwise discard the team/session owner changes staged above.
+    db.commit()
+
     # Sessions have no database foreign keys and are cleaned explicitly,
-    # including their on-disk temporary chunks. Cancellation intentionally
-    # starts with rollback for PUT-race safety, so this must happen before
-    # staging any other lifecycle changes in this transaction.
+    # including their on-disk temporary chunks.  Only personal (non-team)
+    # sessions are removed; team sessions were transferred above.
     delete_upload_sessions_for_owner(db, target.id)
 
     # New media-library tables intentionally have no foreign keys, so their
     # owner/item lifecycle is maintained explicitly before deleting assets.
     prepare_groups_for_user_deletion(db, target.id)
-    # Team dissolution also begins with a defensive rollback. Persist group
-    # cleanup/transfers first so an image-less team owner cannot leave orphan
-    # personal or shared groups behind.
+    # Persist group cleanup/transfers first so an image-less team owner cannot
+    # leave orphan personal or shared groups behind.
     db.commit()
 
-    # Images (rows + files on disk).
-    for image in db.execute(select(Image).where(Image.owner_id == target.id)).scalars().all():
+    # Only personal media are deleted with the account; team media remain.
+    for image in db.execute(
+        select(Image).where(Image.owner_id == target.id, Image.team_id.is_(None))
+    ).scalars().all():
         delete_image(db, image)
-
-    # Teams owned by the user (their team-space images return to their owners).
-    for team in db.execute(select(Team).where(Team.owner_id == target.id)).scalars().all():
-        dissolve_team_media(db, team)
 
     # Memberships in other teams, API keys, then the account itself.
     db.execute(delete(TeamMember).where(TeamMember.user_id == target.id))

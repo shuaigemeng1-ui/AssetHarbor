@@ -324,6 +324,10 @@ export function deleteVideo(code) {
   return request(`/api/videos/${code}`, { method: 'DELETE' })
 }
 
+export function revokeMediaLinks(code) {
+  return request(`/api/media/${code}/revoke-links`, { method: 'POST' })
+}
+
 export function updateVideo(code, { name, visibility } = {}) {
   return request(`/api/videos/${code}`, {
     method: 'PATCH',

@@ -137,7 +137,7 @@ describe('GalleryView image uploads', () => {
     const wrapper = mountGallery()
     await flushPromises()
     await openUpload(wrapper)
-    expect(wrapper.get('.vis-select').element.value).toBe('public')
+    expect(wrapper.get('.vis-select').element.value).toBe('private')
     await selectFile(wrapper)
 
     expect(wrapper.get('.image-result-stub').attributes('data-status')).toBe('uploading')
@@ -192,7 +192,7 @@ describe('GalleryView image uploads', () => {
     await flushPromises()
 
     expect(api.uploadFile).toHaveBeenCalledTimes(2)
-    expect(api.uploadFile.mock.calls[1][1]).toEqual({ name: '', visibility: 'public', teamId: null })
+    expect(api.uploadFile.mock.calls[1][1]).toEqual({ name: '', visibility: 'private', teamId: null })
     expect(wrapper.find('.pending-grid').exists()).toBe(false)
     expect(wrapper.text()).toContain('retry-code')
     expect(wrapper.text()).toContain('1 张')

@@ -93,12 +93,14 @@ def test_admin_delete_user_removes_all_data(client):
 
     assert client.delete(f"/api/admin/users/{uid}", headers=auth(atoken)).status_code == 204
 
-    # 账号 / 图片 / key / 团队 全部清理
+    # 账号 / 图片 / key 清理；团队资产保留并转交给执行删除的管理员。
     assert client.get("/api/auth/me", headers=h).status_code == 401
     assert client.get(f"/i/{code}").status_code == 404
     assert client.get("/api/auth/me", headers={"X-API-Key": key}).status_code == 401
     teams = client.get("/api/admin/teams", headers=auth(atoken)).json()
-    assert all(t["name"] != team_name for t in teams)
+    retained = [t for t in teams if t["name"] == team_name]
+    assert len(retained) == 1
+    assert retained[0]["owner_username"] == "admin"
 
 
 def test_admin_cannot_delete_self(client):

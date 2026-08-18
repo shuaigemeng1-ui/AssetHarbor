@@ -44,7 +44,11 @@ def get_image(
         raise HTTPException(status_code=404, detail="image not found")
 
     if image.visibility == "private":
-        is_owner = current_user is not None and image.owner_id == current_user.id
+        is_owner = bool(
+            current_user is not None
+            and image.team_id is None
+            and image.owner_id == current_user.id
+        )
         is_admin = has_global_admin_scope(current_user)
         in_team = bool(
             image.team_id is not None

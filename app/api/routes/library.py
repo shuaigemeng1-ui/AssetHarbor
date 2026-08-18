@@ -19,6 +19,7 @@ from ...schemas import (
     UnifiedMediaInfo,
     UnifiedMediaLink,
 )
+from ...services.images import can_manage_image
 from ...services.library import (
     delete_group,
     ensure_unique_group_name,
@@ -28,6 +29,7 @@ from ...services.library import (
     library_stats,
     list_unified_media,
     serialized_library_lifecycle,
+    unified_media_out,
     validate_team_scope,
     visible_group_or_404,
 )
@@ -53,7 +55,7 @@ def _has_media_scope(db: Session, media: Image, user: User | None) -> bool:
         user is not None
         and (
             has_global_admin_scope(user)
-            or media.owner_id == user.id
+            or (media.team_id is None and media.owner_id == user.id)
             or (
                 media.team_id is not None
                 and is_team_member(db, media.team_id, user.id)
@@ -265,6 +267,44 @@ def get_media_link(
         url=url,
         expires_at=datetime.fromtimestamp(expires, tz=timezone.utc),
     )
+
+
+@router.post(
+    "/media/{code}/revoke-links",
+    response_model=UnifiedMediaInfo,
+    summary="Revoke all historical signed links for one media asset",
+    description="Increments the media signing version so every previously issued "
+    "signed URL for this image/video stops working immediately. The TTL contract "
+    "for links issued after this call is unchanged.",
+)
+@serialized_library_lifecycle
+def revoke_media_links(
+    code: str,
+    request: Request,
+    current_user: User = Depends(require_jwt_user),
+    db: Session = Depends(get_db),
+) -> UnifiedMediaInfo:
+    db.rollback()
+    current_user = fresh_library_user(db, current_user)
+    media = db.execute(
+        select(Image).where(Image.code == code, Image.media_kind.in_(("image", "video")))
+    ).scalar_one_or_none()
+    if media is None:
+        raise HTTPException(status_code=404, detail="media not found")
+    if not can_manage_image(db, current_user, media):
+        raise HTTPException(
+            status_code=403,
+            detail="you can only revoke links for media you manage",
+        )
+    media.signing_version += 1
+    db.commit()
+    db.refresh(media)
+    owner_username = None
+    if media.owner_id is not None:
+        owner = db.get(User, media.owner_id)
+        owner_username = owner.username if owner else None
+    return unified_media_out(request, media, owner_username)
+
 
 
 @router.get(

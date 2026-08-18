@@ -33,9 +33,16 @@ const loadingMore = ref(false)
 const loadError = ref('')
 const query = ref('')
 const uploadName = ref('')
-// Omitted visibility is a fixed public API contract. Users must explicitly
-// select "private" when they want restricted access.
-const uploadVisibility = ref('public')
+// 前端上传默认私密，符合“私有媒体空间”的用户心智；后端仍保持 public 兼容契约。
+// 用户在弹窗中做出的选择会记忆到 localStorage，后续上传沿用该偏好。
+const uploadVisibility = ref(
+  typeof localStorage !== 'undefined' && localStorage.getItem('oss_upload_visibility') === 'public'
+    ? 'public'
+    : 'private'
+)
+watch(uploadVisibility, value => {
+  if (typeof localStorage !== 'undefined') localStorage.setItem('oss_upload_visibility', value)
+})
 const selectedVideo = ref(null)
 const playerVideo = ref(null)
 const uploadOpen = ref(false)

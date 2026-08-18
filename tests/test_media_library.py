@@ -413,9 +413,12 @@ def test_delete_imageless_team_owner_does_not_leave_orphan_groups(client):
     assert client.get(
         f"/api/media-groups/{personal['id']}", headers=auth(admin_token)
     ).status_code == 404
-    assert client.get(
+    # 团队资产在账号删除后保留并转交给团队（无其他成员时交给执行删除的管理员）。
+    admin_id = client.get("/api/auth/me", headers=auth(admin_token)).json()["id"]
+    transferred_owned = client.get(
         f"/api/media-groups/{owned_shared['id']}", headers=auth(admin_token)
-    ).status_code == 404
+    ).json()
+    assert transferred_owned["owner_id"] == admin_id
     survivor_id = client.get("/api/auth/me", headers=auth(survivor_token)).json()["id"]
     transferred = client.get(
         f"/api/media-groups/{shared['id']}", headers=auth(survivor_token)

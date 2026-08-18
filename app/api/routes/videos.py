@@ -390,9 +390,9 @@ def get_video_signed_link(
     ).scalar_one_or_none()
     if video is None:
         raise HTTPException(status_code=404, detail="video not found")
-    allowed = (
-        video.owner_id == current_user.id
-        or has_global_admin_scope(current_user)
+    allowed = bool(
+        has_global_admin_scope(current_user)
+        or (video.team_id is None and video.owner_id == current_user.id)
         or (video.team_id is not None and is_team_member(db, video.team_id, current_user.id))
     )
     if not allowed:
@@ -464,7 +464,7 @@ def get_video(
             (
                 current_user is not None
                 and (
-                    video.owner_id == current_user.id
+                    (video.team_id is None and video.owner_id == current_user.id)
                     or has_global_admin_scope(current_user)
                 )
             )

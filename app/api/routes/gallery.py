@@ -173,7 +173,7 @@ def get_signed_link(
     if image is None:
         raise HTTPException(status_code=404, detail="image not found")
 
-    is_owner = image.owner_id == current_user.id
+    is_owner = image.team_id is None and image.owner_id == current_user.id
     is_admin = has_global_admin_scope(current_user)
     in_team = bool(
         image.team_id is not None and is_team_member(db, image.team_id, current_user.id)

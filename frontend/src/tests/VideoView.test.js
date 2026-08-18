@@ -107,7 +107,7 @@ describe('VideoView media group scope', () => {
 
     await wrapper.get('.library-upload-button').trigger('click')
     expect(document.body.querySelector('[aria-label="选择或拖拽视频上传"]')).not.toBeNull()
-    expect(document.body.querySelector('.vis-select').value).toBe('public')
+    expect(document.body.querySelector('.vis-select').value).toBe('private')
   })
 
   it('uses compact team chrome when embedded and waits for an explicit card selection', async () => {

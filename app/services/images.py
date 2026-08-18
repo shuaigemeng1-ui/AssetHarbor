@@ -310,14 +310,25 @@ def delete_image(db: Session, image: Image, actor: User | None = None) -> None:
 
 
 def can_manage_image(db: Session, user: User, image: Image) -> bool:
-    """Owner, global admin, or a team owner/admin when the image lives in a team."""
-    if has_global_admin_scope(user) or image.owner_id == user.id:
+    """Manage an image/video under the team-asset ownership invariant.
+
+    - Global admins (JWT/internal) can manage anything.
+    - Personal media (``team_id is None``) are managed by their uploader.
+    - Team media are controlled by team membership: the uploader may manage
+      their own upload while they remain a member, and team owners/admins may
+      manage any asset in the team. ``owner_id`` alone never bypasses a
+      revoked membership.
+    """
+    if has_global_admin_scope(user):
         return True
     if image.team_id is not None:
         member = get_membership(db, image.team_id, user.id)
-        if member is not None and member.role in ("owner", "admin"):
+        if member is None:
+            return False
+        if image.owner_id == user.id or member.role in ("owner", "admin"):
             return True
-    return False
+        return False
+    return image.owner_id == user.id
 
 
 @serialized_library_lifecycle
