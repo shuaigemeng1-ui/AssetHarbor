@@ -72,12 +72,12 @@ const uploadButtonLabel = computed(() => (
   props.user.role === 'admin' && !isTeam.value ? '上传到我的个人空间' : '上传'
 ))
 const uploadModalTitle = computed(() => (
-  props.user.role === 'admin' && !isTeam.value ? '上传图片到我的个人空间' : '上传图片'
+  props.user.role === 'admin' && !isTeam.value ? '上传图片与文档到我的个人空间' : '上传图片与文档'
 ))
 const uploadModalDescription = computed(() => (
   isTeam.value
-    ? '图片会保存到当前团队空间，并生成可分享的短链接。'
-    : '图片会保存到当前账号的个人空间，并生成可分享的短链接。'
+    ? '图片与文档会保存到当前团队空间，并生成可分享的短链接。'
+    : '图片与文档会保存到当前账号的个人空间，并生成可分享的短链接。'
 ))
 const uploadDescription = computed(() => {
   const parts = ['支持 JPG、PNG、GIF、WebP、SVG、AVIF、PDF 等常用格式']
@@ -247,13 +247,77 @@ function closeInspector() {
   inspectorOpen.value = false
 }
 
-function onInspectorKeydown(event) {
-  if (!drawerActive.value || document.querySelector('.base-modal-panel')) return
-  if (event.key === 'Escape') {
-    event.preventDefault()
-    closeInspector()
+function isPdfItem(item) {
+  return item?.content_type === 'application/pdf'
+    || String(item?.name || item?.original_filename || '').toLowerCase().endsWith('.pdf')
+}
+
+function onGlobalPaste(event) {
+  const target = event.target
+  const isInput = target && (
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT' ||
+    target.isContentEditable
+  )
+  const clipboardFiles = Array.from(event.clipboardData?.files || [])
+  if (!clipboardFiles.length) {
+    const items = Array.from(event.clipboardData?.items || [])
+    for (const item of items) {
+      if (item.kind === 'file') {
+        const file = item.getAsFile()
+        if (file) clipboardFiles.push(file)
+      }
+    }
+  }
+  if (!clipboardFiles.length) return
+  if (isInput && !clipboardFiles.some(f => f.type.startsWith('image/') || f.type === 'application/pdf')) {
     return
   }
+  event.preventDefault()
+  handleFiles(clipboardFiles)
+  toast(`已从剪贴板接收 ${clipboardFiles.length} 个文件并开始上传`, 'info')
+}
+
+function onGalleryKeydown(event) {
+  const hasModal = Boolean(document.querySelector('.base-modal-panel'))
+  const active = document.activeElement
+  const isTyping = active && (
+    active.tagName === 'INPUT' ||
+    active.tagName === 'TEXTAREA' ||
+    active.tagName === 'SELECT' ||
+    active.isContentEditable
+  )
+
+  if (event.key === 'Escape' && !hasModal) {
+    if (inspectorOpen.value) {
+      event.preventDefault()
+      closeInspector()
+      return
+    }
+  }
+
+  // Handle arrow navigation between media cards when not typing and no modal is blocking
+  if (!hasModal && !isTyping && images.value.length > 1 && selectedImage.value) {
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      const currentIndex = images.value.findIndex(img => img.code === selectedImage.value?.code)
+      if (currentIndex !== -1 && currentIndex < images.value.length - 1) {
+        event.preventDefault()
+        selectImage(images.value[currentIndex + 1])
+        return
+      }
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      const currentIndex = images.value.findIndex(img => img.code === selectedImage.value?.code)
+      if (currentIndex > 0) {
+        event.preventDefault()
+        selectImage(images.value[currentIndex - 1])
+        return
+      }
+    }
+  }
+
+  // Focus trapping for narrow / embedded drawer mode
+  if (!drawerActive.value || hasModal) return
   if (event.key !== 'Tab') return
   const root = inspectorPanel.value?.getElement?.()
   if (!root) return
@@ -282,8 +346,10 @@ function onInspectorKeydown(event) {
 }
 
 async function onDelete(item) {
+  const isPdf = isPdfItem(item)
+  const kindLabel = isPdf ? '文档' : '图片'
   const ok = await confirmAction({
-    title: '删除图片',
+    title: `删除${kindLabel}`,
     message: `确定删除「${item.name || item.original_filename || item.code}」${isGlobalAdmin.value ? `（属主：${item.owner_username || `用户 #${item.owner_id}`}）` : ''}？此操作不可恢复。`,
     confirmText: '删除',
     danger: true,
@@ -298,18 +364,20 @@ async function onDelete(item) {
       selectedImage.value = images.value[deletedIndex] || images.value[deletedIndex - 1] || null
       if (!selectedImage.value) inspectorOpen.value = false
     }
-    toast('图片已删除', 'success')
+    toast(`${kindLabel}已删除`, 'success')
   } catch (error) {
     toast(`删除失败：${error.message}`, 'error')
   }
 }
 
 async function onToggleVisibility(item) {
+  const isPdf = isPdfItem(item)
+  const kindLabel = isPdf ? '文档' : '图片'
   const next = item.visibility === 'private' ? 'public' : 'private'
   if (next === 'public') {
     const ok = await confirmAction({
-      title: '公开图片',
-      message: `公开后，任何拿到链接的人都能访问这张图片。${isGlobalAdmin.value ? ` 属主：${item.owner_username || `用户 #${item.owner_id}`}。` : ''}`,
+      title: `公开${kindLabel}`,
+      message: `公开后，任何拿到链接的人都能访问这份${kindLabel}。${isGlobalAdmin.value ? ` 属主：${item.owner_username || `用户 #${item.owner_id}`}。` : ''}`,
       confirmText: '设为公开',
     })
     if (!ok) return
@@ -317,7 +385,7 @@ async function onToggleVisibility(item) {
   try {
     const updated = await updateImage(item.code, { visibility: next })
     Object.assign(item, updated)
-    toast(next === 'public' ? '图片已公开' : '图片已设为私密', 'success')
+    toast(next === 'public' ? `${kindLabel}已公开` : `${kindLabel}已设为私密`, 'success')
   } catch (error) {
     toast(`操作失败：${error.message}`, 'error')
   }
@@ -375,7 +443,8 @@ watch(drawerActive, async active => {
 })
 
 onMounted(async () => {
-  window.addEventListener('keydown', onInspectorKeydown)
+  window.addEventListener('keydown', onGalleryKeydown)
+  window.addEventListener('paste', onGlobalPaste)
   if (window.matchMedia) {
     layoutMedia = window.matchMedia(WORKSPACE_DRAWER_MEDIA_QUERY)
     isNarrowLayout.value = layoutMedia.matches
@@ -387,7 +456,8 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => {
   clearTimeout(searchTimer)
-  window.removeEventListener('keydown', onInspectorKeydown)
+  window.removeEventListener('keydown', onGalleryKeydown)
+  window.removeEventListener('paste', onGlobalPaste)
   if (layoutMedia) layoutMedia.onchange = null
   if (drawerLocked) {
     releaseModalLock()

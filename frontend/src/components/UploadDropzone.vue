@@ -5,9 +5,9 @@ import AppIcon from './AppIcon.vue'
 const props = defineProps({
   accept: { type: String, default: 'image/*,application/pdf,.pdf' },
   multiple: { type: Boolean, default: true },
-  label: { type: String, default: '点击选择或拖拽文件到此处' },
+  label: { type: String, default: '点击选择、拖拽文件或直接 Ctrl+V 粘贴' },
   description: { type: String, default: '' },
-  ariaLabel: { type: String, default: '选择或拖拽文件上传' },
+  ariaLabel: { type: String, default: '选择、拖拽或粘贴文件上传' },
   compact: { type: Boolean, default: false },
 })
 
@@ -32,6 +32,27 @@ function onDrop(event) {
   // DataTransfer.files may become unavailable after the drop event returns.
   emit('files', Array.from(event.dataTransfer?.files || []))
 }
+
+function onPaste(event) {
+  const clipboardFiles = Array.from(event.clipboardData?.files || [])
+  if (clipboardFiles.length) {
+    event.preventDefault()
+    emit('files', clipboardFiles)
+    return
+  }
+  const items = Array.from(event.clipboardData?.items || [])
+  const filesFromItems = []
+  for (const item of items) {
+    if (item.kind === 'file') {
+      const file = item.getAsFile()
+      if (file) filesFromItems.push(file)
+    }
+  }
+  if (filesFromItems.length) {
+    event.preventDefault()
+    emit('files', filesFromItems)
+  }
+}
 </script>
 
 <template>
@@ -48,6 +69,7 @@ function onDrop(event) {
     @dragover.prevent="dragging = true"
     @dragleave.prevent="dragging = false"
     @drop.prevent="onDrop"
+    @paste="onPaste"
   >
     <input ref="input" type="file" :accept="accept" :multiple="multiple" hidden @change="onInput" />
     <div class="drop-icon" aria-hidden="true">

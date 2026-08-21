@@ -39,12 +39,12 @@ const displayName = computed(() => (
   result.value?.name
   || result.value?.original_filename
   || props.item.file?.name
-  || '未命名图片'
+  || (isPdf.value ? '未命名文档' : '未命名图片')
 ))
 const isPdf = computed(() => (
   result.value?.content_type === 'application/pdf'
   || props.item.file?.type === 'application/pdf'
-  || String(displayName.value || '').toLowerCase().endsWith('.pdf')
+  || String(result.value?.name || result.value?.original_filename || props.item.file?.name || '').toLowerCase().endsWith('.pdf')
 ))
 const placeholderIcon = computed(() => {
   if (props.item.status === 'error') return 'alert'
@@ -128,7 +128,7 @@ async function copyUrl() {
     return
   }
   copied.value = true
-  toast(isPrivate.value ? '限时签名链接已复制' : '图片链接已复制', 'success')
+  toast(isPrivate.value ? '限时签名链接已复制' : (isPdf.value ? '文档链接已复制' : '图片链接已复制'), 'success')
   if (copiedTimer) window.clearTimeout(copiedTimer)
   copiedTimer = window.setTimeout(() => { copied.value = false }, 1200)
 }
@@ -152,7 +152,7 @@ async function saveName() {
     const updated = await updateImage(result.value.code, { name })
     Object.assign(result.value, updated)
     editing.value = false
-    toast('图片名称已更新', 'success')
+    toast(isPdf.value ? '文档名称已更新' : '图片名称已更新', 'success')
   } catch (error) {
     editError.value = error.message || '保存失败，请稍后重试'
   } finally {
@@ -172,7 +172,7 @@ async function saveName() {
     }"
     :role="selectable && result ? 'button' : undefined"
     :tabindex="selectable && result ? 0 : undefined"
-    :aria-label="selectable && result ? `查看图片详情：${displayName}` : undefined"
+    :aria-label="selectable && result ? `查看${isPdf ? '文档' : '图片'}详情：${displayName}` : undefined"
     :aria-pressed="selectable && result ? selected : undefined"
     @click="selectCard"
     @keydown.enter.prevent="selectCard"
@@ -209,7 +209,7 @@ async function saveName() {
       <div v-if="result && hasContextActions" class="context-card-actions">
         <button class="ghost" type="button" @click.stop="copyUrl">
           <AppIcon :name="copied ? 'check' : 'copy'" size="13" />
-          {{ copied ? '已复制' : '复制链接' }}
+          {{ copied ? '已复制' : (isPdf ? '复制文档链接' : '复制链接') }}
         </button>
         <button v-if="groupable" class="ghost" type="button" @click.stop="emit('add-to-group')">加入分组</button>
         <button v-if="removable" class="ghost danger" type="button" @click.stop="emit('remove')">移出分组</button>
@@ -223,7 +223,7 @@ async function saveName() {
 
     <BaseModal
       v-if="editing"
-      title="重命名图片"
+      :title="isPdf ? '重命名文档' : '重命名图片'"
       description="仅修改媒体库中的显示名称，原始文件名保持不变。"
       labelled-by="rename-image-title"
       @close="editing = false"

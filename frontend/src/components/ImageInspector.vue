@@ -54,11 +54,11 @@ const canEdit = computed(() => (
 const displayName = computed(() => (
   localName.value.trim()
   || props.item.original_filename
-  || '未命名图片'
+  || (isPdf.value ? '未命名文档' : '未命名图片')
 ))
 const isPdf = computed(() => (
   props.item.content_type === 'application/pdf'
-  || String(displayName.value || '').toLowerCase().endsWith('.pdf')
+  || String(localName.value || props.item.original_filename || '').toLowerCase().endsWith('.pdf')
 ))
 const activeUrl = computed(() => (isPrivate.value ? signedUrl.value : props.item.url || ''))
 const ownerLabel = computed(() => (
@@ -159,7 +159,7 @@ async function copyUrl() {
       return
     }
     copied.value = true
-    toast(isPrivate.value ? '限时签名链接已复制' : '图片链接已复制', 'success')
+    toast(isPrivate.value ? '限时签名链接已复制' : (isPdf.value ? '文档链接已复制' : '图片链接已复制'), 'success')
     if (copiedTimer) window.clearTimeout(copiedTimer)
     copiedTimer = window.setTimeout(() => { copied.value = false }, 1400)
   } catch {
@@ -189,7 +189,7 @@ async function saveName() {
     localName.value = updated.name || name
     editing.value = false
     emit('updated', updated)
-    toast('图片名称已更新', 'success')
+    toast(isPdf.value ? '文档名称已更新' : '图片名称已更新', 'success')
   } catch (error) {
     editError.value = error.message || '保存失败，请稍后重试'
   } finally {
@@ -199,18 +199,25 @@ async function saveName() {
 </script>
 
 <template>
-  <aside ref="panel" class="image-inspector" aria-label="图片详情">
+  <aside ref="panel" class="image-inspector" :aria-label="isPdf ? 'PDF 文档详情' : '图片详情'">
     <header class="inspector-heading">
-      <h2>图片详情</h2>
+      <h2>{{ isPdf ? 'PDF 文档详情' : '图片详情' }}</h2>
     </header>
 
     <div class="inspector-preview" :class="{ 'is-pdf-inspector': isPdf }">
-      <iframe
-        v-if="isPdf && activeUrl && !previewFailed"
-        :src="activeUrl"
-        :title="displayName"
-        class="pdf-preview-frame"
-      />
+      <div v-if="isPdf && activeUrl && !previewFailed" class="pdf-container">
+        <iframe
+          :src="activeUrl"
+          :title="displayName"
+          class="pdf-preview-frame"
+        />
+        <div class="pdf-toolbar">
+          <a :href="activeUrl" target="_blank" rel="noopener noreferrer" class="pdf-open-btn">
+            <AppIcon name="external-link" size="13" />
+            新窗口查看原件
+          </a>
+        </div>
+      </div>
       <img
         v-else-if="!isPdf && activeUrl && !previewFailed"
         :src="activeUrl"
@@ -267,7 +274,7 @@ async function saveName() {
 
     <section class="inspector-section" aria-labelledby="image-inspector-link">
       <div class="section-title-row">
-        <h3 id="image-inspector-link">{{ isPrivate ? '限时访问链接' : '图片链接' }}</h3>
+        <h3 id="image-inspector-link">{{ isPrivate ? '限时访问链接' : (isPdf ? '文档链接' : '图片链接') }}</h3>
         <span v-if="isPrivate">复制时自动刷新</span>
       </div>
       <div class="link-field" :title="activeUrl">
@@ -302,7 +309,7 @@ async function saveName() {
         @click="copyUrl"
       >
         <AppIcon :name="copied ? 'check' : 'copy'" size="16" />
-        {{ copying ? '复制中…' : copied ? '已复制' : '复制链接' }}
+        {{ copying ? '复制中…' : copied ? '已复制' : (isPdf ? '复制文档链接' : '复制链接') }}
       </button>
     </section>
 
@@ -323,14 +330,14 @@ async function saveName() {
         </button>
         <button v-if="canEdit" class="inspector-button danger-action" type="button" @click="emit('delete', item)">
           <AppIcon name="delete" size="16" />
-          删除图片
+          {{ isPdf ? '删除文档' : '删除图片' }}
         </button>
       </div>
     </section>
 
     <BaseModal
       v-if="editing"
-      title="重命名图片"
+      :title="isPdf ? '重命名文档' : '重命名图片'"
       description="仅修改媒体库中的显示名称，原始文件名保持不变。"
       labelled-by="inspector-rename-image-title"
       @close="editing = false"
@@ -467,10 +474,40 @@ async function saveName() {
   height: 320px;
 }
 
-.pdf-preview-frame {
+.pdf-container {
   width: 100%;
   height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.pdf-preview-frame {
+  width: 100%;
+  flex: 1;
   border: 0;
+}
+
+.pdf-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--panel-soft);
+}
+
+.pdf-open-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.pdf-open-btn:hover {
+  text-decoration: underline;
 }
 
 .preview-empty {

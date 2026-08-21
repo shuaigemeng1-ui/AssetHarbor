@@ -234,12 +234,44 @@ function closeInspector() {
 }
 
 function onInspectorKeydown(event) {
-  if (!drawerActive.value || document.querySelector('.base-modal-panel')) return
-  if (event.key === 'Escape') {
-    event.preventDefault()
-    closeInspector()
-    return
+  const hasModal = Boolean(document.querySelector('.base-modal-panel'))
+  const active = document.activeElement
+  const isTyping = active && (
+    active.tagName === 'INPUT' ||
+    active.tagName === 'TEXTAREA' ||
+    active.tagName === 'SELECT' ||
+    active.isContentEditable
+  )
+
+  if (event.key === 'Escape' && !hasModal) {
+    if (inspectorOpen.value) {
+      event.preventDefault()
+      closeInspector()
+      return
+    }
   }
+
+  // Handle arrow navigation between video cards when not typing and no modal is blocking
+  if (!hasModal && !isTyping && videos.value.length > 1 && selectedVideo.value) {
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      const currentIndex = videos.value.findIndex(v => v.code === selectedVideo.value?.code)
+      if (currentIndex !== -1 && currentIndex < videos.value.length - 1) {
+        event.preventDefault()
+        selectVideo(videos.value[currentIndex + 1])
+        return
+      }
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      const currentIndex = videos.value.findIndex(v => v.code === selectedVideo.value?.code)
+      if (currentIndex > 0) {
+        event.preventDefault()
+        selectVideo(videos.value[currentIndex - 1])
+        return
+      }
+    }
+  }
+
+  // Focus trapping for narrow / embedded drawer mode
+  if (!drawerActive.value || hasModal) return
   if (event.key !== 'Tab') return
   const root = inspectorPanel.value?.getElement?.()
   if (!root) return
