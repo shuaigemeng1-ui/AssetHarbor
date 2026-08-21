@@ -56,6 +56,10 @@ const displayName = computed(() => (
   || props.item.original_filename
   || '未命名图片'
 ))
+const isPdf = computed(() => (
+  props.item.content_type === 'application/pdf'
+  || String(displayName.value || '').toLowerCase().endsWith('.pdf')
+))
 const activeUrl = computed(() => (isPrivate.value ? signedUrl.value : props.item.url || ''))
 const ownerLabel = computed(() => (
   props.item.owner_username
@@ -200,9 +204,15 @@ async function saveName() {
       <h2>图片详情</h2>
     </header>
 
-    <div class="inspector-preview">
+    <div class="inspector-preview" :class="{ 'is-pdf-inspector': isPdf }">
+      <iframe
+        v-if="isPdf && activeUrl && !previewFailed"
+        :src="activeUrl"
+        :title="displayName"
+        class="pdf-preview-frame"
+      />
       <img
-        v-if="activeUrl && !previewFailed"
+        v-else-if="!isPdf && activeUrl && !previewFailed"
         :src="activeUrl"
         :alt="displayName"
         decoding="async"
@@ -210,10 +220,10 @@ async function saveName() {
         @error="previewFailed = true"
       />
       <div v-else class="preview-empty" role="status">
-        <AppIcon :name="isPrivate ? 'lock' : 'image'" size="26" />
-        <strong>{{ signing ? '正在加载预览' : '预览暂不可用' }}</strong>
+        <AppIcon :name="isPdf ? 'pdf' : (isPrivate ? 'lock' : 'image')" size="26" />
+        <strong>{{ signing ? '正在加载预览' : (isPdf ? 'PDF 文档' : '预览暂不可用') }}</strong>
         <small v-if="signedLinkError">{{ signedLinkError }}</small>
-        <button v-if="!signing" type="button" @click="retryPreview">重试预览</button>
+        <button v-if="!signing && !isPdf" type="button" @click="retryPreview">重试预览</button>
       </div>
     </div>
 
@@ -450,6 +460,17 @@ async function saveName() {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+.inspector-preview.is-pdf-inspector {
+  min-height: 260px;
+  height: 320px;
+}
+
+.pdf-preview-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
 }
 
 .preview-empty {

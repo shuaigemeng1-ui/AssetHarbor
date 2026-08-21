@@ -17,7 +17,7 @@
 
 - 🚀 **一键部署**：`docker compose up -d`，端口、管理员密码、上传上限等全部环境变量可配
 - 🔗 **短码 URL**：图片使用 `/i/{code}`，视频使用 `/v/{code}`，短码密码学随机、不可预测
-- 🖼️ **多格式支持**：jpg / png / gif / webp / svg / bmp / ico / avif / tiff，**按魔数嗅探真实类型**，不信任文件名
+- 🖼️ **多格式支持**：jpg / png / gif / webp / svg / bmp / ico / avif / tiff / pdf，**按魔数嗅探真实类型**，不信任文件名
 - 🎬 **常见视频格式**：MP4/M4V、MOV、WebM、MKV、AVI、MPEG/MPG/TS、OGV、3GP、FLV、WMV，按容器头识别，不信任扩展名或客户端 MIME
 - ⏯️ **断点续传与拖动播放**：默认 8 MiB 分片，支持乱序、暂停、失败重试、刷新后重新选文件续传；`/v/{code}` 支持 Range、206 与 416
 - 🔐 **认证与 RBAC**：JWT 登录、`admin`/`user` 双角色、管理员密码环境变量引导、注册策略可配（开放/邀请码/关闭）

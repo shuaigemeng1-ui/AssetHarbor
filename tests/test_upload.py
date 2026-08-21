@@ -63,3 +63,22 @@ def test_upload_rate_limited_per_user(client, monkeypatch):
     _, token = new_user(client)
     statuses = [upload(client, token).status_code for _ in range(4)]
     assert statuses[-1] == 429
+
+
+def test_upload_pdf(client):
+    from conftest import FAKE_PDF
+
+    _, token = new_user(client)
+    resp = client.post(
+        "/api/upload",
+        headers=auth(token),
+        data={"name": "文档"},
+        files={"file": ("doc.pdf", FAKE_PDF, "application/pdf")},
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["name"] == "文档"
+    assert body["content_type"] == "application/pdf"
+    assert body["size"] == len(FAKE_PDF)
+    assert body["url"].endswith(f"/i/{body['code']}")
+

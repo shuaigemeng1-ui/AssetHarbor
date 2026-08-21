@@ -17,7 +17,7 @@ A self-hosted media service for images and original video files. Videos use resu
 
 - 🚀 **One-command deploy**: `docker compose up -d`; port, admin password, upload limits and more are configurable via environment variables
 - 🔗 **Short-code URLs**: images use `/i/{code}` and videos use `/v/{code}`; codes are cryptographically random and unguessable
-- 🖼️ **Multi-format**: jpg / png / gif / webp / svg / bmp / ico / avif / tiff, with **magic-byte sniffing** — filenames are never trusted
+- 🖼️ **Multi-format**: jpg / png / gif / webp / svg / bmp / ico / avif / tiff / pdf, with **magic-byte sniffing** — filenames are never trusted
 - 🎬 **Original video storage**: MP4/M4V, MOV, WebM, MKV, AVI, MPEG/MPG/TS, OGV, 3GP, FLV and WMV, identified from container headers rather than filename/MIME
 - ⏯️ **Resumable upload & playback**: 8 MiB chunks, pause/retry/resume after refresh, integrity hashes, and RFC Range responses for seeking or partial downloads
 - 🔐 **Auth & RBAC**: JWT login, `admin`/`user` roles, admin bootstrapped from an env variable, configurable registration policy (open / invite / closed)

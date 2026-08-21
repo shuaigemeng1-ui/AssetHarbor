@@ -46,6 +46,23 @@ def test_svg_is_downloaded_not_rendered(client):
     assert img.headers["content-security-policy"] == "sandbox; default-src 'none'"
 
 
+def test_pdf_fetch_and_visibility(client):
+    from conftest import FAKE_PDF
+
+    _, token = new_user(client)
+    resp = client.post(
+        "/api/upload",
+        headers=auth(token),
+        files={"file": ("manual.pdf", FAKE_PDF, "application/pdf")},
+    )
+    assert resp.status_code == 201
+    code = resp.json()["code"]
+    res = client.get(f"/i/{code}")
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("application/pdf")
+    assert res.content == FAKE_PDF
+
+
 # --- signed URLs -----------------------------------------------------------
 
 

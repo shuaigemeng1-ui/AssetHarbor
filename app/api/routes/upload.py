@@ -29,7 +29,7 @@ _VISIBILITIES = ("public", "private")
 async def upload_image(
     request: Request,
     current_user: User = Depends(get_current_user),
-    file: UploadFile = File(..., description="Image file (jpeg/png/gif/webp/svg/bmp/ico/avif/tiff)"),
+    file: UploadFile = File(..., description="Image file (jpeg/png/gif/webp/svg/bmp/ico/avif/tiff/pdf)"),
     name: str = Form("", max_length=255, description="Optional display name; falls back to the filename"),
     visibility: str = Form("public", description="public (default, anyone) or private (owner + team + signed links only)"),
     team_id: int | None = Form(None, description="Team space to upload into (optional)"),

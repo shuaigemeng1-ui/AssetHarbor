@@ -80,7 +80,7 @@ const uploadModalDescription = computed(() => (
     : '图片会保存到当前账号的个人空间，并生成可分享的短链接。'
 ))
 const uploadDescription = computed(() => {
-  const parts = ['支持 JPG、PNG、GIF、WebP、SVG、AVIF 等常用格式']
+  const parts = ['支持 JPG、PNG、GIF、WebP、SVG、AVIF、PDF 等常用格式']
   if (Number(publicConfig.value?.max_upload_size_mb) > 0) {
     parts.push(`单文件最大 ${publicConfig.value.max_upload_size_mb} MB`)
   }
@@ -514,10 +514,10 @@ onBeforeUnmount(() => {
           </label>
         </div>
         <UploadDropzone
-          accept="image/*"
-          label="选择图片，或拖拽到这里"
+          accept="image/*,application/pdf,.pdf"
+          label="选择图片或 PDF，或拖拽到这里"
           :description="uploadDescription"
-          aria-label="选择或拖拽图片上传"
+          aria-label="选择或拖拽图片或 PDF 上传"
           @files="handleFiles"
         />
         <section v-if="uploads.length" class="upload-task-section" aria-label="上传任务">

@@ -56,6 +56,8 @@ from app.main import app  # noqa: E402
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 FAKE_PNG = PNG_MAGIC + b"\x00" * 64
+PDF_MAGIC = b"%PDF-1.4"
+FAKE_PDF = PDF_MAGIC + b"\n%test\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n"
 SVG = b'<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>'
 MP4_HEADER = b"\x00\x00\x00\x18ftypisom\x00\x00\x00\x00mp41mp42"
 

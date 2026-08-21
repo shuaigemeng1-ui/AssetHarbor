@@ -41,14 +41,21 @@ const displayName = computed(() => (
   || props.item.file?.name
   || '未命名图片'
 ))
+const isPdf = computed(() => (
+  result.value?.content_type === 'application/pdf'
+  || props.item.file?.type === 'application/pdf'
+  || String(displayName.value || '').toLowerCase().endsWith('.pdf')
+))
 const placeholderIcon = computed(() => {
   if (props.item.status === 'error') return 'alert'
+  if (isPdf.value) return 'pdf'
   if (linkFailed.value) return 'lock'
   if (isPending.value) return 'upload'
   return 'image'
 })
 const placeholderText = computed(() => {
   if (props.item.status === 'error') return '上传失败'
+  if (isPdf.value) return 'PDF 文档'
   if (linkFailed.value) return '预览不可用'
   if (props.item.status === 'queued') return '等待上传'
   return '正在处理'
@@ -171,8 +178,12 @@ async function saveName() {
     @keydown.enter.prevent="selectCard"
     @keydown.space.prevent="selectCard"
   >
-    <div class="media-preview image-preview">
-      <img v-if="previewUrl && !linkFailed" :src="previewUrl" :alt="displayName" loading="lazy" decoding="async" referrerpolicy="no-referrer" @error="onPreviewError" />
+    <div class="media-preview image-preview" :class="{ 'is-pdf-card': isPdf }">
+      <div v-if="isPdf && !['queued', 'uploading', 'error'].includes(item.status)" class="pdf-card-preview">
+        <AppIcon name="pdf" :size="30" />
+        <span class="pdf-tag">PDF</span>
+      </div>
+      <img v-else-if="previewUrl && !linkFailed" :src="previewUrl" :alt="displayName" loading="lazy" decoding="async" referrerpolicy="no-referrer" @error="onPreviewError" />
       <div v-else class="preview-placeholder">
         <AppIcon :name="placeholderIcon" :size="22" />
         <small>{{ placeholderText }}</small>
@@ -275,6 +286,29 @@ async function saveName() {
   border: 0;
   border-radius: 5px;
   background: #f4f4f5;
+}
+
+.pdf-card-preview {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #71717a;
+  background: #f4f4f5;
+}
+
+.pdf-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
 }
 
 .preview-placeholder {

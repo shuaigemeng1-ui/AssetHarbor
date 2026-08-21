@@ -9,6 +9,7 @@ import {
   Eye,
   EyeOff,
   ExternalLink,
+  FileText,
   FolderOpen,
   Gauge,
   Globe2,
@@ -40,6 +41,8 @@ defineProps({
 const icons = {
   overview: Gauge,
   image: Image,
+  file: FileText,
+  pdf: FileText,
   video: Video,
   collection: FolderOpen,
   teams: UsersRound,

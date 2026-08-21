@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import AppIcon from './AppIcon.vue'
 
 const props = defineProps({
-  accept: { type: String, default: 'image/*' },
+  accept: { type: String, default: 'image/*,application/pdf,.pdf' },
   multiple: { type: Boolean, default: true },
   label: { type: String, default: '点击选择或拖拽文件到此处' },
   description: { type: String, default: '' },

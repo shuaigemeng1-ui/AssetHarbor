@@ -43,6 +43,7 @@ SIGNATURES: list[tuple[bytes, str, str]] = [
     (b"\x00\x00\x01\x00", "image/x-icon", "ico"),
     (b"II*\x00", "image/tiff", "tiff"),
     (b"MM\x00*", "image/tiff", "tiff"),
+    (b"%PDF", "application/pdf", "pdf"),
 ]
 
 # XML prolog optional, then <svg
