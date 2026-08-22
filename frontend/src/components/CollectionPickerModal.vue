@@ -6,7 +6,7 @@ import AppIcon from './AppIcon.vue'
 import BaseModal from './BaseModal.vue'
 
 const props = defineProps({
-  media: { type: Object, required: true },
+  media: { type: [Object, Array], required: true },
   teamId: { type: [Number, String], default: null },
   userId: { type: [Number, String], required: true },
   canManage: { type: Boolean, default: false },
@@ -27,7 +27,15 @@ const newName = ref('')
 const newColor = ref('#2563eb')
 let loadGeneration = 0
 
-const title = computed(() => props.media.name || props.media.original_filename || props.media.code)
+const mediaList = computed(() => (Array.isArray(props.media) ? props.media : [props.media]))
+const mediaCodes = computed(() => mediaList.value.map(m => m.code).filter(Boolean))
+const title = computed(() => {
+  if (Array.isArray(props.media) && props.media.length > 1) {
+    return `${props.media.length} 个媒体`
+  }
+  const single = mediaList.value[0] || {}
+  return single.name || single.original_filename || single.code || '文件'
+})
 
 async function loadGroups({ append = false } = {}) {
   const generation = ++loadGeneration
@@ -58,18 +66,18 @@ async function loadGroups({ append = false } = {}) {
 onMounted(loadGroups)
 
 async function addToSelected() {
-  if (!selectedId.value || saving.value) return
+  if (!selectedId.value || saving.value || !mediaCodes.value.length) return
   saving.value = true
   error.value = ''
   try {
-    const result = await addMediaGroupItems(selectedId.value, [props.media.code])
+    const result = await addMediaGroupItems(selectedId.value, mediaCodes.value)
     const group = groups.value.find(item => item.id === selectedId.value)
     if (result.added) {
-      if (group) group.item_count = Number(group.item_count || 0) + 1
-      toast(`已加入「${group?.name || '分组'}」`, 'success')
+      if (group) group.item_count = Number(group.item_count || 0) + mediaCodes.value.length
+      toast(`已将 ${mediaCodes.value.length} 个媒体加入「${group?.name || '分组'}」`, 'success')
       emit('added', { groupId: selectedId.value, group: result.group || group })
     } else {
-      toast('这个媒体已在所选分组中', 'info')
+      toast('所选媒体已在分组中', 'info')
     }
     emit('close')
   } catch (cause) {
@@ -81,7 +89,7 @@ async function addToSelected() {
 
 async function createAndAdd() {
   const name = newName.value.trim()
-  if (!name || saving.value) return
+  if (!name || saving.value || !mediaCodes.value.length) return
   saving.value = true
   error.value = ''
   try {
@@ -89,11 +97,11 @@ async function createAndAdd() {
       name,
       color: newColor.value,
       teamId: props.teamId,
-      codes: [props.media.code],
+      codes: mediaCodes.value,
     })
     groups.value.unshift(group)
     selectedId.value = group.id
-    toast(`已新建「${group.name}」并加入媒体`, 'success')
+    toast(`已新建「${group.name}」并加入 ${mediaCodes.value.length} 个媒体`, 'success')
     emit('added', { groupId: group.id, group })
     emit('close')
   } catch (cause) {

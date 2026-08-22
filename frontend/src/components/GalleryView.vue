@@ -1,12 +1,14 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { deleteImage, fetchPublicConfig, listImages, listTeamImages, updateImage, uploadFile } from '../api'
+import { deleteImage, fetchPublicConfig, getSignedLink, listImages, listTeamImages, updateImage, uploadFile } from '../api'
 import { confirmAction, toast } from '../stores/feedback'
 import { acquireModalLock, releaseModalLock } from '../stores/modalLock'
+import { downloadMediaFile } from '../utils/download'
 import { formatBytes } from '../utils/format'
 import { WORKSPACE_DRAWER_MAX_WIDTH, WORKSPACE_DRAWER_MEDIA_QUERY } from '../utils/layout'
 import AppIcon from './AppIcon.vue'
 import BaseModal from './BaseModal.vue'
+import CollectionPickerModal from './CollectionPickerModal.vue'
 import ImageInspector from './ImageInspector.vue'
 import ImagePreviewModal from './ImagePreviewModal.vue'
 import ImageResult from './ImageResult.vue'
@@ -34,6 +36,11 @@ const loading = ref(true)
 const loadingMore = ref(false)
 const loadError = ref('')
 const query = ref('')
+const filterCategory = ref('all')
+const checkedCodes = ref(new Set())
+const lastCheckedCode = ref(null)
+const batchGroupOpen = ref(false)
+const batchOperating = ref(false)
 const uploadName = ref('')
 const uploadOpen = ref(props.openUpload)
 const selectedImage = ref(null)
@@ -285,6 +292,188 @@ function isPdfItem(item) {
     || String(item?.name || item?.original_filename || '').toLowerCase().endsWith('.pdf')
 }
 
+const filteredImages = computed(() => {
+  if (filterCategory.value === 'all') return images.value
+  if (filterCategory.value === 'image') return images.value.filter(img => !isPdfItem(img))
+  if (filterCategory.value === 'pdf') return images.value.filter(img => isPdfItem(img))
+  if (filterCategory.value === 'public') return images.value.filter(img => img.visibility === 'public')
+  if (filterCategory.value === 'private') return images.value.filter(img => img.visibility === 'private')
+  return images.value
+})
+
+const counts = computed(() => {
+  const all = images.value.length
+  let imgCount = 0
+  let pdfCount = 0
+  let pubCount = 0
+  let privCount = 0
+  for (const item of images.value) {
+    if (isPdfItem(item)) pdfCount++
+    else imgCount++
+    if (item.visibility === 'public') pubCount++
+    else if (item.visibility === 'private') privCount++
+  }
+  return { all, image: imgCount, pdf: pdfCount, public: pubCount, private: privCount }
+})
+
+const multiSelectMode = computed(() => checkedCodes.value.size > 0)
+const isAllCurrentChecked = computed(() => {
+  if (!filteredImages.value.length) return false
+  return filteredImages.value.every(img => checkedCodes.value.has(img.code))
+})
+const selectedItemsList = computed(() => {
+  return images.value.filter(img => checkedCodes.value.has(img.code))
+})
+
+function onCardCheck({ item, event }) {
+  if (!item?.code) return
+  const currentList = filteredImages.value
+  const currentIndex = currentList.findIndex(img => img.code === item.code)
+  
+  if (event?.shiftKey && lastCheckedCode.value) {
+    const lastIndex = currentList.findIndex(img => img.code === lastCheckedCode.value)
+    if (lastIndex !== -1 && currentIndex !== -1) {
+      const [start, end] = [Math.min(lastIndex, currentIndex), Math.max(lastIndex, currentIndex)]
+      const shouldCheck = !checkedCodes.value.has(item.code)
+      const nextSet = new Set(checkedCodes.value)
+      for (let i = start; i <= end; i++) {
+        const code = currentList[i].code
+        if (shouldCheck) nextSet.add(code)
+        else nextSet.delete(code)
+      }
+      checkedCodes.value = nextSet
+      lastCheckedCode.value = item.code
+      return
+    }
+  }
+
+  const nextSet = new Set(checkedCodes.value)
+  if (nextSet.has(item.code)) {
+    nextSet.delete(item.code)
+  } else {
+    nextSet.add(item.code)
+  }
+  checkedCodes.value = nextSet
+  lastCheckedCode.value = item.code
+}
+
+function toggleSelectAll() {
+  if (isAllCurrentChecked.value) {
+    const nextSet = new Set(checkedCodes.value)
+    for (const img of filteredImages.value) {
+      nextSet.delete(img.code)
+    }
+    checkedCodes.value = nextSet
+  } else {
+    const nextSet = new Set(checkedCodes.value)
+    for (const img of filteredImages.value) {
+      nextSet.add(img.code)
+    }
+    checkedCodes.value = nextSet
+  }
+}
+
+function clearSelection() {
+  checkedCodes.value = new Set()
+  lastCheckedCode.value = null
+}
+
+async function batchDownload() {
+  const items = selectedItemsList.value
+  if (!items.length || batchOperating.value) return
+  batchOperating.value = true
+  toast(`开始下载 ${items.length} 个文件...`, 'info')
+  try {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      const name = item.name || item.original_filename || (isPdfItem(item) ? '文档.pdf' : '图片')
+      let targetUrl = item.url
+      if (item.visibility === 'private') {
+        try {
+          targetUrl = (await getSignedLink(item.code)).url
+        } catch {
+          targetUrl = item.url
+        }
+      }
+      downloadMediaFile(targetUrl, name)
+      if (i < items.length - 1) {
+        await new Promise(r => setTimeout(r, 220))
+      }
+    }
+    toast(`已触发 ${items.length} 个文件的下载`, 'success')
+  } catch (error) {
+    toast(`批量下载异常：${error.message}`, 'error')
+  } finally {
+    batchOperating.value = false
+  }
+}
+
+async function batchSetVisibility(targetVisibility) {
+  const items = selectedItemsList.value.filter(img => canDelete(img) && img.visibility !== targetVisibility)
+  if (!items.length) {
+    toast(`所选文件已全部为${targetVisibility === 'private' ? '私密' : '公开'}状态`, 'info')
+    return
+  }
+  if (batchOperating.value) return
+  batchOperating.value = true
+  const label = targetVisibility === 'private' ? '私密' : '公开'
+  try {
+    let successCount = 0
+    for (const item of items) {
+      try {
+        const updated = await updateImage(item.code, { visibility: targetVisibility })
+        Object.assign(item, updated)
+        successCount++
+      } catch (err) {
+        console.error('Failed to update visibility', item.code, err)
+      }
+    }
+    toast(`已将 ${successCount} 个文件设为${label}`, 'success')
+  } finally {
+    batchOperating.value = false
+  }
+}
+
+async function batchDelete() {
+  const items = selectedItemsList.value.filter(img => canDelete(img))
+  if (!items.length) {
+    toast('无权限删除所选文件', 'error')
+    return
+  }
+  if (batchOperating.value) return
+  const confirmed = await confirmAction({
+    title: '批量删除文件',
+    message: `确定要永久删除选中的 ${items.length} 个文件吗？此操作不可撤销。`,
+    confirmText: '确认删除',
+    cancelText: '取消',
+    danger: true,
+  })
+  if (!confirmed) return
+
+  batchOperating.value = true
+  try {
+    const deletedCodes = new Set()
+    for (const item of items) {
+      try {
+        await deleteImage(item.code)
+        deletedCodes.add(item.code)
+      } catch (err) {
+        console.error('Failed to delete image', item.code, err)
+      }
+    }
+    images.value = images.value.filter(img => !deletedCodes.has(img.code))
+    total.value = Math.max(0, total.value - deletedCodes.size)
+    if (selectedImage.value && deletedCodes.has(selectedImage.value.code)) {
+      selectedImage.value = null
+      inspectorOpen.value = false
+    }
+    clearSelection()
+    toast(`已成功删除 ${deletedCodes.size} 个文件`, 'success')
+  } finally {
+    batchOperating.value = false
+  }
+}
+
 function onGlobalPaste(event) {
   const target = event.target
   const isInput = target && (
@@ -323,6 +512,11 @@ function onGalleryKeydown(event) {
   )
 
   if (event.key === 'Escape' && !hasModal) {
+    if (checkedCodes.value.size > 0) {
+      event.preventDefault()
+      clearSelection()
+      return
+    }
     if (inspectorOpen.value) {
       event.preventDefault()
       closeInspector()
@@ -330,20 +524,26 @@ function onGalleryKeydown(event) {
     }
   }
 
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a' && !isTyping && !hasModal) {
+    event.preventDefault()
+    toggleSelectAll()
+    return
+  }
+
   // Handle arrow navigation between media cards when not typing and no modal is blocking
-  if (!hasModal && !isTyping && images.value.length > 1 && selectedImage.value) {
+  if (!hasModal && !isTyping && filteredImages.value.length > 1 && selectedImage.value) {
     if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
-      const currentIndex = images.value.findIndex(img => img.code === selectedImage.value?.code)
-      if (currentIndex !== -1 && currentIndex < images.value.length - 1) {
+      const currentIndex = filteredImages.value.findIndex(img => img.code === selectedImage.value?.code)
+      if (currentIndex !== -1 && currentIndex < filteredImages.value.length - 1) {
         event.preventDefault()
-        selectImage(images.value[currentIndex + 1])
+        selectImage(filteredImages.value[currentIndex + 1])
         return
       }
     } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
-      const currentIndex = images.value.findIndex(img => img.code === selectedImage.value?.code)
+      const currentIndex = filteredImages.value.findIndex(img => img.code === selectedImage.value?.code)
       if (currentIndex > 0) {
         event.preventDefault()
-        selectImage(images.value[currentIndex - 1])
+        selectImage(filteredImages.value[currentIndex - 1])
         return
       }
     }
@@ -520,6 +720,60 @@ onBeforeUnmount(() => {
             <AppIcon name="close" size="15" />
           </button>
         </div>
+
+        <div class="filter-pills" role="tablist" aria-label="类型筛选">
+          <button
+            type="button"
+            class="filter-pill"
+            :class="{ active: filterCategory === 'all' }"
+            role="tab"
+            :aria-selected="filterCategory === 'all'"
+            @click="filterCategory = 'all'"
+          >
+            全部 <span class="pill-badge">{{ counts.all }}</span>
+          </button>
+          <button
+            type="button"
+            class="filter-pill"
+            :class="{ active: filterCategory === 'image' }"
+            role="tab"
+            :aria-selected="filterCategory === 'image'"
+            @click="filterCategory = 'image'"
+          >
+            图片 <span class="pill-badge">{{ counts.image }}</span>
+          </button>
+          <button
+            type="button"
+            class="filter-pill"
+            :class="{ active: filterCategory === 'pdf' }"
+            role="tab"
+            :aria-selected="filterCategory === 'pdf'"
+            @click="filterCategory = 'pdf'"
+          >
+            PDF 文档 <span class="pill-badge">{{ counts.pdf }}</span>
+          </button>
+          <button
+            type="button"
+            class="filter-pill"
+            :class="{ active: filterCategory === 'public' }"
+            role="tab"
+            :aria-selected="filterCategory === 'public'"
+            @click="filterCategory = 'public'"
+          >
+            公开 <span class="pill-badge">{{ counts.public }}</span>
+          </button>
+          <button
+            type="button"
+            class="filter-pill"
+            :class="{ active: filterCategory === 'private' }"
+            role="tab"
+            :aria-selected="filterCategory === 'private'"
+            @click="filterCategory = 'private'"
+          >
+            私密 <span class="pill-badge">{{ counts.private }}</span>
+          </button>
+        </div>
+
         <button v-if="uploads.length" class="upload-activity" type="button" @click="uploadOpen = true">
           {{ uploads.length }} 个上传任务
         </button>
@@ -535,22 +789,25 @@ onBeforeUnmount(() => {
         <button class="secondary" @click="loadGallery()">重试</button>
       </div>
       <template v-else>
-        <div v-if="images.length" class="media-grid asset-grid" role="list" aria-label="图片列表">
+        <div v-if="filteredImages.length" class="media-grid asset-grid" role="list" aria-label="图片列表">
           <ImageResult
-            v-for="item in images"
+            v-for="item in filteredImages"
             :key="item.id || item.code"
             :item="wrapped(item)"
             selectable
             :selected="selectedImage?.code === item.code"
+            :checked="checkedCodes.has(item.code)"
+            :multi-select-mode="multiSelectMode"
             @select="selectImage(item)"
+            @check="onCardCheck"
             @preview="openPreview(item)"
           />
         </div>
         <div v-else class="empty-state">
           <div class="empty-icon"><AppIcon name="image" size="22" /></div>
-          <h3>{{ query ? '没有找到匹配图片' : '这里还没有图片' }}</h3>
-          <p>{{ query ? '换个关键词试试看。' : '上传第一张图片，开始建立媒体库。' }}</p>
-          <button v-if="!query && !embedded" class="primary" type="button" @click="uploadOpen = true">{{ uploadButtonLabel }}</button>
+          <h3>{{ query || filterCategory !== 'all' ? '没有找到匹配图片' : '这里还没有图片' }}</h3>
+          <p>{{ query || filterCategory !== 'all' ? '换个筛选条件或关键词试试看。' : '上传第一张图片，开始建立媒体库。' }}</p>
+          <button v-if="!query && filterCategory === 'all' && !embedded" class="primary" type="button" @click="uploadOpen = true">{{ uploadButtonLabel }}</button>
         </div>
         <div v-if="hasMore" class="load-more-wrap">
           <button class="secondary" :disabled="loadingMore" @click="loadGallery({ append: true })">
@@ -651,6 +908,54 @@ onBeforeUnmount(() => {
       @close="closePreview"
       @prev="onPrevPreview"
       @next="onNextPreview"
+    />
+
+    <!-- 底部悬浮批量操作栏 -->
+    <transition name="batch-bar-slide">
+      <aside v-if="checkedCodes.size > 0" class="floating-batch-bar" role="toolbar" aria-label="批量操作栏">
+        <div class="batch-bar-info">
+          <span class="batch-bar-count">已选 <strong>{{ checkedCodes.size }}</strong> 项</span>
+          <button type="button" class="ghost batch-btn-link" @click="toggleSelectAll">
+            {{ isAllCurrentChecked ? '取消全选' : '全选本页' }}
+          </button>
+        </div>
+        <div class="batch-bar-divider" />
+        <div class="batch-bar-actions">
+          <button type="button" class="secondary batch-action-btn" :disabled="batchOperating" @click="batchDownload">
+            <AppIcon name="download" size="15" />
+            批量下载
+          </button>
+          <button type="button" class="secondary batch-action-btn" :disabled="batchOperating" @click="batchSetVisibility('public')">
+            <AppIcon name="public" size="15" />
+            设为公开
+          </button>
+          <button type="button" class="secondary batch-action-btn" :disabled="batchOperating" @click="batchSetVisibility('private')">
+            <AppIcon name="private" size="15" />
+            设为私密
+          </button>
+          <button v-if="canManage || user.role === 'admin'" type="button" class="secondary batch-action-btn" :disabled="batchOperating" @click="batchGroupOpen = true">
+            <AppIcon name="collection" size="15" />
+            加入分组
+          </button>
+          <button type="button" class="danger batch-action-btn" :disabled="batchOperating" @click="batchDelete">
+            <AppIcon name="delete" size="15" />
+            批量删除
+          </button>
+        </div>
+        <button type="button" class="ghost batch-bar-close" title="退出多选" aria-label="退出多选" @click="clearSelection">
+          <AppIcon name="close" size="16" />
+        </button>
+      </aside>
+    </transition>
+
+    <CollectionPickerModal
+      v-if="batchGroupOpen"
+      :media="selectedItemsList"
+      :team-id="teamId"
+      :user-id="user.id"
+      :can-manage="canManage || user.role === 'admin'"
+      @close="batchGroupOpen = false"
+      @added="clearSelection"
     />
   </section>
 </template>

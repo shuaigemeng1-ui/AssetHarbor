@@ -1,13 +1,15 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { deleteVideo, fetchPublicConfig, listTeamVideos, listVideos, updateVideo } from '../api'
+import { deleteVideo, fetchPublicConfig, getVideoSignedLink, listTeamVideos, listVideos, updateVideo } from '../api'
 import { confirmAction, toast } from '../stores/feedback'
 import { acquireModalLock, releaseModalLock } from '../stores/modalLock'
 import { addVideoFiles, VIDEO_ACCEPT, videoUploadState } from '../stores/videoUploads'
+import { downloadMediaFile } from '../utils/download'
 import { formatBytes } from '../utils/format'
 import { WORKSPACE_DRAWER_MAX_WIDTH, WORKSPACE_DRAWER_MEDIA_QUERY } from '../utils/layout'
 import AppIcon from './AppIcon.vue'
 import BaseModal from './BaseModal.vue'
+import CollectionPickerModal from './CollectionPickerModal.vue'
 import UploadDropzone from './UploadDropzone.vue'
 import VideoCard from './VideoCard.vue'
 import VideoInspector from './VideoInspector.vue'
@@ -32,6 +34,11 @@ const loading = ref(true)
 const loadingMore = ref(false)
 const loadError = ref('')
 const query = ref('')
+const filterCategory = ref('all')
+const checkedCodes = ref(new Set())
+const lastCheckedCode = ref(null)
+const batchGroupOpen = ref(false)
+const batchOperating = ref(false)
 const uploadName = ref('')
 // 前端上传默认私密，符合“私有媒体空间”的用户心智；后端仍保持 public 兼容契约。
 // 用户在弹窗中做出的选择会记忆到 localStorage，后续上传沿用该偏好。
@@ -233,6 +240,182 @@ function closeInspector() {
   inspectorOpen.value = false
 }
 
+const filteredVideos = computed(() => {
+  if (filterCategory.value === 'all') return videos.value
+  if (filterCategory.value === 'public') return videos.value.filter(v => v.visibility === 'public')
+  if (filterCategory.value === 'private') return videos.value.filter(v => v.visibility === 'private')
+  return videos.value
+})
+
+const counts = computed(() => {
+  const all = videos.value.length
+  let pubCount = 0
+  let privCount = 0
+  for (const item of videos.value) {
+    if (item.visibility === 'public') pubCount++
+    else if (item.visibility === 'private') privCount++
+  }
+  return { all, public: pubCount, private: privCount }
+})
+
+const multiSelectMode = computed(() => checkedCodes.value.size > 0)
+const isAllCurrentChecked = computed(() => {
+  if (!filteredVideos.value.length) return false
+  return filteredVideos.value.every(v => checkedCodes.value.has(v.code))
+})
+const selectedItemsList = computed(() => {
+  return videos.value.filter(v => checkedCodes.value.has(v.code))
+})
+
+function onCardCheck({ item, event }) {
+  if (!item?.code) return
+  const currentList = filteredVideos.value
+  const currentIndex = currentList.findIndex(v => v.code === item.code)
+  
+  if (event?.shiftKey && lastCheckedCode.value) {
+    const lastIndex = currentList.findIndex(v => v.code === lastCheckedCode.value)
+    if (lastIndex !== -1 && currentIndex !== -1) {
+      const [start, end] = [Math.min(lastIndex, currentIndex), Math.max(lastIndex, currentIndex)]
+      const shouldCheck = !checkedCodes.value.has(item.code)
+      const nextSet = new Set(checkedCodes.value)
+      for (let i = start; i <= end; i++) {
+        const code = currentList[i].code
+        if (shouldCheck) nextSet.add(code)
+        else nextSet.delete(code)
+      }
+      checkedCodes.value = nextSet
+      lastCheckedCode.value = item.code
+      return
+    }
+  }
+
+  const nextSet = new Set(checkedCodes.value)
+  if (nextSet.has(item.code)) {
+    nextSet.delete(item.code)
+  } else {
+    nextSet.add(item.code)
+  }
+  checkedCodes.value = nextSet
+  lastCheckedCode.value = item.code
+}
+
+function toggleSelectAll() {
+  if (isAllCurrentChecked.value) {
+    const nextSet = new Set(checkedCodes.value)
+    for (const v of filteredVideos.value) {
+      nextSet.delete(v.code)
+    }
+    checkedCodes.value = nextSet
+  } else {
+    const nextSet = new Set(checkedCodes.value)
+    for (const v of filteredVideos.value) {
+      nextSet.add(v.code)
+    }
+    checkedCodes.value = nextSet
+  }
+}
+
+function clearSelection() {
+  checkedCodes.value = new Set()
+  lastCheckedCode.value = null
+}
+
+async function batchDownload() {
+  const items = selectedItemsList.value
+  if (!items.length || batchOperating.value) return
+  batchOperating.value = true
+  toast(`开始下载 ${items.length} 个视频...`, 'info')
+  try {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      const name = item.name || item.original_filename || '视频'
+      let targetUrl = item.url
+      if (item.visibility === 'private') {
+        try {
+          targetUrl = (await getVideoSignedLink(item.code)).url
+        } catch {
+          targetUrl = item.url
+        }
+      }
+      downloadMediaFile(targetUrl, name)
+      if (i < items.length - 1) {
+        await new Promise(r => setTimeout(r, 220))
+      }
+    }
+    toast(`已触发 ${items.length} 个视频的下载`, 'success')
+  } catch (error) {
+    toast(`批量下载异常：${error.message}`, 'error')
+  } finally {
+    batchOperating.value = false
+  }
+}
+
+async function batchSetVisibility(targetVisibility) {
+  const items = selectedItemsList.value.filter(v => canDelete(v) && v.visibility !== targetVisibility)
+  if (!items.length) {
+    toast(`所选视频已全部为${targetVisibility === 'private' ? '私密' : '公开'}状态`, 'info')
+    return
+  }
+  if (batchOperating.value) return
+  batchOperating.value = true
+  const label = targetVisibility === 'private' ? '私密' : '公开'
+  try {
+    let successCount = 0
+    for (const item of items) {
+      try {
+        const updated = await updateVideo(item.code, { visibility: targetVisibility })
+        Object.assign(item, updated)
+        successCount++
+      } catch (err) {
+        console.error('Failed to update visibility', item.code, err)
+      }
+    }
+    toast(`已将 ${successCount} 个视频设为${label}`, 'success')
+  } finally {
+    batchOperating.value = false
+  }
+}
+
+async function batchDelete() {
+  const items = selectedItemsList.value.filter(v => canDelete(v))
+  if (!items.length) {
+    toast('无权限删除所选视频', 'error')
+    return
+  }
+  if (batchOperating.value) return
+  const confirmed = await confirmAction({
+    title: '批量删除视频',
+    message: `确定要永久删除选中的 ${items.length} 个视频吗？此操作不可撤销。`,
+    confirmText: '确认删除',
+    cancelText: '取消',
+    danger: true,
+  })
+  if (!confirmed) return
+
+  batchOperating.value = true
+  try {
+    const deletedCodes = new Set()
+    for (const item of items) {
+      try {
+        await deleteVideo(item.code)
+        deletedCodes.add(item.code)
+      } catch (err) {
+        console.error('Failed to delete video', item.code, err)
+      }
+    }
+    videos.value = videos.value.filter(v => !deletedCodes.has(v.code))
+    total.value = Math.max(0, total.value - deletedCodes.size)
+    if (selectedVideo.value && deletedCodes.has(selectedVideo.value.code)) {
+      selectedVideo.value = null
+      inspectorOpen.value = false
+    }
+    clearSelection()
+    toast(`已成功删除 ${deletedCodes.size} 个视频`, 'success')
+  } finally {
+    batchOperating.value = false
+  }
+}
+
 function onInspectorKeydown(event) {
   const hasModal = Boolean(document.querySelector('.base-modal-panel'))
   const active = document.activeElement
@@ -244,6 +427,11 @@ function onInspectorKeydown(event) {
   )
 
   if (event.key === 'Escape' && !hasModal) {
+    if (checkedCodes.value.size > 0) {
+      event.preventDefault()
+      clearSelection()
+      return
+    }
     if (inspectorOpen.value) {
       event.preventDefault()
       closeInspector()
@@ -251,20 +439,26 @@ function onInspectorKeydown(event) {
     }
   }
 
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a' && !isTyping && !hasModal) {
+    event.preventDefault()
+    toggleSelectAll()
+    return
+  }
+
   // Handle arrow navigation between video cards when not typing and no modal is blocking
-  if (!hasModal && !isTyping && videos.value.length > 1 && selectedVideo.value) {
+  if (!hasModal && !isTyping && filteredVideos.value.length > 1 && selectedVideo.value) {
     if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
-      const currentIndex = videos.value.findIndex(v => v.code === selectedVideo.value?.code)
-      if (currentIndex !== -1 && currentIndex < videos.value.length - 1) {
+      const currentIndex = filteredVideos.value.findIndex(v => v.code === selectedVideo.value?.code)
+      if (currentIndex !== -1 && currentIndex < filteredVideos.value.length - 1) {
         event.preventDefault()
-        selectVideo(videos.value[currentIndex + 1])
+        selectVideo(filteredVideos.value[currentIndex + 1])
         return
       }
     } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
-      const currentIndex = videos.value.findIndex(v => v.code === selectedVideo.value?.code)
+      const currentIndex = filteredVideos.value.findIndex(v => v.code === selectedVideo.value?.code)
       if (currentIndex > 0) {
         event.preventDefault()
-        selectVideo(videos.value[currentIndex - 1])
+        selectVideo(filteredVideos.value[currentIndex - 1])
         return
       }
     }
@@ -379,6 +573,40 @@ onBeforeUnmount(() => {
             <AppIcon name="close" size="15" />
           </button>
         </div>
+
+        <div class="filter-pills" role="tablist" aria-label="类型筛选">
+          <button
+            type="button"
+            class="filter-pill"
+            :class="{ active: filterCategory === 'all' }"
+            role="tab"
+            :aria-selected="filterCategory === 'all'"
+            @click="filterCategory = 'all'"
+          >
+            全部 <span class="pill-badge">{{ counts.all }}</span>
+          </button>
+          <button
+            type="button"
+            class="filter-pill"
+            :class="{ active: filterCategory === 'public' }"
+            role="tab"
+            :aria-selected="filterCategory === 'public'"
+            @click="filterCategory = 'public'"
+          >
+            公开 <span class="pill-badge">{{ counts.public }}</span>
+          </button>
+          <button
+            type="button"
+            class="filter-pill"
+            :class="{ active: filterCategory === 'private' }"
+            role="tab"
+            :aria-selected="filterCategory === 'private'"
+            @click="filterCategory = 'private'"
+          >
+            私密 <span class="pill-badge">{{ counts.private }}</span>
+          </button>
+        </div>
+
         <button v-if="uploadTasks.length" class="upload-activity" type="button" @click="uploadOpen = true">
           {{ uploadTasks.length }} 个上传任务
         </button>
@@ -394,21 +622,24 @@ onBeforeUnmount(() => {
         <button class="secondary" @click="loadVideos()">重试</button>
       </div>
       <template v-else>
-        <div v-if="videos.length" class="media-grid asset-grid" role="list" aria-label="视频列表">
+        <div v-if="filteredVideos.length" class="media-grid asset-grid" role="list" aria-label="视频列表">
           <VideoCard
-            v-for="item in videos"
+            v-for="item in filteredVideos"
             :key="`${item.code}-${item.visibility}`"
             :item="item"
             selectable
             :selected="selectedVideo?.code === item.code"
+            :checked="checkedCodes.has(item.code)"
+            :multi-select-mode="multiSelectMode"
             @select="selectVideo(item)"
+            @check="onCardCheck"
           />
         </div>
         <div v-else class="empty-state">
           <div class="empty-icon"><AppIcon name="video" size="22" /></div>
-          <h3>{{ query ? '没有找到匹配视频' : '这里还没有视频' }}</h3>
-          <p>{{ query ? '换个关键词试试看。' : '上传第一个视频，开始建立媒体库。' }}</p>
-          <button v-if="!query && !embedded" class="primary" type="button" @click="uploadOpen = true">{{ uploadButtonLabel }}</button>
+          <h3>{{ query || filterCategory !== 'all' ? '没有找到匹配视频' : '这里还没有视频' }}</h3>
+          <p>{{ query || filterCategory !== 'all' ? '换个筛选条件或关键词试试看。' : '上传第一个视频，开始建立媒体库。' }}</p>
+          <button v-if="!query && filterCategory === 'all' && !embedded" class="primary" type="button" @click="uploadOpen = true">{{ uploadButtonLabel }}</button>
         </div>
         <div v-if="hasMore" class="load-more-wrap">
           <button class="secondary" :disabled="loadingMore" @click="loadVideos({ append: true })">
@@ -491,5 +722,53 @@ onBeforeUnmount(() => {
     </BaseModal>
 
     <VideoPlayerModal v-if="playerVideo" :item="playerVideo" @close="playerVideo = null" />
+
+    <!-- 底部悬浮批量操作栏 -->
+    <transition name="batch-bar-slide">
+      <aside v-if="checkedCodes.size > 0" class="floating-batch-bar" role="toolbar" aria-label="批量操作栏">
+        <div class="batch-bar-info">
+          <span class="batch-bar-count">已选 <strong>{{ checkedCodes.size }}</strong> 项</span>
+          <button type="button" class="ghost batch-btn-link" @click="toggleSelectAll">
+            {{ isAllCurrentChecked ? '取消全选' : '全选本页' }}
+          </button>
+        </div>
+        <div class="batch-bar-divider" />
+        <div class="batch-bar-actions">
+          <button type="button" class="secondary batch-action-btn" :disabled="batchOperating" @click="batchDownload">
+            <AppIcon name="download" size="15" />
+            批量下载
+          </button>
+          <button type="button" class="secondary batch-action-btn" :disabled="batchOperating" @click="batchSetVisibility('public')">
+            <AppIcon name="public" size="15" />
+            设为公开
+          </button>
+          <button type="button" class="secondary batch-action-btn" :disabled="batchOperating" @click="batchSetVisibility('private')">
+            <AppIcon name="private" size="15" />
+            设为私密
+          </button>
+          <button v-if="canManage || user.role === 'admin'" type="button" class="secondary batch-action-btn" :disabled="batchOperating" @click="batchGroupOpen = true">
+            <AppIcon name="collection" size="15" />
+            加入分组
+          </button>
+          <button type="button" class="danger batch-action-btn" :disabled="batchOperating" @click="batchDelete">
+            <AppIcon name="delete" size="15" />
+            批量删除
+          </button>
+        </div>
+        <button type="button" class="ghost batch-bar-close" title="退出多选" aria-label="退出多选" @click="clearSelection">
+          <AppIcon name="close" size="16" />
+        </button>
+      </aside>
+    </transition>
+
+    <CollectionPickerModal
+      v-if="batchGroupOpen"
+      :media="selectedItemsList"
+      :team-id="teamId"
+      :user-id="user.id"
+      :can-manage="canManage || user.role === 'admin'"
+      @close="batchGroupOpen = false"
+      @added="clearSelection"
+    />
   </section>
 </template>

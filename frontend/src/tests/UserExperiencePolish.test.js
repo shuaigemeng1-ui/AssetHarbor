@@ -252,63 +252,94 @@ describe('User Experience & Interaction Polish', () => {
     })
   })
 
-  describe('GalleryView keyboard navigation and clipboard handling', () => {
-    it('navigates between media cards using ArrowRight and ArrowLeft', async () => {
-      const items = [
-        { id: 1, code: 'code-1', name: 'Item 1', visibility: 'public', content_type: 'image/png', url: '/i/code-1' },
-        { id: 2, code: 'code-2', name: 'Item 2', visibility: 'public', content_type: 'image/png', url: '/i/code-2' },
-        { id: 3, code: 'code-3', name: 'Item 3', visibility: 'public', content_type: 'image/png', url: '/i/code-3' },
-      ]
-      api.listImages.mockResolvedValue({ items, total: 3 })
+  describe('GalleryView multi-select, filter pills and batch toolbar', () => {
+    const sampleItems = [
+      { id: 1, code: 'img-1', name: '风景照.png', visibility: 'public', content_type: 'image/png', url: '/i/img-1', owner_id: 1 },
+      { id: 2, code: 'pdf-2', name: '报告.pdf', visibility: 'private', content_type: 'application/pdf', url: '/i/pdf-2', owner_id: 1 },
+      { id: 3, code: 'img-3', name: '海报.jpg', visibility: 'public', content_type: 'image/jpeg', url: '/i/img-3', owner_id: 1 },
+    ]
 
+    it('filters items when clicking filter pills', async () => {
+      api.listImages.mockResolvedValue({ items: sampleItems, total: 3 })
       const wrapper = mount(GalleryView, {
-        props: {
-          user: { id: 1, username: 'admin', role: 'admin' },
-        },
+        props: { user: { id: 1, username: 'admin', role: 'admin' } },
         global: {
           stubs: {
             AppIcon: { template: '<i />' },
-            ImageInspector: {
-              name: 'ImageInspector',
-              props: ['item'],
-              template: '<div class="inspector-stub">{{ item.name }}</div>',
-            },
+            ImageInspector: { template: '<div />' },
             ImageResult: {
-              name: 'ImageResult',
-              props: ['item', 'selected'],
-              template: '<div class="result-stub" :class="{ selected }" @click="$emit(\'select\', item.result)">{{ item.result.name }}</div>',
+              props: ['item'],
+              template: '<div class="card-stub">{{ item.result.name }}</div>',
             },
             BaseModal: BaseModalStub,
-            UploadDropzone: { template: '<div class="drop-stub" />' },
-            ImagePreviewModal: { template: '<div data-test="preview-modal" />' },
+            UploadDropzone: { template: '<div />' },
+            ImagePreviewModal: { template: '<div />' },
+            CollectionPickerModal: { template: '<div />' },
           },
         },
       })
-
       await flushPromises()
 
-      // Initially item 1 is selected
-      expect(wrapper.find('.inspector-stub').text()).toBe('Item 1')
+      expect(wrapper.findAll('.card-stub').length).toBe(3)
 
-      // Press ArrowRight -> selects Item 2
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
-      await flushPromises()
-      expect(wrapper.find('.inspector-stub').text()).toBe('Item 2')
+      // Click PDF filter pill
+      const pdfPill = wrapper.findAll('.filter-pill').find(p => p.text().includes('PDF 文档'))
+      await pdfPill.trigger('click')
+      expect(wrapper.findAll('.card-stub').length).toBe(1)
+      expect(wrapper.find('.card-stub').text()).toBe('报告.pdf')
 
-      // Press ArrowRight again -> selects Item 3
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
-      await flushPromises()
-      expect(wrapper.find('.inspector-stub').text()).toBe('Item 3')
+      // Click Private filter pill
+      const privPill = wrapper.findAll('.filter-pill').find(p => p.text().includes('私密'))
+      await privPill.trigger('click')
+      expect(wrapper.findAll('.card-stub').length).toBe(1)
+      expect(wrapper.find('.card-stub').text()).toBe('报告.pdf')
 
-      // Press ArrowLeft -> selects Item 2
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
-      await flushPromises()
-      expect(wrapper.find('.inspector-stub').text()).toBe('Item 2')
+      // Click All filter pill
+      const allPill = wrapper.findAll('.filter-pill').find(p => p.text().includes('全部'))
+      await allPill.trigger('click')
+      expect(wrapper.findAll('.card-stub').length).toBe(3)
+    })
 
-      // Press Escape -> closes inspector
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    it('shows floating batch bar on card check and supports batch operations', async () => {
+      api.listImages.mockResolvedValue({ items: sampleItems, total: 3 })
+      api.updateImage.mockResolvedValue({ visibility: 'private' })
+      const wrapper = mount(GalleryView, {
+        props: { user: { id: 1, username: 'admin', role: 'admin' } },
+        global: {
+          stubs: {
+            AppIcon: { template: '<i />' },
+            ImageInspector: { template: '<div />' },
+            ImageResult: {
+              props: ['item', 'checked'],
+              template: '<div class="card-stub"><button class="chk-stub" @click="$emit(\'check\', { item: item.result })">check</button></div>',
+            },
+            BaseModal: BaseModalStub,
+            UploadDropzone: { template: '<div />' },
+            ImagePreviewModal: { template: '<div />' },
+            CollectionPickerModal: { template: '<div />' },
+          },
+        },
+      })
       await flushPromises()
-      expect(wrapper.find('.inspector-stub').exists()).toBe(false)
+
+      expect(wrapper.find('.floating-batch-bar').exists()).toBe(false)
+
+      // Check first item
+      await wrapper.findAll('.chk-stub')[0].trigger('click')
+      expect(wrapper.find('.floating-batch-bar').exists()).toBe(true)
+      expect(wrapper.find('.batch-bar-count').text()).toContain('1')
+
+      // Select all via batch bar
+      const selectAllBtn = wrapper.find('.batch-btn-link')
+      await selectAllBtn.trigger('click')
+      expect(wrapper.find('.batch-bar-count').text()).toContain('3')
+
+      // Batch set private
+      const setPrivateBtn = wrapper.findAll('.batch-action-btn').find(b => b.text().includes('设为私密'))
+      await setPrivateBtn.trigger('click')
+      await flushPromises()
+      expect(api.updateImage).toHaveBeenCalled()
+      expect(feedback.toast).toHaveBeenCalledWith(expect.stringContaining('已将'), 'success')
     })
   })
 })

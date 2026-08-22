@@ -16,9 +16,11 @@ const props = defineProps({
   showScope: { type: Boolean, default: false },
   selectable: { type: Boolean, default: false },
   selected: { type: Boolean, default: false },
+  checked: { type: Boolean, default: false },
+  multiSelectMode: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['delete', 'toggle-visibility', 'add-to-group', 'remove', 'retry', 'remove-pending', 'select', 'preview'])
+const emit = defineEmits(['delete', 'toggle-visibility', 'add-to-group', 'remove', 'retry', 'remove-pending', 'select', 'preview', 'check'])
 const signedUrl = ref(null)
 const linkFailed = ref(false)
 const localUrl = ref(null)
@@ -108,9 +110,18 @@ async function retryPreview() {
   else linkFailed.value = false
 }
 
-function selectCard() {
+function selectCard(event) {
   if (!props.selectable || !result.value) return
+  if (props.multiSelectMode || event?.shiftKey || event?.ctrlKey || event?.metaKey) {
+    emit('check', { item: result.value, event })
+    return
+  }
   emit('select', result.value)
+}
+
+function toggleCheck(event) {
+  if (!result.value) return
+  emit('check', { item: result.value, event })
 }
 
 async function copyUrl() {
@@ -176,16 +187,29 @@ function triggerDownload() {
       error: item.status === 'error',
       selectable: selectable && result,
       selected: selected && selectable && result,
+      'is-checked': checked,
+      'multi-selecting': multiSelectMode,
     }"
     :role="selectable && result ? 'button' : undefined"
     :tabindex="selectable && result ? 0 : undefined"
     :aria-label="selectable && result ? `查看${isPdf ? '文档' : '图片'}详情：${displayName}` : undefined"
     :aria-pressed="selectable && result ? selected : undefined"
-    @click="selectCard"
-    @keydown.enter.prevent="selectCard"
-    @keydown.space.prevent="selectCard"
+    @click="selectCard($event)"
+    @keydown.enter.prevent="selectCard($event)"
+    @keydown.space.prevent="selectCard($event)"
   >
     <div class="media-preview image-preview" :class="{ 'is-pdf-card': isPdf }">
+      <button
+        v-if="result && (selectable || multiSelectMode)"
+        type="button"
+        class="card-checkbox"
+        :class="{ checked }"
+        :aria-label="checked ? `取消勾选 ${displayName}` : `勾选 ${displayName}`"
+        :aria-checked="checked"
+        @click.stop="toggleCheck($event)"
+      >
+        <AppIcon :name="checked ? 'checkSquare' : 'square'" size="16" />
+      </button>
       <div v-if="isPdf && !['queued', 'uploading', 'error'].includes(item.status)" class="pdf-card-preview">
         <AppIcon name="pdf" :size="30" />
         <span class="pdf-tag">PDF</span>
@@ -446,5 +470,50 @@ function triggerDownload() {
 
 @media (max-width: 580px) {
   .rename-form input { font-size: 16px; }
+}
+
+.card-checkbox {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(4px);
+  color: #cbd5e1;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  z-index: 5;
+  opacity: 0;
+  transition: opacity 140ms ease, background-color 140ms ease, transform 140ms ease, border-color 140ms ease;
+}
+
+.image-card:hover .card-checkbox,
+.card-checkbox:focus-visible,
+.card-checkbox.checked,
+.image-card.multi-selecting .card-checkbox {
+  opacity: 1;
+}
+
+.card-checkbox.checked {
+  background: #2563eb;
+  border-color: #3b82f6;
+  color: #fff;
+}
+
+.card-checkbox:hover {
+  transform: scale(1.08);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.8);
+}
+
+.image-card.is-checked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.35);
 }
 </style>

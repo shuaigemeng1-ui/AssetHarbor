@@ -17,9 +17,11 @@ const props = defineProps({
   showScope: { type: Boolean, default: false },
   selectable: { type: Boolean, default: false },
   selected: { type: Boolean, default: false },
+  checked: { type: Boolean, default: false },
+  multiSelectMode: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['play', 'delete', 'toggle-visibility', 'add-to-group', 'remove', 'select'])
+const emit = defineEmits(['play', 'delete', 'toggle-visibility', 'add-to-group', 'remove', 'select', 'check'])
 const root = ref(null)
 const video = ref(null)
 const inView = ref(false)
@@ -105,9 +107,17 @@ async function retryPreview() {
   video.value?.load?.()
 }
 
-function selectCard() {
+function selectCard(event) {
   if (!props.selectable) return
+  if (props.multiSelectMode || event?.shiftKey || event?.ctrlKey || event?.metaKey) {
+    emit('check', { item: props.item, event })
+    return
+  }
   emit('select', props.item)
+}
+
+function toggleCheck(event) {
+  emit('check', { item: props.item, event })
 }
 
 function activatePreview() {
@@ -172,14 +182,19 @@ function triggerDownload() {
   <article
     ref="root"
     class="media-card video-card"
-    :class="{ selectable, selected: selectable && selected }"
+    :class="{
+      selectable,
+      selected: selectable && selected,
+      'is-checked': checked,
+      'multi-selecting': multiSelectMode,
+    }"
     :role="selectable ? 'button' : undefined"
     :tabindex="selectable ? 0 : undefined"
     :aria-label="selectable ? `查看视频详情：${displayName}` : undefined"
     :aria-pressed="selectable ? selected : undefined"
-    @click="selectCard"
-    @keydown.enter.prevent="selectCard"
-    @keydown.space.prevent="selectCard"
+    @click="selectCard($event)"
+    @keydown.enter.prevent="selectCard($event)"
+    @keydown.space.prevent="selectCard($event)"
   >
     <div
       class="media-preview video-preview"
@@ -190,6 +205,17 @@ function triggerDownload() {
       @keydown.enter.prevent.stop="activatePreview"
       @keydown.space.prevent.stop="activatePreview"
     >
+      <button
+        v-if="selectable || multiSelectMode"
+        type="button"
+        class="card-checkbox"
+        :class="{ checked }"
+        :aria-label="checked ? `取消勾选 ${displayName}` : `勾选 ${displayName}`"
+        :aria-checked="checked"
+        @click.stop="toggleCheck($event)"
+      >
+        <AppIcon :name="checked ? 'checkSquare' : 'square'" size="16" />
+      </button>
       <video
         v-if="inView && streamUrl && !previewFailed"
         ref="video"
@@ -372,5 +398,50 @@ function triggerDownload() {
 
 @media (max-width: 580px) {
   .rename-form input { font-size: 16px; }
+}
+
+.card-checkbox {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(4px);
+  color: #cbd5e1;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  z-index: 5;
+  opacity: 0;
+  transition: opacity 140ms ease, background-color 140ms ease, transform 140ms ease, border-color 140ms ease;
+}
+
+.video-card:hover .card-checkbox,
+.card-checkbox:focus-visible,
+.card-checkbox.checked,
+.video-card.multi-selecting .card-checkbox {
+  opacity: 1;
+}
+
+.card-checkbox.checked {
+  background: #2563eb;
+  border-color: #3b82f6;
+  color: #fff;
+}
+
+.card-checkbox:hover {
+  transform: scale(1.08);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.8);
+}
+
+.video-card.is-checked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.35);
 }
 </style>
