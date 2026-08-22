@@ -4,6 +4,7 @@ import { getVideoSignedLink, updateVideo } from '../api'
 import { toast } from '../stores/feedback'
 import { copyText } from '../utils/clipboard'
 import { formatBytes, formatDate } from '../utils/format'
+import { downloadMediaFile } from '../utils/download'
 import AppIcon from './AppIcon.vue'
 import BaseModal from './BaseModal.vue'
 
@@ -160,6 +161,11 @@ async function saveName() {
     editSaving.value = false
   }
 }
+
+function triggerDownload() {
+  const target = downloadUrl.value || streamUrl.value || props.item.url
+  downloadMediaFile(target, displayName.value)
+}
 </script>
 
 <template>
@@ -219,8 +225,11 @@ async function saveName() {
       <p v-if="previewFailed" class="codec-hint">当前浏览器无法解码此格式，可直接下载原文件。</p>
       <div class="card-actions">
         <button v-if="previewFailed" class="ghost" :disabled="loadingLink" @click="retryPreview">重试预览</button>
+        <button class="ghost" :disabled="loadingLink" @click="triggerDownload">
+          <AppIcon name="download" size="13" />
+          下载
+        </button>
         <button class="ghost" :disabled="loadingLink" @click="copyLink">{{ copied ? '已复制' : '复制链接' }}</button>
-        <a v-if="previewFailed && downloadUrl" class="ghost button-link" :href="downloadUrl">下载</a>
         <button v-if="groupable" class="ghost" @click="emit('add-to-group')">加入分组</button>
         <button v-if="removable" class="ghost danger" @click="emit('remove')">移出分组</button>
         <button v-if="editable || deletable" class="ghost" @click="openEditor">重命名</button>

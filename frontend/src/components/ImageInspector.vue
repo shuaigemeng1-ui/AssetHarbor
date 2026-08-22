@@ -4,6 +4,7 @@ import { getSignedLink, revokeMediaLinks, updateImage } from '../api'
 import { toast } from '../stores/feedback'
 import { copyText } from '../utils/clipboard'
 import { formatBytes, formatDate } from '../utils/format'
+import { downloadMediaFile } from '../utils/download'
 import AppIcon from './AppIcon.vue'
 import BaseModal from './BaseModal.vue'
 import CollectionPickerModal from './CollectionPickerModal.vue'
@@ -18,9 +19,10 @@ const props = defineProps({
   groupable: { type: Boolean, default: true },
 })
 
-const emit = defineEmits(['delete', 'toggle-visibility', 'updated'])
+const emit = defineEmits(['delete', 'toggle-visibility', 'updated', 'preview'])
 
 const signedUrl = ref('')
+const previewSignedUrl = ref('')
 const signedLinkError = ref('')
 const previewFailed = ref(false)
 const signing = ref(false)
@@ -37,6 +39,7 @@ const localName = ref('')
 const groupPickerOpen = ref(false)
 const panel = ref(null)
 let signedLinkGeneration = 0
+let previewGeneration = 0
 let copiedTimer = null
 
 defineExpose({
@@ -60,6 +63,10 @@ const isPdf = computed(() => (
   props.item.content_type === 'application/pdf'
   || String(localName.value || props.item.original_filename || '').toLowerCase().endsWith('.pdf')
 ))
+const activePreviewUrl = computed(() => {
+  if (isPrivate.value) return previewSignedUrl.value || signedUrl.value || ''
+  return props.item.url || ''
+})
 const activeUrl = computed(() => (isPrivate.value ? signedUrl.value : props.item.url || ''))
 const ownerLabel = computed(() => (
   props.item.owner_username
@@ -81,6 +88,20 @@ const mediaForGrouping = computed(() => ({
 watch(() => [props.item.code, props.item.name], ([code, name], previous = []) => {
   if (code !== previous[0] || name !== previous[1]) localName.value = name || ''
 }, { immediate: true })
+
+async function loadPreviewSignedUrl() {
+  const gen = ++previewGeneration
+  previewSignedUrl.value = ''
+  if (!isPrivate.value || !props.item.code) return
+  try {
+    const res = await getSignedLink(props.item.code, 86400)
+    if (gen === previewGeneration) {
+      previewSignedUrl.value = res.url || ''
+    }
+  } catch {
+    // preview fallback
+  }
+}
 
 async function refreshSignedLink() {
   const generation = ++signedLinkGeneration
@@ -108,20 +129,22 @@ async function refreshSignedLink() {
 }
 
 async function retryPreview() {
-  if (isPrivate.value) await refreshSignedLink()
+  if (isPrivate.value) await loadPreviewSignedUrl()
   else previewFailed.value = false
 }
 
 watch(() => [props.item.code, props.item.visibility], () => {
   copied.value = false
-  if (isPrivate.value) refreshSignedLink()
-  else {
-    signedLinkGeneration++
-    signedUrl.value = ''
-    signedLinkError.value = ''
-    linkExpiresAt.value = ''
-    previewFailed.value = false
-    signing.value = false
+  signedLinkGeneration++
+  signedUrl.value = ''
+  signedLinkError.value = ''
+  linkExpiresAt.value = ''
+  previewFailed.value = false
+  signing.value = false
+  if (isPrivate.value) {
+    loadPreviewSignedUrl()
+  } else {
+    previewSignedUrl.value = ''
   }
 }, { immediate: true })
 
@@ -131,6 +154,7 @@ watch(linkTtl, () => {
 
 onBeforeUnmount(() => {
   signedLinkGeneration++
+  previewGeneration++
   if (copiedTimer) window.clearTimeout(copiedTimer)
 })
 
@@ -139,8 +163,10 @@ async function revokeLinks() {
   revoking.value = true
   try {
     await revokeMediaLinks(props.item.code)
+    signedUrl.value = ''
+    linkExpiresAt.value = ''
     toast('已撤销全部历史分享链接', 'success')
-    await refreshSignedLink()
+    await loadPreviewSignedUrl()
   } catch (error) {
     toast(error.message || '撤销失败，请稍后重试', 'error')
   } finally {
@@ -167,6 +193,11 @@ async function copyUrl() {
   } finally {
     copying.value = false
   }
+}
+
+function triggerDownload() {
+  const target = activePreviewUrl.value || activeUrl.value || props.item.url
+  downloadMediaFile(target, displayName.value)
 }
 
 function openEditor() {
@@ -205,32 +236,46 @@ async function saveName() {
     </header>
 
     <div class="inspector-preview" :class="{ 'is-pdf-inspector': isPdf }">
-      <div v-if="isPdf && activeUrl && !previewFailed" class="pdf-container">
+      <div v-if="isPdf && activePreviewUrl && !previewFailed" class="pdf-container">
         <iframe
-          :src="activeUrl"
+          :src="activePreviewUrl"
           :title="displayName"
           class="pdf-preview-frame"
         />
         <div class="pdf-toolbar">
-          <a :href="activeUrl" target="_blank" rel="noopener noreferrer" class="pdf-open-btn">
+          <button class="pdf-preview-btn" type="button" @click="emit('preview', item)">
+            <AppIcon name="preview" size="13" />
+            全屏阅读
+          </button>
+          <a :href="activePreviewUrl" target="_blank" rel="noopener noreferrer" class="pdf-open-btn">
             <AppIcon name="external-link" size="13" />
-            新窗口查看原件
+            新窗口打开
           </a>
         </div>
       </div>
-      <img
-        v-else-if="!isPdf && activeUrl && !previewFailed"
-        :src="activeUrl"
-        :alt="displayName"
-        decoding="async"
-        referrerpolicy="no-referrer"
-        @error="previewFailed = true"
-      />
+      <div
+        v-else-if="!isPdf && activePreviewUrl && !previewFailed"
+        class="img-container"
+        title="点击查看高清大图"
+        @click="emit('preview', item)"
+      >
+        <img
+          :src="activePreviewUrl"
+          :alt="displayName"
+          decoding="async"
+          referrerpolicy="no-referrer"
+          @error="previewFailed = true"
+        />
+        <div class="img-preview-overlay">
+          <AppIcon name="preview" size="20" />
+          <span>查看大图</span>
+        </div>
+      </div>
       <div v-else class="preview-empty" role="status">
         <AppIcon :name="isPdf ? 'pdf' : (isPrivate ? 'lock' : 'image')" size="26" />
-        <strong>{{ signing ? '正在加载预览' : (isPdf ? 'PDF 文档' : '预览暂不可用') }}</strong>
+        <strong>{{ isPdf ? 'PDF 文档' : '预览暂不可用' }}</strong>
         <small v-if="signedLinkError">{{ signedLinkError }}</small>
-        <button v-if="!signing && !isPdf" type="button" @click="retryPreview">重试预览</button>
+        <button v-if="!isPdf" type="button" @click="retryPreview">重试预览</button>
       </div>
     </div>
 
@@ -275,32 +320,34 @@ async function saveName() {
     <section class="inspector-section" aria-labelledby="image-inspector-link">
       <div class="section-title-row">
         <h3 id="image-inspector-link">{{ isPrivate ? '限时访问链接' : (isPdf ? '文档链接' : '图片链接') }}</h3>
-        <span v-if="isPrivate">复制时自动刷新</span>
+        <span v-if="isPrivate">按需生成与复制</span>
       </div>
       <div class="link-field" :title="activeUrl">
-        {{ activeUrl || (signing ? '正在生成限时签名链接…' : '链接暂不可用') }}
+        {{ activeUrl || (isPrivate ? '私密状态（公开链接已失效，选择有效期后点击下方生成）' : '链接暂不可用') }}
       </div>
-        <div v-if="isPrivate" class="link-settings">
-          <label>
-            <span>有效期</span>
-            <select v-model="linkTtl" class="ttl-select" :disabled="signing" aria-label="签名链接有效期">
-              <option :value="3600">1 小时</option>
-              <option :value="86400">1 天</option>
-              <option :value="604800">7 天</option>
-            </select>
-          </label>
-          <small v-if="linkExpiresAt">到期时间：{{ linkExpiresAt }}</small>
-        </div>
-        <button
-          v-if="isPrivate && canEdit"
-          class="inspector-button danger-action"
-          type="button"
-          :disabled="revoking || signing"
-          @click="revokeLinks"
-        >
-          <AppIcon name="delete" size="16" />
-          {{ revoking ? '撤销中…' : '撤销全部历史分享链接' }}
-        </button>
+      <div v-if="isPrivate" class="link-settings">
+        <label>
+          <span>有效期</span>
+          <select v-model="linkTtl" class="ttl-select" :disabled="signing" aria-label="签名链接有效期">
+            <option :value="600">10 分钟</option>
+            <option :value="3600">1 小时</option>
+            <option :value="86400">1 天</option>
+            <option :value="604800">7 天</option>
+            <option :value="2592000">30 天</option>
+          </select>
+        </label>
+        <small v-if="linkExpiresAt">到期时间：{{ linkExpiresAt }}</small>
+      </div>
+      <button
+        v-if="isPrivate && canEdit"
+        class="inspector-button danger-action"
+        type="button"
+        :disabled="revoking || signing"
+        @click="revokeLinks"
+      >
+        <AppIcon name="delete" size="16" />
+        {{ revoking ? '撤销中…' : '撤销全部历史分享链接' }}
+      </button>
 
       <button
         class="inspector-button primary-action"
@@ -309,13 +356,21 @@ async function saveName() {
         @click="copyUrl"
       >
         <AppIcon :name="copied ? 'check' : 'copy'" size="16" />
-        {{ copying ? '复制中…' : copied ? '已复制' : (isPdf ? '复制文档链接' : '复制链接') }}
+        {{ copying ? '生成中…' : copied ? '已复制' : (isPrivate ? '生成并复制限时链接' : (isPdf ? '复制文档链接' : '复制链接')) }}
       </button>
     </section>
 
     <section v-if="canEdit || groupable" class="inspector-section inspector-actions" aria-labelledby="image-inspector-actions">
-      <h3 id="image-inspector-actions">管理</h3>
+      <h3 id="image-inspector-actions">快捷操作</h3>
       <div class="action-grid">
+        <button class="inspector-button" type="button" @click="emit('preview', item)">
+          <AppIcon name="preview" size="16" />
+          {{ isPdf ? '全屏阅读' : '大图预览' }}
+        </button>
+        <button class="inspector-button" type="button" @click="triggerDownload">
+          <AppIcon name="download" size="16" />
+          {{ isPdf ? '下载文档' : '下载原件' }}
+        </button>
         <button v-if="canEdit" class="inspector-button" type="button" @click="emit('toggle-visibility', item)">
           <AppIcon :name="isPrivate ? 'public' : 'private'" size="16" />
           {{ isPrivate ? '设为公开' : '设为私密' }}
@@ -487,26 +542,73 @@ async function saveName() {
   border: 0;
 }
 
+.img-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.img-container:hover .img-preview-overlay {
+  opacity: 1;
+}
+
+.img-preview-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  font-size: 13px;
+  font-weight: 500;
+}
+
 .pdf-toolbar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   padding: 6px 10px;
   border-top: 1px solid var(--border);
   background: var(--panel-soft);
 }
 
-.pdf-open-btn {
+.pdf-preview-btn {
+  border: 0;
+  background: transparent;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   color: var(--accent);
   font-size: 12px;
   font-weight: 600;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.pdf-preview-btn:hover {
+  text-decoration: underline;
+}
+
+.pdf-open-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
   text-decoration: none;
 }
 
 .pdf-open-btn:hover {
+  color: var(--text);
   text-decoration: underline;
 }
 

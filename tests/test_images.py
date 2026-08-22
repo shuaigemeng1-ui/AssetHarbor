@@ -254,3 +254,20 @@ def test_image_fetch_rate_limited(client, monkeypatch):
     code = upload(client, token).json()["code"]
     statuses = [client.get(f"/i/{code}").status_code for _ in range(8)]
     assert statuses[-1] == 429
+
+
+def test_image_download_header_attachment(client):
+    _, token = new_user(client)
+    code = upload(client, token, filename="report.png").json()["code"]
+    
+    # Inline viewing
+    inline_resp = client.get(f"/i/{code}")
+    assert inline_resp.status_code == 200
+    assert "Content-Disposition" not in inline_resp.headers
+
+    # Download attachment
+    dl_resp = client.get(f"/i/{code}?download=1")
+    assert dl_resp.status_code == 200
+    assert "attachment" in dl_resp.headers["Content-Disposition"]
+    assert "report.png" in dl_resp.headers["Content-Disposition"]
+

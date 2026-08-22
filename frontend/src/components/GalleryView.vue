@@ -8,6 +8,7 @@ import { WORKSPACE_DRAWER_MAX_WIDTH, WORKSPACE_DRAWER_MEDIA_QUERY } from '../uti
 import AppIcon from './AppIcon.vue'
 import BaseModal from './BaseModal.vue'
 import ImageInspector from './ImageInspector.vue'
+import ImagePreviewModal from './ImagePreviewModal.vue'
 import ImageResult from './ImageResult.vue'
 import UploadDropzone from './UploadDropzone.vue'
 
@@ -245,6 +246,38 @@ async function selectImage(item) {
 
 function closeInspector() {
   inspectorOpen.value = false
+}
+
+const previewModalOpen = ref(false)
+const previewTargetItem = ref(null)
+
+const previewIndex = computed(() => {
+  if (!previewTargetItem.value) return -1
+  return images.value.findIndex(img => img.code === previewTargetItem.value.code)
+})
+const hasPrevPreview = computed(() => previewIndex.value > 0)
+const hasNextPreview = computed(() => previewIndex.value !== -1 && previewIndex.value < images.value.length - 1)
+
+function openPreview(item) {
+  previewTargetItem.value = item
+  previewModalOpen.value = true
+}
+
+function closePreview() {
+  previewModalOpen.value = false
+  previewTargetItem.value = null
+}
+
+function onPrevPreview() {
+  if (hasPrevPreview.value) {
+    previewTargetItem.value = images.value[previewIndex.value - 1]
+  }
+}
+
+function onNextPreview() {
+  if (hasNextPreview.value) {
+    previewTargetItem.value = images.value[previewIndex.value + 1]
+  }
 }
 
 function isPdfItem(item) {
@@ -510,6 +543,7 @@ onBeforeUnmount(() => {
             selectable
             :selected="selectedImage?.code === item.code"
             @select="selectImage(item)"
+            @preview="openPreview(item)"
           />
         </div>
         <div v-else class="empty-state">
@@ -544,6 +578,7 @@ onBeforeUnmount(() => {
       @delete="onDelete(selectedImage)"
       @toggle-visibility="onToggleVisibility(selectedImage)"
       @updated="Object.assign(selectedImage, $event)"
+      @preview="openPreview(selectedImage)"
     />
     <aside
       v-else
@@ -607,5 +642,15 @@ onBeforeUnmount(() => {
         <button class="ghost" type="button" @click="uploadOpen = false">关闭</button>
       </template>
     </BaseModal>
+
+    <ImagePreviewModal
+      v-if="previewModalOpen && previewTargetItem"
+      :item="previewTargetItem"
+      :has-prev="hasPrevPreview"
+      :has-next="hasNextPreview"
+      @close="closePreview"
+      @prev="onPrevPreview"
+      @next="onNextPreview"
+    />
   </section>
 </template>

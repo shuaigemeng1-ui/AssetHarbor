@@ -96,7 +96,7 @@ describe('ImageInspector', () => {
     await flushPromises()
 
     expect(wrapper.get('.inspector-preview img').attributes('src')).toContain('sig=preview')
-    const copyButton = wrapper.findAll('button').find(button => button.text() === '复制链接')
+    const copyButton = wrapper.findAll('button').find(button => button.text().includes('生成并复制') || button.text().includes('复制链接'))
     await copyButton.trigger('click')
     await flushPromises()
 

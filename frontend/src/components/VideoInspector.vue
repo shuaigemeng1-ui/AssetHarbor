@@ -4,6 +4,7 @@ import { getVideoSignedLink, revokeMediaLinks, updateVideo } from '../api'
 import { toast } from '../stores/feedback'
 import { copyText } from '../utils/clipboard'
 import { formatBytes, formatDate } from '../utils/format'
+import { downloadMediaFile } from '../utils/download'
 import AppIcon from './AppIcon.vue'
 import BaseModal from './BaseModal.vue'
 import CollectionPickerModal from './CollectionPickerModal.vue'
@@ -21,6 +22,7 @@ const props = defineProps({
 const emit = defineEmits(['play', 'delete', 'toggle-visibility', 'updated'])
 
 const signedUrl = ref('')
+const previewSignedUrl = ref('')
 const signedLinkError = ref('')
 const previewFailed = ref(false)
 const signing = ref(false)
@@ -37,6 +39,7 @@ const localName = ref('')
 const groupPickerOpen = ref(false)
 const panel = ref(null)
 let signedLinkGeneration = 0
+let previewGeneration = 0
 let copiedTimer = null
 
 defineExpose({
@@ -56,10 +59,14 @@ const displayName = computed(() => (
   || props.item.original_filename
   || '未命名视频'
 ))
+const activePreviewUrl = computed(() => {
+  if (isPrivate.value) return previewSignedUrl.value || signedUrl.value || ''
+  return props.item.url || ''
+})
 const activeUrl = computed(() => (isPrivate.value ? signedUrl.value : props.item.url || ''))
 const downloadUrl = computed(() => (
-  activeUrl.value
-    ? `${activeUrl.value}${activeUrl.value.includes('?') ? '&' : '?'}download=1`
+  activePreviewUrl.value
+    ? `${activePreviewUrl.value}${activePreviewUrl.value.includes('?') ? '&' : '?'}download=1`
     : ''
 ))
 const ownerLabel = computed(() => (
@@ -82,6 +89,20 @@ const mediaForGrouping = computed(() => ({
 watch(() => [props.item.code, props.item.name], ([code, name], previous = []) => {
   if (code !== previous[0] || name !== previous[1]) localName.value = name || ''
 }, { immediate: true })
+
+async function loadPreviewSignedUrl() {
+  const gen = ++previewGeneration
+  previewSignedUrl.value = ''
+  if (!isPrivate.value || !props.item.code) return
+  try {
+    const res = await getVideoSignedLink(props.item.code, 86400)
+    if (gen === previewGeneration) {
+      previewSignedUrl.value = res.url || ''
+    }
+  } catch {
+    // preview fallback
+  }
+}
 
 async function refreshSignedLink() {
   const generation = ++signedLinkGeneration
@@ -109,20 +130,22 @@ async function refreshSignedLink() {
 }
 
 async function retryPreview() {
-  if (isPrivate.value) await refreshSignedLink()
+  if (isPrivate.value) await loadPreviewSignedUrl()
   else previewFailed.value = false
 }
 
 watch(() => [props.item.code, props.item.visibility], () => {
   copied.value = false
-  if (isPrivate.value) refreshSignedLink()
-  else {
-    signedLinkGeneration++
-    signedUrl.value = ''
-    signedLinkError.value = ''
-    linkExpiresAt.value = ''
-    previewFailed.value = false
-    signing.value = false
+  signedLinkGeneration++
+  signedUrl.value = ''
+  signedLinkError.value = ''
+  linkExpiresAt.value = ''
+  previewFailed.value = false
+  signing.value = false
+  if (isPrivate.value) {
+    loadPreviewSignedUrl()
+  } else {
+    previewSignedUrl.value = ''
   }
 }, { immediate: true })
 
@@ -132,6 +155,7 @@ watch(linkTtl, () => {
 
 onBeforeUnmount(() => {
   signedLinkGeneration++
+  previewGeneration++
   if (copiedTimer) window.clearTimeout(copiedTimer)
 })
 
@@ -140,8 +164,10 @@ async function revokeLinks() {
   revoking.value = true
   try {
     await revokeMediaLinks(props.item.code)
+    signedUrl.value = ''
+    linkExpiresAt.value = ''
     toast('已撤销全部历史分享链接', 'success')
-    await refreshSignedLink()
+    await loadPreviewSignedUrl()
   } catch (error) {
     toast(error.message || '撤销失败，请稍后重试', 'error')
   } finally {
@@ -168,6 +194,11 @@ async function copyUrl() {
   } finally {
     copying.value = false
   }
+}
+
+function triggerDownload() {
+  const target = activePreviewUrl.value || activeUrl.value || props.item.url
+  downloadMediaFile(target, displayName.value)
 }
 
 function openEditor() {
@@ -205,32 +236,25 @@ async function saveName() {
       <h2>视频详情</h2>
     </header>
 
-    <div class="inspector-preview video-inspector-preview">
-      <template v-if="activeUrl && !previewFailed">
+    <div class="inspector-preview video-inspector-preview" role="button" tabindex="0" aria-label="播放视频" @click="emit('play', item)" @keydown.enter.prevent="emit('play', item)">
+      <div v-if="activePreviewUrl && !previewFailed" class="video-stage">
         <video
-          :src="activeUrl"
-          :aria-label="displayName"
+          class="preview-video"
+          :src="activePreviewUrl"
+          preload="metadata"
           muted
           playsinline
-          preload="metadata"
           @error="previewFailed = true"
-          @click="emit('play', item)"
         ></video>
-        <button
-          class="preview-play-button"
-          type="button"
-          :aria-label="`播放 ${displayName}`"
-          @click="emit('play', item)"
-        >
-          <AppIcon name="play" size="18" />
-        </button>
-      </template>
+        <div class="play-overlay" aria-hidden="true">
+          <AppIcon name="play" size="24" />
+        </div>
+      </div>
       <div v-else class="preview-empty" role="status">
         <AppIcon :name="isPrivate ? 'lock' : 'video'" size="26" />
-        <strong>{{ signing ? '正在加载预览' : '预览暂不可用' }}</strong>
+        <strong>预览暂不可用</strong>
         <small v-if="signedLinkError">{{ signedLinkError }}</small>
-        <button v-if="!signing" type="button" @click="retryPreview">重试预览</button>
-        <a v-if="downloadUrl && !signing" class="preview-download" :href="downloadUrl">下载原文件</a>
+        <button type="button" @click.stop="retryPreview">重试预览</button>
       </div>
     </div>
 
@@ -279,18 +303,20 @@ async function saveName() {
     <section class="inspector-section" aria-labelledby="video-inspector-link">
       <div class="section-title-row">
         <h3 id="video-inspector-link">{{ isPrivate ? '限时访问链接' : '视频链接' }}</h3>
-        <span v-if="isPrivate">复制时自动刷新</span>
+        <span v-if="isPrivate">按需生成与复制</span>
       </div>
       <div class="link-field" :title="activeUrl">
-        {{ activeUrl || (signing ? '正在生成限时签名链接…' : '链接暂不可用') }}
+        {{ activeUrl || (isPrivate ? '私密状态（公开链接已失效，选择有效期后点击下方生成）' : '链接暂不可用') }}
       </div>
         <div v-if="isPrivate" class="link-settings">
           <label>
             <span>有效期</span>
             <select v-model="linkTtl" class="ttl-select" :disabled="signing" aria-label="签名链接有效期">
+              <option :value="600">10 分钟</option>
               <option :value="3600">1 小时</option>
               <option :value="86400">1 天</option>
               <option :value="604800">7 天</option>
+              <option :value="2592000">30 天</option>
             </select>
           </label>
           <small v-if="linkExpiresAt">到期时间：{{ linkExpiresAt }}</small>
@@ -313,13 +339,21 @@ async function saveName() {
         @click="copyUrl"
       >
         <AppIcon :name="copied ? 'check' : 'copy'" size="16" />
-        {{ copying ? '复制中…' : copied ? '已复制' : '复制链接' }}
+        {{ copying ? '生成中…' : copied ? '已复制' : (isPrivate ? '生成并复制限时链接' : '复制链接') }}
       </button>
     </section>
 
     <section v-if="canEdit || groupable" class="inspector-section inspector-actions" aria-labelledby="video-inspector-actions">
-      <h3 id="video-inspector-actions">管理</h3>
+      <h3 id="video-inspector-actions">快捷操作</h3>
       <div class="action-grid">
+        <button class="inspector-button" type="button" @click="emit('play', item)">
+          <AppIcon name="play" size="16" />
+          播放视频
+        </button>
+        <button class="inspector-button" type="button" @click="triggerDownload">
+          <AppIcon name="download" size="16" />
+          下载视频
+        </button>
         <button v-if="canEdit" class="inspector-button" type="button" @click="emit('toggle-visibility', item)">
           <AppIcon :name="isPrivate ? 'public' : 'private'" size="16" />
           {{ isPrivate ? '设为公开' : '设为私密' }}

@@ -5,14 +5,14 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 _COMMON_HEADERS = (
     (b"x-content-type-options", b"nosniff"),
     (b"referrer-policy", b"no-referrer"),
-    (b"x-frame-options", b"DENY"),
+    (b"x-frame-options", b"SAMEORIGIN"),
     (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
 )
 _API_CSP = b"default-src 'none'; base-uri 'none'; frame-ancestors 'none'"
 _APP_CSP = (
-    b"default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; "
+    b"default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; "
     b"form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-    b"img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'"
+    b"img-src 'self' data: blob:; media-src 'self' blob:; frame-src 'self' blob:; connect-src 'self'"
 )
 _DOCS_CSP = (
     b"default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; "

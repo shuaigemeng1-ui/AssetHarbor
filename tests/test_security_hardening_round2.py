@@ -229,7 +229,7 @@ def test_security_headers_and_api_no_store_preserve_media_cache(client):
     assert login_response.headers["cache-control"] == "no-store"
     assert login_response.headers["x-content-type-options"] == "nosniff"
     assert login_response.headers["referrer-policy"] == "no-referrer"
-    assert login_response.headers["x-frame-options"] == "DENY"
+    assert login_response.headers["x-frame-options"] == "SAMEORIGIN"
     assert "default-src 'none'" in login_response.headers["content-security-policy"]
 
     created_key = client.post("/api/keys", headers=auth(login_response.json()["access_token"]))

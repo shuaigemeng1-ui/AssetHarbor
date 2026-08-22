@@ -1,5 +1,7 @@
 """Public image serving: GET /i/{code} (visibility + signed URLs + rate limit)."""
 
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy import select
@@ -25,12 +27,19 @@ _SVG_HEADERS = {
 }
 
 
-@router.get("/i/{code}", summary="Fetch an image by short code")
+def _download_header(filename: str) -> str:
+    fallback = "".join(ch if ch.isascii() and (ch.isalnum() or ch in ".-_") else "_" for ch in filename)
+    fallback = fallback or "file"
+    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(filename)}"
+
+
+@router.get("/i/{code}", summary="Fetch an image or document by short code")
 def get_image(
     code: str,
     request: Request,
     expires: str | None = None,
     sig: str | None = None,
+    download: bool = False,
     current_user: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
@@ -77,7 +86,15 @@ def get_image(
         headers = {"Cache-Control": "private, no-store, max-age=0"}
     else:
         headers = dict(_PUBLIC_REVALIDATE_CACHE)
-    if image.content_type == "image/svg+xml":
+    if download:
+        filename = image.original_filename or f"{image.name or image.code}"
+        headers["Content-Disposition"] = _download_header(filename)
+    elif image.content_type == "image/svg+xml":
         headers.update(_SVG_HEADERS)
 
-    return FileResponse(path, media_type=image.content_type, headers=headers)
+    return FileResponse(
+        path,
+        media_type=image.content_type,
+        headers=headers,
+        filename=image.original_filename if download else None,
+    )

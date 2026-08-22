@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { getSignedLink, updateImage } from '../api'
 import { toast } from '../stores/feedback'
 import { copyText } from '../utils/clipboard'
+import { downloadMediaFile } from '../utils/download'
 import AppIcon from './AppIcon.vue'
 import BaseModal from './BaseModal.vue'
 
@@ -17,7 +18,7 @@ const props = defineProps({
   selected: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['delete', 'toggle-visibility', 'add-to-group', 'remove', 'retry', 'remove-pending', 'select'])
+const emit = defineEmits(['delete', 'toggle-visibility', 'add-to-group', 'remove', 'retry', 'remove-pending', 'select', 'preview'])
 const signedUrl = ref(null)
 const linkFailed = ref(false)
 const localUrl = ref(null)
@@ -159,6 +160,12 @@ async function saveName() {
     editSaving.value = false
   }
 }
+
+function triggerDownload() {
+  if (!result.value) return
+  const target = previewUrl.value || result.value.url
+  downloadMediaFile(target, displayName.value)
+}
 </script>
 
 <template>
@@ -207,6 +214,10 @@ async function saveName() {
       </div>
       <button v-else-if="linkFailed" class="preview-retry" type="button" @click.stop="retryPreview">重试预览</button>
       <div v-if="result && hasContextActions" class="context-card-actions">
+        <button class="ghost" type="button" @click.stop="triggerDownload">
+          <AppIcon name="download" size="13" />
+          下载
+        </button>
         <button class="ghost" type="button" @click.stop="copyUrl">
           <AppIcon :name="copied ? 'check' : 'copy'" size="13" />
           {{ copied ? '已复制' : (isPdf ? '复制文档链接' : '复制链接') }}

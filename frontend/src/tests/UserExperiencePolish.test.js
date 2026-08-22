@@ -23,6 +23,7 @@ vi.mock('../utils/clipboard', () => clipboard)
 
 import GalleryView from '../components/GalleryView.vue'
 import ImageInspector from '../components/ImageInspector.vue'
+import ImagePreviewModal from '../components/ImagePreviewModal.vue'
 import ImageResult from '../components/ImageResult.vue'
 import UploadDropzone from '../components/UploadDropzone.vue'
 
@@ -81,7 +82,7 @@ describe('User Experience & Interaction Polish', () => {
     })
   })
 
-  describe('PDF Adaptive Labels in ImageInspector & ImageResult', () => {
+  describe('PDF Adaptive Labels and Download in ImageInspector & ImageResult', () => {
     const pdfItem = {
       id: 88,
       code: 'manual-pdf',
@@ -116,6 +117,7 @@ describe('User Experience & Interaction Polish', () => {
       expect(wrapper.text()).toContain('PDF 文档详情')
       expect(wrapper.text()).toContain('技术规格说明书')
       expect(wrapper.text()).toContain('删除文档')
+      expect(wrapper.text()).toContain('下载文档')
       expect(wrapper.text()).toContain('复制文档链接')
 
       // Check external viewer button
@@ -130,7 +132,7 @@ describe('User Experience & Interaction Polish', () => {
       expect(modal.props('title')).toBe('重命名文档')
     })
 
-    it('adapts labels and toasts for PDF in ImageResult', async () => {
+    it('adapts labels, download and toasts for PDF in ImageResult', async () => {
       const wrapper = mount(ImageResult, {
         props: {
           item: { id: 'image-88', status: 'done', result: { ...pdfItem }, file: null },
@@ -147,11 +149,106 @@ describe('User Experience & Interaction Polish', () => {
 
       expect(wrapper.text()).toContain('PDF')
       expect(wrapper.text()).toContain('技术规格说明书')
+      expect(wrapper.text()).toContain('下载')
       expect(wrapper.text()).toContain('复制文档链接')
 
-      const copyBtn = wrapper.findAll('button').find(b => b.text() === '复制文档链接')
+      const copyBtn = wrapper.findAll('button').find(b => b.text().includes('复制文档链接'))
       await copyBtn.trigger('click')
       expect(feedback.toast).toHaveBeenCalledWith('文档链接已复制', 'success')
+    })
+  })
+
+  describe('Private Status TTL Options in ImageInspector', () => {
+    const privateItem = {
+      id: 99,
+      code: 'priv-img',
+      name: '私密图片',
+      original_filename: 'priv.png',
+      size: 2048,
+      content_type: 'image/png',
+      visibility: 'private',
+      url: '/i/priv-img',
+      owner_id: 1,
+      owner_username: 'bob',
+      team_id: null,
+    }
+
+    it('provides TTL options and generates signed link with selected duration on click', async () => {
+      api.getSignedLink.mockResolvedValue({ url: '/i/priv-img?sig=test7d', expires_at: '2026-08-29T12:00:00Z' })
+
+      const wrapper = mount(ImageInspector, {
+        props: {
+          item: privateItem,
+          user: { id: 1, username: 'bob', role: 'user' },
+          canManage: true,
+        },
+        global: {
+          stubs: {
+            AppIcon: { template: '<i />' },
+            BaseModal: BaseModalStub,
+            CollectionPickerModal: { template: '<div />' },
+          },
+        },
+      })
+      await flushPromises()
+
+      const ttlSelect = wrapper.find('.ttl-select')
+      expect(ttlSelect.exists()).toBe(true)
+
+      // Set to 7 days (604800)
+      await ttlSelect.setValue(604800)
+
+      const generateBtn = wrapper.findAll('button').find(b => b.text().includes('生成并复制'))
+      await generateBtn.trigger('click')
+      await flushPromises()
+
+      expect(api.getSignedLink).toHaveBeenCalledWith('priv-img', 604800)
+      expect(clipboard.copyText).toHaveBeenCalledWith('/i/priv-img?sig=test7d')
+      expect(feedback.toast).toHaveBeenCalledWith('限时签名链接已复制', 'success')
+    })
+  })
+
+  describe('ImagePreviewModal Component', () => {
+    const imgItem = {
+      id: 101,
+      code: 'preview-hero',
+      name: '横幅海报',
+      original_filename: 'banner.png',
+      size: 8192,
+      content_type: 'image/png',
+      visibility: 'public',
+      url: '/i/preview-hero',
+    }
+
+    it('renders image, controls zoom, and triggers download', async () => {
+      const wrapper = mount(ImagePreviewModal, {
+        props: {
+          item: imgItem,
+          hasPrev: true,
+          hasNext: true,
+        },
+        global: {
+          stubs: {
+            AppIcon: { template: '<i />' },
+          },
+        },
+      })
+
+      expect(wrapper.text()).toContain('横幅海报')
+      expect(wrapper.text()).toContain('8 KB')
+      expect(wrapper.text()).toContain('100%')
+
+      const zoomInBtn = wrapper.find('button[title="放大 (+)"]')
+      await zoomInBtn.trigger('click')
+      expect(wrapper.text()).toContain('125%')
+
+      const prevBtn = wrapper.find('.prev-btn')
+      await prevBtn.trigger('click')
+      expect(wrapper.emitted('prev')).toBeTruthy()
+
+      const nextBtn = wrapper.find('.next-btn')
+      await nextBtn.trigger('click')
+      expect(wrapper.emitted('next')).toBeTruthy()
     })
   })
 
@@ -183,6 +280,7 @@ describe('User Experience & Interaction Polish', () => {
             },
             BaseModal: BaseModalStub,
             UploadDropzone: { template: '<div class="drop-stub" />' },
+            ImagePreviewModal: { template: '<div data-test="preview-modal" />' },
           },
         },
       })
