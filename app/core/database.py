@@ -1,4 +1,4 @@
-﻿"""SQLAlchemy engine, session factory and declarative base."""
+"""SQLAlchemy engine, session factory and declarative base."""
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
@@ -31,6 +31,10 @@ def _configure_sqlite(dbapi_connection, _connection_record) -> None:
     cursor = dbapi_connection.cursor()
     cursor.execute(f"PRAGMA busy_timeout={settings.sqlite_busy_timeout_ms}")
     cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute("PRAGMA cache_size=-64000")
+    cursor.execute("PRAGMA temp_store=MEMORY")
+    cursor.execute("PRAGMA mmap_size=268435456")
     cursor.close()
 
 

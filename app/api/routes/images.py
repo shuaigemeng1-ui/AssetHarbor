@@ -2,7 +2,7 @@
 
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -86,6 +86,15 @@ def get_image(
         headers = {"Cache-Control": "private, no-store, max-age=0"}
     else:
         headers = dict(_PUBLIC_REVALIDATE_CACHE)
+        etag = f'"{image.sha256}"'
+        headers["ETag"] = etag
+        if not download:
+            if_none_match = request.headers.get("if-none-match")
+            if if_none_match:
+                tokens = [t.strip() for t in if_none_match.split(",")]
+                if etag in tokens or "*" in tokens:
+                    return Response(status_code=304, headers=headers)
+
     if download:
         filename = image.original_filename or f"{image.name or image.code}"
         headers["Content-Disposition"] = _download_header(filename)

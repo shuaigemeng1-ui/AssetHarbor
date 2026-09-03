@@ -384,7 +384,8 @@ def calculate_quick_fingerprint(path: Path, size: int) -> str:
 
 
 def _safe_filename(filename: str) -> str:
-    cleaned = filename.replace("\\", "/").split("/")[-1].replace("\x00", "").strip()
+    cleaned = (filename or "video").replace("\\", "/").split("/")[-1]
+    cleaned = re.sub(r"[\x00-\x1f\x7f]", "", cleaned).strip()
     return cleaned[:255] or "video"
 
 

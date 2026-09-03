@@ -1,4 +1,4 @@
-﻿"""图片/视频媒体模型（统一存储在 images 表）。
+"""图片/视频媒体模型（统一存储在 images 表）。
 
 该表刻意不声明数据库外键：owner_id 只表示上传者、归因和配额，team_id 只
 表示所属团队；访问与生命周期控制全部由应用层按团队权限显式执行。
@@ -6,7 +6,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Integer, String
+from sqlalchemy import BigInteger, DateTime, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.database import Base
@@ -15,6 +15,11 @@ from .base import utcnow
 
 class Image(Base):
     __tablename__ = "images"
+    __table_args__ = (
+        Index("ix_images_owner_composite", "owner_id", "team_id", "media_kind", "created_at", "id"),
+        Index("ix_images_team_composite", "team_id", "media_kind", "created_at", "id"),
+        Index("ix_images_global_media_created", "media_kind", "created_at", "id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, comment="媒体资源编号")
     # Random base62 code used in the public URL: /i/{code}

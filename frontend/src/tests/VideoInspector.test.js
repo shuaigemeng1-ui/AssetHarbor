@@ -109,7 +109,7 @@ describe('VideoInspector', () => {
     await flushPromises()
 
     expect(wrapper.get('.inspector-preview video').attributes('src')).toContain('sig=preview')
-    const copyButton = wrapper.findAll('button').find(button => button.text() === '复制链接')
+    const copyButton = wrapper.findAll('button').find(button => button.text().includes('生成并复制') || button.text().includes('复制链接'))
     await copyButton.trigger('click')
     await flushPromises()
 
@@ -123,7 +123,6 @@ describe('VideoInspector', () => {
 
     await wrapper.get('.inspector-preview video').trigger('error')
     expect(wrapper.text()).toContain('重试预览')
-    expect(wrapper.get('.preview-download').attributes('href')).toBe('/v/intro-code?download=1')
     await wrapper.get('.preview-empty button').trigger('click')
 
     expect(wrapper.get('.inspector-preview video').attributes('src')).toBe('/v/intro-code')

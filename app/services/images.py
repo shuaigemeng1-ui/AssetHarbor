@@ -145,7 +145,7 @@ def _stored_path(code: str, ext: str) -> Path:
 def _safe_filename(filename: str | None) -> str:
     """Store a bounded display basename instead of client path metadata."""
     cleaned = (filename or "image").replace("\\", "/").split("/")[-1]
-    cleaned = cleaned.replace("\x00", "").strip()
+    cleaned = re.sub(r"[\x00-\x1f\x7f]", "", cleaned).strip()
     return cleaned[:255] or "image"
 
 

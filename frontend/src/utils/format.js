@@ -2,7 +2,10 @@ export function formatBytes(value = 0) {
   const bytes = Number(value) || 0
   if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2)} GB`
   if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes >= 1024) {
+    const kb = bytes / 1024
+    return `${Number.isInteger(kb) ? kb : kb.toFixed(1)} KB`
+  }
   return `${bytes} B`
 }
 

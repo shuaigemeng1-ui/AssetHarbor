@@ -24,6 +24,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
+from starlette.middleware.gzip import GZipMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from .api.routes import admin, auth, gallery, images, keys, library, teams, upload, users, videos
 from .core.config import settings
@@ -105,8 +107,27 @@ app = FastAPI(
     docs_url=None,  # replaced by the custom bilingual docs page at /docs
     redoc_url=None,
 )
+
+
+class SelectiveGZipMiddleware:
+    """Compress JSON API responses, docs and static assets while excluding media streams."""
+
+    def __init__(self, app: ASGIApp, minimum_size: int = 1024) -> None:
+        self.app = app
+        self.gzip = GZipMiddleware(app, minimum_size=minimum_size)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            path = scope.get("path", "")
+            if path.startswith(("/api/", "/static/", "/docs", "/healthz")):
+                await self.gzip(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+
 app.add_middleware(RequestLogMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(SelectiveGZipMiddleware)
 
 app.include_router(auth.router)
 app.include_router(upload.router)

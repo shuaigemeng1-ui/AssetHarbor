@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -497,11 +497,20 @@ def get_video(
             else "public, max-age=0, must-revalidate"
         ),
     }
+    if video.visibility != "private":
+        etag = f'"{video.sha256}"'
+        headers["ETag"] = etag
     if download:
         headers["Content-Disposition"] = _download_header(video.original_filename)
 
     range_header = request.headers.get("range")
     if not range_header:
+        if not download and video.visibility != "private":
+            if_none_match = request.headers.get("if-none-match")
+            if if_none_match:
+                tokens = [t.strip() for t in if_none_match.split(",")]
+                if etag in tokens or "*" in tokens:
+                    return Response(status_code=304, headers=headers)
         return FileResponse(
             path,
             media_type=video.content_type,

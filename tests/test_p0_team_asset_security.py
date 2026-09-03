@@ -326,4 +326,4 @@ def test_migration_removes_foreign_keys_from_legacy_table(tmp_path, monkeypatch)
         assert tuple(row) == (1, "legacy-team", 42)
         assert conn.execute(
             text("SELECT version FROM schema_migrations ORDER BY version")
-        ).scalars().all() == [1, 2]
+        ).scalars().all() == [1, 2, 3]

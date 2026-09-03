@@ -431,3 +431,35 @@ def _migrate_v2_drop_foreign_keys(conn, metadata) -> None:
                     """
                 )
             )
+
+
+# ---------------------------------------------------------------------------
+# v3: composite indexes for media queries and gallery ordering.
+# ---------------------------------------------------------------------------
+
+
+@_register(3, "composite-media-indexes")
+def _migrate_v3_composite_indexes(conn, _metadata) -> None:
+    cols = {row[1] for row in conn.execute(text("PRAGMA table_info(images)"))}
+    required = {"owner_id", "team_id", "media_kind", "created_at"}
+    if not required.issubset(cols):
+        return
+    conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_images_owner_composite "
+            "ON images (owner_id, team_id, media_kind, created_at, id)"
+        )
+    )
+    conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_images_team_composite "
+            "ON images (team_id, media_kind, created_at, id)"
+        )
+    )
+    conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_images_global_media_created "
+            "ON images (media_kind, created_at, id)"
+        )
+    )
+

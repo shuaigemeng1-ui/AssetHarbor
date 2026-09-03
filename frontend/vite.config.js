@@ -8,6 +8,15 @@ export default defineConfig(({ mode }) => {
     // 产物以 /static/ 为前缀，与后端 FastAPI 的静态挂载点对齐
     base: '/static/',
     plugins: [vue()],
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            vendor: ['vue', 'lucide-vue-next'],
+          },
+        },
+      },
+    },
     server: {
       port: 5173,
       proxy: {

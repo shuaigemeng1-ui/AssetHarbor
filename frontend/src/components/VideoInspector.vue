@@ -246,7 +246,7 @@ async function saveName() {
           playsinline
           @error="previewFailed = true"
         ></video>
-        <div class="play-overlay" aria-hidden="true">
+        <div class="play-overlay preview-play-button" aria-hidden="true">
           <AppIcon name="play" size="24" />
         </div>
       </div>

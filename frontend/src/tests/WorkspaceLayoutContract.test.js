@@ -34,7 +34,7 @@ const readableComponentStyles = [
 }))
 
 function withoutComments(source) {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '')
+  return source.replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '')
 }
 
 function matchingBrace(source, openingBrace) {

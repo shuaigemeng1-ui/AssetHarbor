@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { getSignedLink, updateImage } from '../api'
 import { toast } from '../stores/feedback'
 import { copyText } from '../utils/clipboard'
@@ -21,6 +21,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['delete', 'toggle-visibility', 'add-to-group', 'remove', 'retry', 'remove-pending', 'select', 'preview', 'check'])
+const root = ref(null)
+const inView = ref(false)
 const signedUrl = ref(null)
 const linkFailed = ref(false)
 const localUrl = ref(null)
@@ -31,6 +33,7 @@ const editName = ref('')
 const editSaving = ref(false)
 const editError = ref('')
 let copiedTimer = null
+let observer = null
 
 const result = computed(() => props.item.result)
 const isPrivate = computed(() => result.value?.visibility === 'private')
@@ -69,10 +72,11 @@ watch(() => props.item.file, file => {
   localUrl.value = file?.type?.startsWith('image/') ? URL.createObjectURL(file) : null
 }, { immediate: true })
 
-async function loadSignedLink() {
+async function loadSignedLink(force = false) {
+  if (!result.value || !isPrivate.value) return
+  if (!force && !inView.value) return
   signedUrl.value = null
   linkFailed.value = false
-  if (!result.value || !isPrivate.value) return
   try {
     signedUrl.value = (await getSignedLink(result.value.code)).url
   } catch {
@@ -82,10 +86,29 @@ async function loadSignedLink() {
 
 watch(() => [result.value?.code, result.value?.visibility], async () => {
   signedRefreshAttempted.value = false
-  await loadSignedLink()
-}, { immediate: true })
+  signedUrl.value = null
+  linkFailed.value = false
+  if (inView.value) await loadSignedLink()
+})
+
+onMounted(() => {
+  if (!('IntersectionObserver' in window)) {
+    inView.value = true
+    loadSignedLink()
+    return
+  }
+  observer = new IntersectionObserver(entries => {
+    if (entries.some(entry => entry.isIntersecting)) {
+      inView.value = true
+      loadSignedLink()
+      observer?.disconnect()
+    }
+  }, { rootMargin: '200px' })
+  if (root.value) observer.observe(root.value)
+})
 
 onBeforeUnmount(() => {
+  observer?.disconnect()
   if (localUrl.value) URL.revokeObjectURL(localUrl.value)
   if (copiedTimer) window.clearTimeout(copiedTimer)
 })
@@ -98,7 +121,7 @@ const previewUrl = computed(() => {
 async function onPreviewError() {
   if (isPrivate.value && !signedRefreshAttempted.value) {
     signedRefreshAttempted.value = true
-    await loadSignedLink()
+    await loadSignedLink(true)
     return
   }
   linkFailed.value = true
@@ -106,7 +129,7 @@ async function onPreviewError() {
 
 async function retryPreview() {
   signedRefreshAttempted.value = false
-  if (isPrivate.value) await loadSignedLink()
+  if (isPrivate.value) await loadSignedLink(true)
   else linkFailed.value = false
 }
 
@@ -181,6 +204,7 @@ function triggerDownload() {
 
 <template>
   <article
+    ref="root"
     class="media-card image-card"
     :class="{
       pending: isPending,

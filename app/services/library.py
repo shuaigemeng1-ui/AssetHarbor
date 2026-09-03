@@ -395,51 +395,86 @@ def cleanup_orphan_media_library() -> int:
         with SessionLocal() as db:
             db.rollback()
             groups = db.execute(select(MediaGroup)).scalars().all()
-            for group in groups:
-                owner = db.get(User, group.owner_id)
-                if group.team_id is None:
-                    if owner is None:
+            if groups:
+                owner_ids = {g.owner_id for g in groups}
+                team_ids = {g.team_id for g in groups if g.team_id is not None}
+                users_map = {
+                    u.id: u
+                    for u in db.execute(select(User).where(User.id.in_(owner_ids))).scalars()
+                }
+                teams_map = {
+                    t.id: t
+                    for t in db.execute(select(Team).where(Team.id.in_(team_ids))).scalars()
+                }
+                team_owners_map = {}
+                if teams_map:
+                    t_owner_ids = {t.owner_id for t in teams_map.values()}
+                    team_owners_map = {
+                        u.id: u
+                        for u in db.execute(select(User).where(User.id.in_(t_owner_ids))).scalars()
+                    }
+                for group in groups:
+                    owner = users_map.get(group.owner_id)
+                    if group.team_id is None:
+                        if owner is None:
+                            delete_group(db, group, commit=False)
+                            removed += 1
+                        continue
+
+                    team = teams_map.get(group.team_id)
+                    team_owner = team_owners_map.get(team.owner_id) if team is not None else None
+                    if team is None or team_owner is None:
                         delete_group(db, group, commit=False)
                         removed += 1
-                    continue
-
-                team = db.get(Team, group.team_id)
-                team_owner = db.get(User, team.owner_id) if team is not None else None
-                if team is None or team_owner is None:
-                    delete_group(db, group, commit=False)
-                    removed += 1
-                elif owner is None or (
-                    not has_global_admin_scope(owner)
-                    and get_membership(db, team.id, owner.id) is None
-                ):
-                    group.owner_id = team.owner_id
+                    elif owner is None or (
+                        not has_global_admin_scope(owner)
+                        and get_membership(db, team.id, owner.id) is None
+                    ):
+                        group.owner_id = team.owner_id
 
             db.flush()
             items = db.execute(select(MediaGroupItem)).scalars().all()
-            for item in items:
-                group = db.get(MediaGroup, item.group_id)
-                media = db.get(Image, item.media_id)
-                valid_scope = bool(
-                    group is not None
-                    and media is not None
-                    and media.media_kind in ("image", "video")
-                    and (
-                        (
-                            group.team_id is None
-                            and media.team_id is None
-                            and media.owner_id == group.owner_id
-                        )
-                        or (
-                            group.team_id is not None
-                            and media.team_id == group.team_id
+            if items:
+                group_ids = {item.group_id for item in items}
+                media_ids = {item.media_id for item in items}
+                user_ids = {item.added_by for item in items}
+
+                groups_map = {
+                    g.id: g
+                    for g in db.execute(select(MediaGroup).where(MediaGroup.id.in_(group_ids))).scalars()
+                }
+                media_map = {
+                    m.id: m
+                    for m in db.execute(select(Image).where(Image.id.in_(media_ids))).scalars()
+                }
+                valid_users = set(
+                    db.execute(select(User.id).where(User.id.in_(user_ids))).scalars()
+                )
+
+                for item in items:
+                    group = groups_map.get(item.group_id)
+                    media = media_map.get(item.media_id)
+                    valid_scope = bool(
+                        group is not None
+                        and media is not None
+                        and media.media_kind in ("image", "video")
+                        and (
+                            (
+                                group.team_id is None
+                                and media.team_id is None
+                                and media.owner_id == group.owner_id
+                            )
+                            or (
+                                group.team_id is not None
+                                and media.team_id == group.team_id
+                            )
                         )
                     )
-                )
-                if not valid_scope:
-                    db.delete(item)
-                    removed += 1
-                elif db.get(User, item.added_by) is None:
-                    item.added_by = group.owner_id
+                    if not valid_scope:
+                        db.delete(item)
+                        removed += 1
+                    elif item.added_by not in valid_users:
+                        item.added_by = group.owner_id
             db.commit()
     return removed
 

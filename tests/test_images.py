@@ -271,3 +271,26 @@ def test_image_download_header_attachment(client):
     assert "attachment" in dl_resp.headers["Content-Disposition"]
     assert "report.png" in dl_resp.headers["Content-Disposition"]
 
+
+def test_public_image_etag_and_304(client):
+    _, token = new_user(client)
+    uploaded = upload(client, token).json()
+    code = uploaded["code"]
+    sha256 = uploaded["sha256"]
+
+    resp = client.get(f"/i/{code}")
+    assert resp.status_code == 200
+    assert resp.headers.get("etag") == f'"{sha256}"'
+
+    resp_304 = client.get(f"/i/{code}", headers={"If-None-Match": f'"{sha256}"'})
+    assert resp_304.status_code == 304
+    assert resp_304.headers.get("etag") == f'"{sha256}"'
+    assert resp_304.content == b""
+
+
+def test_safe_filename_control_characters():
+    from app.services.images import _safe_filename
+    assert _safe_filename("bad\r\n\tname.png") == "badname.png"
+    assert _safe_filename("path/to/bad\x00\x1f\x7fname.jpg") == "badname.jpg"
+
+
