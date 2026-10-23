@@ -2,37 +2,58 @@ const DB_NAME = 'oss-video-uploads'
 const STORE_NAME = 'sessions'
 const DB_VERSION = 1
 
+let dbPromise = null
+
 function openDatabase() {
-  return new Promise((resolve, reject) => {
+  if (dbPromise) return dbPromise
+  dbPromise = new Promise((resolve, reject) => {
     if (!('indexedDB' in window)) {
+      dbPromise = null
       reject(new Error('当前浏览器不支持 IndexedDB'))
       return
     }
     const request = indexedDB.open(DB_NAME, DB_VERSION)
-    request.onerror = () => reject(request.error)
+    request.onerror = () => {
+      dbPromise = null
+      reject(request.error)
+    }
     request.onupgradeneeded = () => {
       if (!request.result.objectStoreNames.contains(STORE_NAME)) {
         const store = request.result.createObjectStore(STORE_NAME, { keyPath: 'key' })
         store.createIndex('ownerId', 'ownerId', { unique: false })
       }
     }
-    request.onsuccess = () => resolve(request.result)
+    request.onsuccess = () => {
+      const db = request.result
+      db.onversionchange = () => {
+        db.close()
+        dbPromise = null
+      }
+      db.onclose = () => {
+        dbPromise = null
+      }
+      resolve(db)
+    }
   })
+  return dbPromise
 }
 
 async function transact(mode, callback) {
-  const db = await openDatabase()
+  let db = await openDatabase()
+  let transaction
   try {
-    return await new Promise((resolve, reject) => {
-      const transaction = db.transaction(STORE_NAME, mode)
-      const request = callback(transaction.objectStore(STORE_NAME))
-      request.onsuccess = () => resolve(request.result)
-      request.onerror = () => reject(request.error)
-      transaction.onerror = () => reject(transaction.error)
-    })
-  } finally {
-    db.close()
+    transaction = db.transaction(STORE_NAME, mode)
+  } catch {
+    dbPromise = null
+    db = await openDatabase()
+    transaction = db.transaction(STORE_NAME, mode)
   }
+  return await new Promise((resolve, reject) => {
+    const request = callback(transaction.objectStore(STORE_NAME))
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+    transaction.onerror = () => reject(transaction.error)
+  })
 }
 
 export async function listPersistedUploads(ownerId) {

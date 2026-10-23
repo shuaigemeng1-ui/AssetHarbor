@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import stat as stat_mod
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -254,7 +255,6 @@ def _list_videos(
     offset: int,
 ) -> VideoListResponse:
     filters = [Image.media_kind == "video", *filters]
-    total = db.scalar(select(func.count()).select_from(Image).where(*filters)) or 0
     rows = db.execute(
         select(Image)
         .where(*filters)
@@ -262,6 +262,10 @@ def _list_videos(
         .limit(limit)
         .offset(offset)
     ).scalars().all()
+    if offset == 0 and len(rows) < limit:
+        total = len(rows)
+    else:
+        total = db.scalar(select(func.count()).select_from(Image).where(*filters)) or 0
     owner_ids = {row.owner_id for row in rows if row.owner_id is not None}
     usernames = dict(
         db.execute(select(User.id, User.username).where(User.id.in_(owner_ids))).all()
@@ -469,14 +473,14 @@ def get_video(
                 )
             )
             or (
-                video.team_id is not None
-                and current_user is not None
-                and is_team_member(db, video.team_id, current_user.id)
-            )
-            or (
                 expires
                 and sig
                 and verify_image_signature(code, expires, sig, video.signing_version)
+            )
+            or (
+                video.team_id is not None
+                and current_user is not None
+                and is_team_member(db, video.team_id, current_user.id)
             )
         )
         if not allowed:
@@ -484,9 +488,10 @@ def get_video(
 
     try:
         path = resolve_media_path(video.stored_path)
-    except ValueError:
+        st = path.stat()
+    except (ValueError, OSError):
         raise HTTPException(status_code=404, detail="video not found")
-    if not path.is_file() or path.stat().st_size != video.size:
+    if not stat_mod.S_ISREG(st.st_mode) or st.st_size != video.size:
         raise HTTPException(status_code=404, detail="video not found")
     headers = {
         "Accept-Ranges": "bytes",
@@ -516,6 +521,7 @@ def get_video(
             media_type=video.content_type,
             headers=headers,
             filename=video.original_filename if download else None,
+            stat_result=st,
         )
     try:
         start, end = _parse_range(range_header, video.size)

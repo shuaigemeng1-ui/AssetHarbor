@@ -57,7 +57,6 @@ def list_images(
             or_(Image.name.like(like), Image.original_filename.like(like), Image.code.like(like))
         )
 
-    total = db.scalar(select(func.count()).select_from(Image).where(*filters)) or 0
     rows = db.execute(
         select(Image)
         .where(*filters)
@@ -65,6 +64,10 @@ def list_images(
         .limit(limit)
         .offset(offset)
     ).scalars().all()
+    if offset == 0 and len(rows) < limit:
+        total = len(rows)
+    else:
+        total = db.scalar(select(func.count()).select_from(Image).where(*filters)) or 0
 
     # Batch-fetch owner usernames (for the admin all-images view).
     owner_ids = {img.owner_id for img in rows if img.owner_id is not None}

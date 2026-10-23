@@ -242,8 +242,15 @@ function removeUpload(pending) {
   uploads.value = uploads.value.filter(item => item.id !== pending.id)
 }
 
+const wrappedCache = new WeakMap()
+
 function wrapped(item) {
-  return { id: `image-${item.id || item.code}`, status: 'done', result: item, file: null }
+  let entry = wrappedCache.get(item)
+  if (!entry) {
+    entry = { id: `image-${item.id || item.code}`, status: 'done', result: item, file: null }
+    wrappedCache.set(item, entry)
+  }
+  return entry
 }
 
 async function selectImage(item) {

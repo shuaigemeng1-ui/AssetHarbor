@@ -654,10 +654,11 @@ async def store_upload_part(
         tmp_path = directory / f"part-{part_number}-{uuid.uuid4().hex}.tmp"
         digest = hashlib.sha256()
         received = 0
-        # Stream the body into a bounded buffer and offload every flush and
-        # fsync to a worker thread: synchronous writes on the event loop would
-        # stall every concurrent request (health checks included) while large
-        # parts are being received.
+        # Stream the body into a bounded buffer and offload every flush to a
+        # worker thread: synchronous writes on the event loop would stall every
+        # concurrent request (health checks included) while large parts are
+        # being received. Durability is enforced once on the target session file
+        # before the UploadPart row commits.
         write_buffer = bytearray()
         with tmp_path.open("xb") as tmp:
             async for chunk in request.stream():
@@ -669,11 +670,12 @@ async def store_upload_part(
                 digest.update(chunk)
                 write_buffer.extend(chunk)
                 if len(write_buffer) >= _PART_WRITE_BUFFER_BYTES:
-                    await asyncio.to_thread(tmp.write, bytes(write_buffer))
-                    write_buffer.clear()
+                    flushing = write_buffer
+                    write_buffer = bytearray()
+                    await asyncio.to_thread(tmp.write, flushing)
             if write_buffer:
-                await asyncio.to_thread(tmp.write, bytes(write_buffer))
-            await asyncio.to_thread(_flush_and_fsync, tmp)
+                await asyncio.to_thread(tmp.write, write_buffer)
+            await asyncio.to_thread(tmp.flush)
         if received != expected_size:
             raise HTTPException(status_code=400, detail="chunk length does not match Content-Range")
         actual_sha = digest.hexdigest()
@@ -786,16 +788,17 @@ def _commit_upload_part(
                             )
 
                     part_path = session_file(upload_id)
-                    mode = "r+b" if part_path.exists() else "w+b"
-                    with part_path.open(mode) as target, tmp_path.open("rb") as source:
-                        target.seek(offset)
-                        while True:
-                            block = source.read(256 * 1024)
-                            if not block:
-                                break
-                            target.write(block)
-                        target.flush()
-                        os.fsync(target.fileno())
+                    if offset == 0 and not part_path.exists():
+                        os.replace(tmp_path, part_path)
+                        with part_path.open("r+b") as target:
+                            os.fsync(target.fileno())
+                    else:
+                        mode = "r+b" if part_path.exists() else "w+b"
+                        with part_path.open(mode) as target, tmp_path.open("rb") as source:
+                            target.seek(offset)
+                            shutil.copyfileobj(source, target, length=1024 * 1024)
+                            target.flush()
+                            os.fsync(target.fileno())
 
                     record = UploadPart(
                         upload_id=upload_id,
@@ -833,18 +836,21 @@ def _commit_upload_part(
 def _verify_parts_and_sha256(path: Path, parts: list[UploadPart]) -> str:
     """Re-hash every stored chunk while calculating the full-file digest."""
     whole = hashlib.sha256()
+    buffer = bytearray(4 * 1024 * 1024)
+    view = memoryview(buffer)
     with path.open("rb") as file:
         for part in parts:
             file.seek(part.offset)
             remaining = part.size
             chunk_digest = hashlib.sha256()
             while remaining:
-                block = file.read(min(1024 * 1024, remaining))
-                if not block:
+                read_len = file.readinto(view[: min(len(buffer), remaining)])
+                if not read_len:
                     raise HTTPException(status_code=409, detail="uploaded video data is incomplete")
-                remaining -= len(block)
-                chunk_digest.update(block)
-                whole.update(block)
+                remaining -= read_len
+                slice_view = view[:read_len]
+                chunk_digest.update(slice_view)
+                whole.update(slice_view)
             if chunk_digest.hexdigest() != part.sha256:
                 raise HTTPException(status_code=409, detail=f"stored part {part.part_number} failed integrity check")
     return whole.hexdigest()

@@ -298,10 +298,13 @@ def list_unified_media(
             or_(Image.name.like(like), Image.original_filename.like(like), Image.code.like(like))
         )
 
-    total = db.scalar(count_statement.where(*filters)) or 0
     media_rows = db.execute(
         statement.where(*filters).order_by(*order_columns).limit(limit).offset(offset)
     ).scalars().all()
+    if offset == 0 and len(media_rows) < limit:
+        total = len(media_rows)
+    else:
+        total = db.scalar(count_statement.where(*filters)) or 0
     owner_ids = {media.owner_id for media in media_rows if media.owner_id is not None}
     owner_names = (
         dict(db.execute(select(User.id, User.username).where(User.id.in_(owner_ids))).all())
@@ -495,15 +498,17 @@ def library_stats(db: Session, user: User) -> LibraryStats:
         ) or 0
         scope = "personal"
 
-    images = db.scalar(
-        select(func.count()).select_from(Image).where(*media_scope, Image.media_kind == "image")
-    ) or 0
-    videos = db.scalar(
-        select(func.count()).select_from(Image).where(*media_scope, Image.media_kind == "video")
-    ) or 0
-    storage_bytes = db.scalar(
-        select(func.coalesce(func.sum(Image.size), 0)).where(*media_scope)
-    ) or 0
+    media_counts: dict[str, int] = {}
+    storage_bytes = 0
+    for kind, count, total_size in db.execute(
+        select(Image.media_kind, func.count(), func.coalesce(func.sum(Image.size), 0))
+        .where(*media_scope)
+        .group_by(Image.media_kind)
+    ).all():
+        media_counts[kind] = int(count or 0)
+        storage_bytes += int(total_size or 0)
+    images = media_counts.get("image", 0)
+    videos = media_counts.get("video", 0)
     pending_upload_bytes = db.scalar(
         select(func.coalesce(func.sum(UploadSession.size), 0)).where(
             *upload_scope,

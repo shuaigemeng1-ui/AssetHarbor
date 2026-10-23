@@ -274,8 +274,15 @@ async function removeItem(item) {
   }
 }
 
+const wrappedCache = new WeakMap()
+
 function imageItem(item) {
-  return { id: `collection-${item.code}`, status: 'done', result: item, file: null }
+  let entry = wrappedCache.get(item)
+  if (!entry) {
+    entry = { id: `collection-${item.code}`, status: 'done', result: item, file: null }
+    wrappedCache.set(item, entry)
+  }
+  return entry
 }
 
 watch(() => props.teamId, () => {

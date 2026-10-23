@@ -1,5 +1,6 @@
 """Public image serving: GET /i/{code} (visibility + signed URLs + rate limit)."""
 
+import stat as stat_mod
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -59,25 +60,30 @@ def get_image(
             and image.owner_id == current_user.id
         )
         is_admin = has_global_admin_scope(current_user)
-        in_team = bool(
-            image.team_id is not None
-            and current_user is not None
-            and is_team_member(db, image.team_id, current_user.id)
-        )
         has_valid_link = bool(
             expires
             and sig
             and verify_image_signature(image.code, expires, sig, image.signing_version)
         )
-        if not (is_owner or is_admin or in_team or has_valid_link):
+        if not (
+            is_owner
+            or is_admin
+            or has_valid_link
+            or (
+                image.team_id is not None
+                and current_user is not None
+                and is_team_member(db, image.team_id, current_user.id)
+            )
+        ):
             # 404 (not 403) so private images are not discoverable.
             raise HTTPException(status_code=404, detail="image not found")
 
     try:
         path = resolve_media_path(image.stored_path)
-    except ValueError:
+        st = path.stat()
+    except (ValueError, OSError):
         raise HTTPException(status_code=404, detail="image not found")
-    if not path.is_file():
+    if not stat_mod.S_ISREG(st.st_mode):
         raise HTTPException(status_code=404, detail="image not found")
 
     if image.visibility == "private":
@@ -106,4 +112,5 @@ def get_image(
         media_type=image.content_type,
         headers=headers,
         filename=image.original_filename if download else None,
+        stat_result=st,
     )

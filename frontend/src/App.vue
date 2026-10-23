@@ -1,19 +1,26 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import AccountView from './components/AccountView.vue'
-import AdminView from './components/AdminView.vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import AppIcon from './components/AppIcon.vue'
 import AuthView from './components/AuthView.vue'
-import CollectionsView from './components/CollectionsView.vue'
-import GalleryView from './components/GalleryView.vue'
 import HomeView from './components/HomeView.vue'
-import TeamsView from './components/TeamsView.vue'
 import UiFeedback from './components/UiFeedback.vue'
-import UploadCenterView from './components/UploadCenterView.vue'
-import VideoView from './components/VideoView.vue'
 import { fetchMe, getToken, setToken } from './api'
 import { activeVideoUploadCount, initializeVideoUploads, resetVideoUploads } from './stores/videoUploads'
 import { toast } from './stores/feedback'
+
+function lazyView(name, loader) {
+  const component = defineAsyncComponent(loader)
+  component.name = name
+  return component
+}
+
+const AccountView = lazyView('AccountView', () => import('./components/AccountView.vue'))
+const AdminView = lazyView('AdminView', () => import('./components/AdminView.vue'))
+const CollectionsView = lazyView('CollectionsView', () => import('./components/CollectionsView.vue'))
+const GalleryView = lazyView('GalleryView', () => import('./components/GalleryView.vue'))
+const TeamsView = lazyView('TeamsView', () => import('./components/TeamsView.vue'))
+const UploadCenterView = lazyView('UploadCenterView', () => import('./components/UploadCenterView.vue'))
+const VideoView = lazyView('VideoView', () => import('./components/VideoView.vue'))
 
 const user = ref(null)
 const view = ref('overview')

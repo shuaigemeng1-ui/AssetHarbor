@@ -123,14 +123,17 @@ def admin_stats(
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="admin privileges required")
     users = db.scalar(select(func.count()).select_from(User)) or 0
-    images = db.scalar(
-        select(func.count()).select_from(Image).where(Image.media_kind == "image")
-    ) or 0
-    videos = db.scalar(
-        select(func.count()).select_from(Image).where(Image.media_kind == "video")
-    ) or 0
+    media_counts: dict[str, int] = {}
+    storage = 0
+    for kind, count, total_size in db.execute(
+        select(Image.media_kind, func.count(), func.coalesce(func.sum(Image.size), 0))
+        .group_by(Image.media_kind)
+    ).all():
+        media_counts[kind] = int(count or 0)
+        storage += int(total_size or 0)
+    images = media_counts.get("image", 0)
+    videos = media_counts.get("video", 0)
     teams = db.scalar(select(func.count()).select_from(Team)) or 0
-    storage = db.scalar(select(func.coalesce(func.sum(Image.size), 0))) or 0
     pending_upload_bytes = db.scalar(
         select(func.coalesce(func.sum(UploadSession.size), 0)).where(
             UploadSession.status.in_(RESERVED_UPLOAD_STATUSES),

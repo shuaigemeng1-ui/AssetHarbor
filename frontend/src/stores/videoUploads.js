@@ -250,9 +250,10 @@ function resetMetrics(task) {
 
 function updateMetrics(task) {
   const elapsed = Math.max(0.25, (Date.now() - task.runStartedAt) / 1000)
-  const transferred = Math.max(0, taskTransferredBytes(task) - task.runBaseBytes)
+  const totalTransferred = taskTransferredBytes(task)
+  const transferred = Math.max(0, totalTransferred - task.runBaseBytes)
   task.speed = transferred / elapsed
-  task.eta = task.speed > 0 ? Math.max(0, (task.size - taskTransferredBytes(task)) / task.speed) : Infinity
+  task.eta = task.speed > 0 ? Math.max(0, (task.size - totalTransferred) / task.speed) : Infinity
 }
 
 function flushChunkProgress(task, throttle, now = Date.now()) {

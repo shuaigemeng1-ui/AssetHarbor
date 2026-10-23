@@ -179,6 +179,7 @@ async def store_upload(
         tmp_path = Path(raw_path)
         out = os.fdopen(fd, "wb")
         fd = None  # ownership moved to the buffered writer
+        write_buffer = bytearray()
         try:
             while True:
                 chunk = await file.read(256 * 1024)
@@ -193,7 +194,13 @@ async def store_upload(
                 if len(head) < _SNIFF_BYTES:
                     head.extend(chunk[: _SNIFF_BYTES - len(head)])
                 digest.update(chunk)
-                await asyncio.to_thread(out.write, chunk)
+                write_buffer.extend(chunk)
+                if len(write_buffer) >= 1024 * 1024:
+                    flushing = write_buffer
+                    write_buffer = bytearray()
+                    await asyncio.to_thread(out.write, flushing)
+            if write_buffer:
+                await asyncio.to_thread(out.write, write_buffer)
         finally:
             out.close()
             out = None
