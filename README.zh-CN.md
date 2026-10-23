@@ -109,7 +109,8 @@ Docker Compose 可直接复制中文注释版 `.env.zh-CN.example`，英文注�
 | `PORT` | `8080` | 服务端口。`bridge` 模式下为宿主机映射端口；`host` 模式下为容器直接监听的宿主机端口 |
 | `NETWORK_MODE` | `bridge` | 网络模式：`bridge`（默认，端口映射）或 `host`（直接使用宿主机网络） |
 | `FORWARDED_ALLOW_IPS` | `127.0.0.1` | 可写入 `X-Forwarded-*` 的可信反代 IP/CIDR（逗号分隔）；只有直连已被阻断且代理会覆盖转发头时才可使用 `*` |
-| `MAX_UPLOAD_SIZE_MB` | `10` | 单张图片上限，MiB（`1..1024`） |
+| `MAX_UPLOAD_SIZE_MB` | `40` | 单张图片上限，MiB（`1..1024`）；保留原始字节，不压缩 |
+| `MAX_REQUEST_SIZE_MB` | `50` | 完整 HTTP 请求体上限，MiB（`1..1048576`），包含 multipart 字段及边界；同时检查声明长度与实际接收字节 |
 | `MAX_VIDEO_SIZE_MB` | `2048` | 视频原文件上限，MiB（`1..1048576`） |
 | `VIDEO_CHUNK_SIZE_MB` | `8` | 分片大小，MiB（`1..1024`，且不得大于视频上限） |
 | `VIDEO_UPLOAD_TTL_HOURS` | `168` | 未完成会话滑动有效期（`1..8760`） |
@@ -274,7 +275,8 @@ daemon 的 CLI 作业检查空白错误和 Compose 配置。Git Tag 会自动通
 
 - 保持单个 Uvicorn worker。SQLite 与上传中间文件都在本机；多实例和共享对象存储不在当前范围。
 - 持久化整个 `/data`，其中 `/data/uploads` 保存未完成分片。入口脚本只在首次挂载时递归初始化权限，后续启动不会扫描全部媒体文件。
-- Nginx 的 `client_max_body_size` 必须大于 `max(MAX_UPLOAD_SIZE_MB, VIDEO_CHUNK_SIZE_MB)`，并为 multipart 边界留出余量（默认配置建议至少 `12m`）；不要移除 `Range`、`If-Range`、`Content-Range`、`Accept-Ranges`。Caddy 同样需要放宽请求体限制。
+- Nginx 使用 `client_max_body_size 50m;`，与 `MAX_REQUEST_SIZE_MB=50` 一致。可在图床现有的 server/location（10008 端口）中 include `deploy/nginx-upload-limits.conf`，或修改已有指令；保留原来的 upstream、路由及鉴权。Caddy 同样设置为 50 MiB。自定义单图或视频分片大小时，应用和代理上限都须为 multipart 边界预留余量；不要移除 `Range`、`If-Range`、`Content-Range`、`Accept-Ranges`。
+- 已有部署须将 `.env` 更新为 `MAX_UPLOAD_SIZE_MB=40`、`MAX_REQUEST_SIZE_MB=50`，显式填写的旧配置会覆盖新默认值。直接运行 Uvicorn 时使用 `OSS_MAX_UPLOAD_SIZE_MB=40`、`OSS_MAX_REQUEST_SIZE_MB=50`。
 - 将 `FORWARDED_ALLOW_IPS` 仅配置为 Nginx/Caddy 的来源 IP 或 Docker 网段，否则所有反代访客可能共用代理的限流身份；信任未知来源会允许客户端伪造地址。
 - 签名 URL 在到期前是可重放的 bearer 凭据；请让 Nginx/Caddy 访问日志省略或脱敏查询串，避免 `expires`/`sig` 落入代理日志。
 - Starlette 精确锁定为 `1.3.1`，包含上游 multipart 解析器与 Range 安全加固；公网开放媒体时应保持此安全基线或升级到经审查的新版本。

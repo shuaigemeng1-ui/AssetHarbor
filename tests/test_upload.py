@@ -1,5 +1,10 @@
 """Upload: auth requirement, naming, visibility, limits."""
 
+import hashlib
+
+import pytest
+
+from app.core.config import settings
 from conftest import FAKE_PNG, PNG_MAGIC, auth, new_user, upload
 
 
@@ -54,6 +59,35 @@ def test_upload_enforces_size_limit(client):
     over = PNG_MAGIC + b"\x00" * (1024 * 1024 + 1)  # 1 byte over the 1 MB test limit
     resp = client.post("/api/upload", headers=auth(token), files={"file": ("big.png", over, "image/png")})
     assert resp.status_code == 413
+
+
+@pytest.mark.parametrize("extra_bytes", [0, 1])
+def test_40_mb_image_boundary_preserves_original(client, monkeypatch, extra_bytes):
+    monkeypatch.setattr(settings, "max_upload_size_mb", 40)
+    _, token = new_user(client)
+    payload = PNG_MAGIC + b"\x00" * (40 * 1024 * 1024 - len(PNG_MAGIC) + extra_bytes)
+    response = client.post(
+        "/api/upload", headers=auth(token), files={"file": ("original.png", payload, "image/png")}
+    )
+    if extra_bytes:
+        assert response.status_code == 413
+        return
+    assert response.status_code == 201, response.text
+    image = response.json()
+    assert image["size"] == len(payload)
+    assert image["sha256"] == hashlib.sha256(payload).hexdigest()
+    downloaded = client.get(f"/i/{image['code']}")
+    assert downloaded.content == payload
+    assert "content-encoding" not in downloaded.headers
+
+
+def test_upload_rejects_declared_body_over_50_mb(client):
+    response = client.post(
+        "/api/upload", content=b"", headers={"Content-Length": str(50 * 1024 * 1024 + 1)}
+    )
+    assert response.status_code == 413
+    assert response.json()["detail"] == "request body exceeds the 50 MB limit"
+    assert "x-request-id" in response.headers
 
 
 def test_upload_rate_limited_per_user(client, monkeypatch):

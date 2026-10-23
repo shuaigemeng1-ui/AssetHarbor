@@ -18,7 +18,9 @@ class Settings(BaseSettings):
     data_dir: Path = Path("./data")
 
     # --- upload limits -----------------------------------------------------
-    max_upload_size_mb: int = Field(default=10, gt=0, le=1024)
+    max_upload_size_mb: int = Field(default=40, gt=0, le=1024)
+    # Includes multipart framing and fields in addition to the original file.
+    max_request_size_mb: int = Field(default=50, gt=0, le=1024 * 1024)
 
     # Video uploads use a resumable, fixed-size chunk protocol.  The defaults
     # deliberately keep individual reverse-proxy requests small while still

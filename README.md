@@ -113,7 +113,8 @@ variables instead, such as `OSS_ADMIN_PASSWORD` and `OSS_JWT_SECRET`.
 | `PORT` | `8080` | Service port. In `bridge` mode: the host-mapped port; in `host` mode: the port the container listens on directly |
 | `NETWORK_MODE` | `bridge` | Network mode: `bridge` (default, port mapping) or `host` (bind directly to the host network) |
 | `FORWARDED_ALLOW_IPS` | `127.0.0.1` | Comma-separated trusted reverse-proxy IPs/CIDRs allowed to set `X-Forwarded-*`; never use `*` unless direct access is blocked and the proxy overwrites forwarded headers |
-| `MAX_UPLOAD_SIZE_MB` | `10` | Per-image limit in MiB (`1..1024`) |
+| `MAX_UPLOAD_SIZE_MB` | `40` | Per-image limit in MiB (`1..1024`); original bytes are retained without compression |
+| `MAX_REQUEST_SIZE_MB` | `50` | Complete HTTP request-body limit in MiB (`1..1048576`), including multipart fields and framing; applies to declared and streamed bodies |
 | `MAX_VIDEO_SIZE_MB` | `2048` | Maximum original video size in MiB (`1..1048576`) |
 | `VIDEO_CHUNK_SIZE_MB` | `8` | Chunk size in MiB (`1..1024`, not above the video limit) |
 | `VIDEO_UPLOAD_TTL_HOURS` | `168` | Sliding unfinished-session lifetime (`1..8760`) |
@@ -272,7 +273,8 @@ starts the application.
 
 - Keep exactly one Uvicorn worker. SQLite and incomplete upload files are local; multi-instance/shared-object-storage deployment is outside this release.
 - Persist all of `/data`, including `/data/uploads`. The entrypoint initializes ownership once and then avoids recursively changing a large volume on every restart.
-- For Nginx, set `client_max_body_size` above `max(MAX_UPLOAD_SIZE_MB, VIDEO_CHUNK_SIZE_MB)` with room for multipart framing (with the defaults, use at least `12m`). Do not strip `Range`, `If-Range`, `Content-Range`, or `Accept-Ranges`; apply the equivalent body limit in Caddy.
+- Set the Nginx body limit to `client_max_body_size 50m;`, matching `MAX_REQUEST_SIZE_MB=50`. Include `deploy/nginx-upload-limits.conf` in the existing image-host server/location (port 10008), or update its existing directive; retain the existing upstream, routes and authentication. Apply the equivalent 50 MiB body limit in Caddy. If image/chunk sizes are customized, allow room for multipart framing in both the application and proxy limits. Do not strip `Range`, `If-Range`, `Content-Range`, or `Accept-Ranges`.
+- Existing deployments must update `.env` to `MAX_UPLOAD_SIZE_MB=40` and `MAX_REQUEST_SIZE_MB=50`; explicitly configured old values override the new defaults. Direct Uvicorn runs use `OSS_MAX_UPLOAD_SIZE_MB=40` and `OSS_MAX_REQUEST_SIZE_MB=50`.
 - Set `FORWARDED_ALLOW_IPS` to only the Nginx/Caddy source IP or Docker network CIDR. Otherwise every proxied visitor may share the proxy's rate-limit identity; trusting unverified sources lets clients spoof their address.
 - Signed URLs are replayable bearer credentials until expiry. Configure the reverse proxy access log to omit or redact query strings so `expires`/`sig` never reach Nginx/Caddy logs.
 - Starlette is pinned to `1.3.1`, which includes the upstream multipart parser and Range hardening fixes. Keep this security baseline or a newer reviewed release when exposing media publicly.

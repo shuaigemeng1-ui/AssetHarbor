@@ -26,6 +26,8 @@ def _settings(**overrides) -> Settings:
     [
         ("max_upload_size_mb", 0),
         ("max_upload_size_mb", 1025),
+        ("max_request_size_mb", 0),
+        ("max_request_size_mb", 1024 * 1024 + 1),
         ("max_video_size_mb", 0),
         ("max_video_size_mb", 1024 * 1024 + 1),
         ("video_chunk_size_mb", 0),
@@ -117,10 +119,11 @@ def test_invalid_process_environment_fails_during_module_import(tmp_path):
     assert "max_upload_size_mb" in result.stderr
 
 
-def test_default_numeric_behavior_is_unchanged():
+def test_default_numeric_behavior():
     configured = _settings()
 
-    assert configured.max_upload_size_mb == 10
+    assert configured.max_upload_size_mb == 40
+    assert configured.max_request_size_mb == 50
     assert configured.max_video_size_mb == 2048
     assert configured.video_chunk_size_mb == 8
     assert configured.video_upload_ttl_hours == 168

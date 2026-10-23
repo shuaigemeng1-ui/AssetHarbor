@@ -30,6 +30,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from .api.routes import admin, auth, gallery, images, keys, library, teams, upload, users, videos
 from .core.config import settings
 from .core.database import SessionLocal, init_db
+from .core.request_limits import RequestBodyLimitMiddleware
 from .core.request_logging import RequestLogMiddleware
 from .core.security_headers import SecurityHeadersMiddleware
 from .core.security import ensure_admin, validate_bootstrap_state
@@ -125,6 +126,7 @@ class SelectiveGZipMiddleware:
         await self.app(scope, receive, send)
 
 
+app.add_middleware(RequestBodyLimitMiddleware, max_size_mb=settings.max_request_size_mb)
 app.add_middleware(RequestLogMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(SelectiveGZipMiddleware)
